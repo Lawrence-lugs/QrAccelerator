@@ -1,0 +1,12 @@
+mapped
+xcelium
+*xcelium*
+.vscode
+synth
+.env
+sims/*
+vams/*
+tests/sclibs.py
+tests/logs
+tests/scratch.py
+*__pycache__*

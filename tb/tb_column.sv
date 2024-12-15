@@ -37,7 +37,7 @@ logic [numCols-1:0] wr_data_int;
 logic [numCols-1:0] write_int;
 logic [numCols-1:0] csel_int;
 logic [numCols-1:0] saen_int;
-logic [numCols-1:0][numAdcBits-1:0] adc_out_int;
+logic [numCols-1:0][(2**numAdcBits)-1:0] adc_out_int;
 logic [numCols-1:0] nf_int;
 logic [numCols-1:0] nfb_int;
 logic [numCols-1:0] m2a_int;
@@ -196,7 +196,7 @@ end
 
 // VCD generation
 initial begin
-    $dumpfile("res.vcd");
+    $dumpfile("dumps/tb_column.vcd");
     $dumpvars();
 end
 
@@ -213,8 +213,7 @@ initial begin
     
     #(CLK_PERIOD*2);
     nrst = 1;
-
-    #(CLK_PERIOD*5); // Allow initial voltage transients to settle
+    #(CLK_PERIOD*2);
 
     `ifndef SKIP_WRITES 
 
@@ -224,7 +223,6 @@ initial begin
             .t_addr(i),
             .t_data(flag)
         );
-        flag = ~flag;
     end
     
     $display("Reading from SRAM...");
@@ -237,21 +235,25 @@ initial begin
     `endif
 
     mac_en = 1;
-    #(CLK_PERIOD);
+    #(CLK_PERIOD*5); // Allow initial voltage transients to settle
 
     // Test range from VSS to VRST
-    for (int i = 0; i < SRAM_ROWS-1; i++) begin
+    for (int i = 0; i < SRAM_ROWS; i++) begin
         data_n_i = {data_n_i[126:0], 1'b0};
+        $display("ADC_OUT: %d", adc_out);
         #(CLK_PERIOD);
     end
 
     // Test range from VRST to VDR
-    for (int i = 0; i < SRAM_ROWS-1; i++) begin
+    for (int i = 0; i < SRAM_ROWS; i++) begin
         data_p_i = {data_p_i[126:0], 1'b1};
+        $display("ADC_OUT: %d", adc_out);
         #(CLK_PERIOD);
     end
 
     #(CLK_PERIOD*2);
+
+    $display("TEST SUCCESS");
 
     $finish();
 end

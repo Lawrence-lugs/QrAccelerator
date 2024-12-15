@@ -33,7 +33,7 @@ module qr_acc_wrapper #(
     output logic [numCols-1:0] SAEN,
 
     // ANALOG INTERFACE : ADC
-    input [numCols-1:0][numAdcBits-1:0] ADC_OUT,
+    input [numCols-1:0][(2**numAdcBits)-1:0] ADC_OUT, // comparator output pre-encoder
     output logic [numCols-1:0] NF,
     output logic [numCols-1:0] NFB,
     output logic [numCols-1:0] M2A,
@@ -110,6 +110,7 @@ always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
 end
 
 // ADC INTERFACE 
+logic [numCols-1:0][numAdcBits-1:0] adc_out_encoded;
 always_comb begin : AdcInterface
     if (clk && mac_en_i) begin // only allow negative feedback if MAC is enabled (this is power intensive)
         NF = '1;
@@ -128,7 +129,30 @@ always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
     if (!nrst) begin
         adc_out_o <= 0;
     end else begin
-        adc_out_o <= ADC_OUT;
+        adc_out_o <= adc_out_encoded;
+    end
+end
+always_comb begin : AdcEncoderLogic
+    for (int i = 0; i < numCols; i++) begin
+        casex (ADC_OUT[i])
+            15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8
+            15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9
+            15'b000_0000_0000_001x: adc_out_encoded[i] = -6; // A
+            15'b000_0000_0000_01xx: adc_out_encoded[i] = -5; // B
+            15'b000_0000_0000_1xxx: adc_out_encoded[i] = -4; // C
+            15'b000_0000_0001_xxxx: adc_out_encoded[i] = -3; // D
+            15'b000_0000_001x_xxxx: adc_out_encoded[i] = -2; // E
+            15'b000_0000_01xx_xxxx: adc_out_encoded[i] = -1; // F
+            15'b000_0000_1xxx_xxxx: adc_out_encoded[i] = 0;
+            15'b000_0001_xxxx_xxxx: adc_out_encoded[i] = 1;
+            15'b000_001x_xxxx_xxxx: adc_out_encoded[i] = 2;
+            15'b000_01xx_xxxx_xxxx: adc_out_encoded[i] = 3;
+            15'b000_1xxx_xxxx_xxxx: adc_out_encoded[i] = 4;
+            15'b001_xxxx_xxxx_xxxx: adc_out_encoded[i] = 5;
+            15'b01x_xxxx_xxxx_xxxx: adc_out_encoded[i] = 6;
+            15'b1xx_xxxx_xxxx_xxxx: adc_out_encoded[i] = 7;
+            default: adc_out_encoded[i] = 0;
+        endcase
     end
 end
 

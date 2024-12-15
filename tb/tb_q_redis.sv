@@ -21,7 +21,8 @@ module tb_q_redis #(
     output logic WR_DATA,
     output logic WRITE,
     output logic CSEL,
-    output logic SAEN
+    output logic SAEN,
+    output logic CLK, CLKB
 );
 
 localparam CLK_PERIOD = 20;
@@ -72,6 +73,8 @@ initial begin
     end
 
     #(CLK_PERIOD*2);
+
+    $display("TEST SUCCESS");
 
     $finish();
 end
