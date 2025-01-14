@@ -1,4 +1,4 @@
-//Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"a aa
+// Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
 
 `timescale 1ns/1ps
 
