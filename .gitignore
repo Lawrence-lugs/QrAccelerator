@@ -11,4 +11,3 @@ tests/logs
 tests/scratch.py
 *__pycache__*
 DVEfiles
-tests/conftest.py

@@ -8,9 +8,9 @@ module ts_qracc #(
 
     // These are defined as localparams for ease of change
     // But so that we also don't need to set values when synthesizing
-    localparam numRows = 128,
+    parameter numRows = 128,
     parameter numCols = 8,
-    localparam numAdcBits = 4
+    parameter numAdcBits = 4
 ) (
     // ANALOG INTERFACE : SWITCH MATRIX
     input logic [numRows-1:0] VDR_SEL,

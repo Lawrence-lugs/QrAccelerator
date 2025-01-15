@@ -1,6 +1,7 @@
 /* 
 
 Models the ts_column for the digital parts
+Just qracc with numCols = 1
 
 */
 
@@ -9,7 +10,7 @@ module ts_column #(
     // These are defined as localparams for ease of change
     // But so that we also don't need to set values when synthesizing
     localparam numRows = 128,
-    parameter numCols = 8,
+    parameter numCols = 1,
     localparam numAdcBits = 4
 ) (
     // ANALOG INTERFACE : SWITCH MATRIX
