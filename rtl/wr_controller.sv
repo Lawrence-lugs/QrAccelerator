@@ -14,38 +14,42 @@
 //
 // Note: write_i and read_i should not be asserted simultaneously
 
-
-`timescale 1ns/1ps
-
 module wr_controller #(
     parameter int numRows = 8,
     parameter int numCols = 8
 ) (
     input clk,
     input nrst,
-    
+
     // we don't passively read in the interest of energy
     input write_i,
     input read_i,
     input [$clog2(numRows)-1:0] addr_i,
+    input [numCols-1:0] wr_data_i,
 
     output logic done, //asserted for just 1 CC
     output logic ready,
+    output logic [numCols-1:0] wr_data_q,
 
     // writes and reads
-    output logic c3sram_csel_o,
+    output logic [numCols-1:0] c3sram_csel_o,
     output logic c3sram_saen_o,
     output logic c3sram_w2b_o,
     output logic c3sram_nprecharge_o,
     output logic [numRows-1:0] c3sram_wl_o
 );
 
-typedef enum { S_IDLE, S_WRITING, S_READING } wr_ctrl_state_t;
+typedef enum logic [2:0] { 
+    S_IDLE = 0, 
+    S_WRITING = 1, 
+    S_READING = 2 
+} wr_ctrl_state_t;
 
 wr_ctrl_state_t state_q;
 wr_ctrl_state_t state_d;
 
 logic [2:0] pos_ctr;
+logic [$clog2(numRows)-1:0] addr_i_q;
 
 // FSM
 always_ff @(posedge clk or negedge nrst) begin
@@ -73,6 +77,25 @@ always_comb begin
         end 
         default: state_d = state_q;
     endcase
+end
+
+// Data registering when writing
+always_ff @( posedge clk ) begin : wrDataReg
+    if (!nrst) begin
+        wr_data_q <= 0;
+        addr_i_q <= 0;
+    end else begin
+        if (state_q == S_IDLE) begin
+            if (state_d == S_WRITING) begin
+                wr_data_q <= wr_data_i;
+                addr_i_q <= addr_i;
+            end
+            if (state_d == S_READING) begin
+                addr_i_q <= addr_i;
+            end
+        end 
+
+    end
 end
 
 // Position Counter
@@ -111,7 +134,7 @@ always_comb  begin
             c3sram_saen_o = saenWaveRd[pos_ctr];
             c3sram_w2b_o = 0;
             c3sram_wl_o = 0;
-            c3sram_wl_o[addr_i] = targetWlWaveRd[pos_ctr];
+            c3sram_wl_o[addr_i_q] = targetWlWaveRd[pos_ctr];
             c3sram_nprecharge_o = nprechargeWaveRd[pos_ctr];
         end
         S_WRITING: begin
@@ -119,7 +142,7 @@ always_comb  begin
             c3sram_saen_o = 0;
             c3sram_w2b_o = w2bWaveWr[pos_ctr];
             c3sram_wl_o = 0;
-            c3sram_wl_o[addr_i] = targetWlWaveWr[pos_ctr];
+            c3sram_wl_o[addr_i_q] = targetWlWaveWr[pos_ctr];
             c3sram_nprecharge_o = nprechargeWaveWr[pos_ctr];
         end
     endcase

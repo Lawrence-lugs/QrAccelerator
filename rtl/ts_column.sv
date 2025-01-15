@@ -45,20 +45,26 @@ module ts_column #(
 
 // SRAM modelling
 logic [numCols-1:0] mem [numRows];
-always_ff @( posedge CLK ) begin :  sramModel
+
+always_ff @( posedge CLK ) begin :  writeModel
     if (PCH) begin
         if (WRITE) begin
             for (int i = 0; i < numRows; i++) begin
-                if (WL[i]) mem[i] <= WR_DATA;
+                if (WL[i]) begin
+                    mem[i] <= WR_DATA;
+                end
             end
         end
-        if (SAEN) begin
-            for (int i = 0; i < numRows; i++) begin
-                if (WL[i]) SA_OUT <= mem[i];
-            end
-        end else begin
-            SA_OUT <= 0; // Sense amplifiers have no output if SAEN isn't high
+    end
+end
+// SA output is not registered
+always_comb begin : readModel
+    if (PCH && SAEN) begin
+        for (int i = 0; i < numRows; i++) begin
+            if (WL[i]) SA_OUT = mem[i];
         end
+    end else begin
+        SA_OUT = 0;
     end
 end
 

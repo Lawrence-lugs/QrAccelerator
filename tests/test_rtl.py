@@ -27,6 +27,7 @@ def test_tb_qracc(simulator='xrun'):
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/ts_qracc.sv',
+        '../rtl/wr_controller.sv',
     ]
     tb_name = 'tb_qracc'
     tb_path = 'qracc'
