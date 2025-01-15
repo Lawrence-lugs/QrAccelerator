@@ -23,20 +23,20 @@ module ts_qracc #(
     // ANALOG INTERFACE : SRAM
     output logic [numCols-1:0] SA_OUT,
     input logic [numRows-1:0] WL,
-    input logic [numCols-1:0] PCH,
+    input logic PCH,
     input logic [numCols-1:0] WR_DATA,
-    input logic [numCols-1:0] WRITE,
+    input logic WRITE,
     input logic [numCols-1:0] CSEL,
-    input logic [numCols-1:0] SAEN,
+    input logic SAEN,
 
     // ANALOG INTERFACE : ADC
-    output logic [numAdcBits*numCols-1:0] ADC_OUT,
-    input logic [numCols-1:0] NF,
-    input logic [numCols-1:0] NFB,
-    input logic [numCols-1:0] M2A,
-    input logic [numCols-1:0] M2AB,
-    input logic [numCols-1:0] R2A,
-    input logic [numCols-1:0] R2AB,
+    output logic [(2**numAdcBits)*numCols-1:0] ADC_OUT,
+    input logic NF,
+    input logic NFB,
+    input logic M2A,
+    input logic M2AB,
+    input logic R2A,
+    input logic R2AB,
 
     // Clock
     input logic CLK
@@ -48,22 +48,30 @@ always_ff @( posedge CLK ) begin :  sramModel
     if (PCH) begin
         if (WRITE) begin
             for (int i = 0; i < numRows; i++) begin
-                if (WL[i]) mem[i] <= WR_DATA;
+                if (WL[i]) begin 
+                    mem[i] <= WR_DATA;
+                    $display("WR_DATA: %d, %d", WR_DATA, mem[i]);
+                end
             end
-        end
-        if (SAEN) begin
-            for (int i = 0; i < numRows; i++) begin
-                if (WL[i]) SA_OUT <= mem[i];
-            end
-        end else begin
-            SA_OUT <= 0; // Sense amplifiers have no output if SAEN isn't high
         end
     end
 end
+// SA output is not registered
+always_comb begin : readModel
+    if (PCH && SAEN) begin
+        for (int i = 0; i < numRows; i++) begin
+            if (WL[i]) SA_OUT = mem[i];
+        end
+    end else begin
+        SA_OUT = 0;
+    end
+end
+
 
 // MAC modelling
 logic signed [31:0] mbl_value [numCols];
 logic signed [numCols-1:0][numAdcBits-1:0] adc_out;
+logic signed [numCols-1:0][(2**numAdcBits)-1:0] comp_out;
 
 always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
@@ -73,7 +81,14 @@ always_comb begin : toMBL
         end
         adc_out[j] = mbl_value[j][6 -: numAdcBits]; // some arbitrary 4-bit subset for now
     end
-    ADC_OUT <= adc_out; // auto-flattens since it's a packed array
+    
+    for (int j = 0; j < numCols; j++) begin
+        for (int i = 0; i < (2**numAdcBits); i++) begin
+            comp_out[j][i] = (mbl_value[j] > i) ? 1 : 0;
+        end
+    end
+
+    ADC_OUT <= comp_out;
 end
 
 endmodule

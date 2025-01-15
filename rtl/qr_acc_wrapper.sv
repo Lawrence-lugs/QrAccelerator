@@ -26,35 +26,35 @@ module qr_acc_wrapper #(
     // ANALOG INTERFACE : SRAM
     input [numCols-1:0] SA_OUT,
     output logic [numRows-1:0] WL, 
-    output logic [numCols-1:0] PCH,
+    output logic PCH,
     output logic [numCols-1:0] WR_DATA,
-    output logic [numCols-1:0] WRITE,
+    output logic WRITE,
     output logic [numCols-1:0] CSEL,
-    output logic [numCols-1:0] SAEN,
+    output logic SAEN,
 
     // ANALOG INTERFACE : ADC
     input [numCols-1:0][(2**numAdcBits)-1:0] ADC_OUT, // comparator output pre-encoder
-    output logic [numCols-1:0] NF,
-    output logic [numCols-1:0] NFB,
-    output logic [numCols-1:0] M2A,
-    output logic [numCols-1:0] M2AB,
-    output logic [numCols-1:0] R2A,
-    output logic [numCols-1:0] R2AB,
+    output logic NF,
+    output logic NFB,
+    output logic M2A,
+    output logic M2AB,
+    output logic R2A,
+    output logic R2AB,
 
     // DIGITAL INTERFACE: MAC
     output logic [numCols-1:0][numAdcBits-1:0] adc_out_o,
-    input logic mac_en_i,
-    input logic [numRows-1:0] data_p_i,
-    input logic [numRows-1:0] data_n_i,
+    input mac_en_i,
+    input [numRows-1:0] data_p_i,
+    input [numRows-1:0] data_n_i,
     
     // DIGITAL INTERFACE: SRAM
-    input logic rq_wr_i, // write or read request
-    input logic rq_valid_i, // request is valid
+    input rq_wr_i, // write or read request
+    input rq_valid_i, // request is valid
     output logic rq_ready_o, // if ready and valid, request is taken
     output logic rd_valid_o, // once asserted, rdata is valid for read requests
     output logic [numCols-1:0] rd_data_o,
-    input logic [numCols-1:0] wr_data_i,
-    input logic [$clog2(numRows)-1:0] addr_i
+    input [numCols-1:0] wr_data_i,
+    input [$clog2(numRows)-1:0] addr_i
 );
 
 // SWITCH MATRIX SELECTS
@@ -76,23 +76,26 @@ end
 // SRAM WRITES AND READS 
 logic wc_write;
 logic wc_read;
+logic wd_done;
 always_comb begin : WcSignals
     wc_write = rq_wr_i && rq_valid_i;
     wc_read = ~rq_wr_i && rq_valid_i;
-    WR_DATA = wr_data_i;
 end
 wr_controller #(
     .numRows                (128),
-    .numCols                (1)
-) u_wr_controller(
+    .numCols                (8)
+) u_wr_controller (
     .clk                    (clk),
     .nrst                   (nrst),
 
     .write_i                (wc_write),    
     .read_i                 (wc_read),     
     .addr_i                 (addr_i),     
-    .done                   (rd_valid_o),  
+    .done                   (wc_done),  
     .ready                  (rq_ready_o), 
+
+    .wr_data_i              (wr_data_i),
+    .wr_data_q              (WR_DATA),
     
     // SRAM interface signals
     .c3sram_w2b_o          (WRITE),
@@ -104,8 +107,10 @@ wr_controller #(
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
         rd_data_o <= 0;
+        rd_valid_o <= 0;
     end else begin
         rd_data_o <= SA_OUT;
+        rd_valid_o <= wc_done;
     end
 end
 
@@ -126,7 +131,7 @@ always_comb begin : AdcInterface
     R2AB = ~R2A;
 end
 always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
-    if (!nrst) begin
+    if (!nrst) begin 
         adc_out_o <= 0;
     end else begin
         adc_out_o <= adc_out_encoded;

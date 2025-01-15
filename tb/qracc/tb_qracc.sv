@@ -33,18 +33,18 @@ logic [numRows-1:0] vrst_sel_int;
 logic [numRows-1:0] vrst_selb_int;
 logic [numRows-1:0] wl_int;
 logic [numCols-1:0] sa_out_int;
-logic [numCols-1:0] pch_int;
+logic pch_int;
 logic [numCols-1:0] wr_data_int;
-logic [numCols-1:0] write_int;
+logic write_int;
 logic [numCols-1:0] csel_int;
-logic [numCols-1:0] saen_int;
+logic saen_int;
 logic [numCols-1:0][(2**numAdcBits)-1:0] adc_out_int;
-logic [numCols-1:0] nf_int;
-logic [numCols-1:0] nfb_int;
-logic [numCols-1:0] m2a_int;
-logic [numCols-1:0] m2ab_int;
-logic [numCols-1:0] r2a_int;
-logic [numCols-1:0] r2ab_int;
+logic nf_int;
+logic nfb_int;
+logic m2a_int;
+logic m2ab_int;
+logic r2a_int;
+logic r2ab_int;
 
 logic [numCfgBits-1:0] n_input_bits_cfg;
 logic [numCfgBits-1:0] n_adc_bits_cfg;
@@ -131,10 +131,10 @@ task sram_write(
     // set write request
     rq_wr = 1;
     rq_valid = 1;
-    $write("SRAM WAITING TO WRITE ADDR: %d, DATA: %d... ", t_addr, wr_data);
+    $write("SRAM WRITE @ %d, DATA: %d... ", t_addr, wr_data);
     while (!rq_ready) #(CLK_PERIOD);
     #(CLK_PERIOD);
-    $display("SUCCESSFUL");
+    $display("GD");
     // set valid
     rq_valid = 0;
 endtask
@@ -147,14 +147,14 @@ task sram_read(
     // set write request
     rq_wr = 0;
     rq_valid = 1;
-    $write("SRAM WAITING FOR READ REQUEST @ ADDR: %d,", t_addr);
+    $write("SRAM READ @ %d,", t_addr);
     while (!rq_ready) #(CLK_PERIOD);
     #(CLK_PERIOD);
     // set valid
     rq_valid = 0;
-    $write("WAITING... ");
+    $write("...");
     while (!rd_valid) #(CLK_PERIOD);
-    $display("SUCCESSFUL. DATA: %d", rd_data);
+    $display("DATA: %d", rd_data);
 endtask
 
 ts_qracc #(
@@ -202,14 +202,14 @@ end
 // Waveform dumping
 `ifdef SYNOPSYS
 initial begin
-    $vcdplusfile("tb_output_scaler.vpd");
+    $vcdplusfile("tb_qracc.vpd");
     $vcdpluson();
     $vcdplusmemon();
     $dumpvars(0);
 end
 `endif
 initial begin
-    $dumpfile("tb_output_scaler.vcd");
+    $dumpfile("tb_qracc.vcd");
     $dumpvars(0);
 end
 
@@ -259,11 +259,11 @@ initial begin
     $display("Reading weights...");
     $display("Writing into SRAM...");
     for (int i = 0; i < numRows; i=i+1) begin
-        $fscanf(f_w, "%d", scan_data);
-        sram_write( 
-            .t_addr(i),
-            .t_data(scan_data)
-        );
+        if ($fscanf(f_w, "%d", scan_data))
+            sram_write( 
+                .t_addr(i),
+                .t_data(scan_data)
+            );
     end
     $display("Reading from SRAM...");
     for (int i = 0; i < numRows; i++) begin
@@ -280,8 +280,8 @@ initial begin
 
     $display("Reading X...");
     for (int i = 0; i < numRows; i++) begin
-        $fscanf(f_x, "%d", scan_data);
-        twos_to_bipolar(scan_data, x_data_p[i], x_data_n[i]);
+        if($fscanf(f_x, "%d", scan_data))
+            twos_to_bipolar(scan_data, x_data_p[i], x_data_n[i]);
     end
 
     $display("Performing MACs...");
