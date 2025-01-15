@@ -1,0 +1,3 @@
+[submodule "tests/stim_gen/hwacc_design_garage"]
+	path = hwacc_design_garage
+	url = git@github.com:Lawrence-lugs/hwacc_design_garage.git
