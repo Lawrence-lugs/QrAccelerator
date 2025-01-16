@@ -4,7 +4,12 @@
 
 module tb_qracc #(
     parameter SRAM_ROWS = 128,
-    parameter SRAM_COLS = 8
+    parameter SRAM_COLS = 8,
+    parameter xBits = 2, // Ternary bits + 1
+    parameter xBatches = 40,
+    parameter numAdcBits = 4,
+    parameter numCfgBits = 8,
+    parameter macMode = 1
 ) ( 
     
 );
@@ -15,10 +20,6 @@ module tb_qracc #(
 
 parameter numRows = SRAM_ROWS;
 parameter numCols = SRAM_COLS;
-parameter numAdcBits = 4;
-parameter numCfgBits = 8;
-parameter xBits = 4;
-
 localparam CLK_PERIOD = 20;
 
 /////////////
@@ -38,7 +39,7 @@ logic [numCols-1:0] wr_data_int;
 logic write_int;
 logic [numCols-1:0] csel_int;
 logic saen_int;
-logic [numCols-1:0][(2**numAdcBits)-1:0] adc_out_int;
+logic [numCols*(2**numAdcBits)-1:0] adc_out_int;
 logic nf_int;
 logic nfb_int;
 logic m2a_int;
@@ -48,6 +49,7 @@ logic r2ab_int;
 
 logic [numCfgBits-1:0] n_input_bits_cfg;
 logic [numCfgBits-1:0] n_adc_bits_cfg;
+logic mode_cfg;
 
 logic clk;
 logic nrst;
@@ -55,8 +57,20 @@ logic [numCols-1:0][numAdcBits-1:0] adc_out;
 logic [numCols-1:0] sa_out;
 logic [numRows-1:0] data_p_i;
 logic [numRows-1:0] data_n_i;
+logic signed [numRows-1:0][xBits-1:0] x_data;
 
 integer i;
+
+typedef enum logic [3:0] { 
+    P_INIT,
+    P_WRITE_WEIGHTS,
+    P_READ_WEIGHTS,
+    P_READ_X,
+    P_PERFORM_MACS,
+    P_DONE
+} test_phase_t;
+
+test_phase_t test_phase;
 
 logic mac_en;
 logic rq_wr;
@@ -83,6 +97,7 @@ qr_acc_wrapper #(
     // CONFIG
     .n_input_bits_cfg(n_input_bits_cfg),
     .n_adc_bits_cfg(n_adc_bits_cfg),
+    .binary_cfg(mode_cfg),
     // ANALOG INTERFACE : SWITCH MATRIX
     .VDR_SEL(vdr_sel_int),
     .VDR_SELB(vdr_selb_int),
@@ -160,7 +175,7 @@ endtask
 ts_qracc #(
     .numRows(SRAM_ROWS),
     .numCols(SRAM_COLS),
-    .numAdcBits(4)
+    .numAdcBits(numAdcBits)
 ) u_ts_qracc (
     // ANALOG INTERFACE : SWITCH MATRIX
     .VDR_SEL(vdr_sel_int),
@@ -189,9 +204,22 @@ ts_qracc #(
     .CLK(clk)
 );
 
+twos_to_bipolar #(
+    .inBits(2),
+    .numLanes(numRows)
+) u_twos_to_bipolar (
+    .twos(x_data),
+    .bipolar_p(data_p_i),
+    .bipolar_n(data_n_i)
+);
+
 //////////////////////
 // TESTBENCH THINGS
 //////////////////////
+
+logic [numCols-1:0] flag;
+int f_w,f_x,f_wx,f_adc_out;
+int scan_data; 
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
@@ -213,37 +241,36 @@ initial begin
     $dumpvars(0);
 end
 
-task twos_to_bipolar(
-    input logic [xBits-1:0] twos,
-    output logic [xBits-1:0] pos,
-    output logic [xBits-1:0] neg
-);
-    if (twos[xBits-1]) begin
-        pos = -twos;
-        neg = twos;
-    end else begin
-        pos = twos;
-        neg = -twos;
+task print_adc_out;
+    $write("[");
+    for (int k = 0; k < numCols; k++) begin
+        $write("%d,", $signed(adc_out[k]));
     end
+    $display("]");
 endtask
 
-logic [numCols-1:0] flag;
-int f_w,f_x,f_wx;
-int scan_data; 
-logic [xBits-1:0] x_data_p [numRows];
-logic [xBits-1:0] x_data_n [numRows];
+task save_adc_out;
+    for (int k = 0; k < numCols; k++) begin
+        $fwrite(f_adc_out, "%d ", $signed(adc_out[k]));
+    end
+    $fwrite(f_adc_out, "\n");
+endtask
+
+static string path = "../tb/qracc/inputs/";
 
 initial begin
 
+    test_phase = P_INIT;
+
+    mode_cfg = 0;
+
     // Open files        
-    static string path = "../tb/qracc/inputs/";
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
     f_wx = $fopen({path, "wx_4b.txt"}, "r");
+    f_adc_out = $fopen({path, "adc_out.txt"}, "w");
 
     // Initialize
-    data_n_i = -1;
-    data_p_i = 0;
     flag = 0;
     nrst = 0;
     wr_data = 0;
@@ -255,6 +282,7 @@ initial begin
     #(CLK_PERIOD*2);
 
     // Read weights
+    test_phase = P_WRITE_WEIGHTS;
 
     $display("Reading weights...");
     $display("Writing into SRAM...");
@@ -265,33 +293,41 @@ initial begin
                 .t_data(scan_data)
             );
     end
+
+    `ifndef SKIPREAD 
+    test_phase = P_READ_WEIGHTS;
     $display("Reading from SRAM...");
     for (int i = 0; i < numRows; i++) begin
         sram_read( 
             .t_addr(i)
         );
     end
+    `endif
     
     // Allow initial voltage transients to settle
     
     $display("Activating MAC...");
+    test_phase = P_READ_X;
     mac_en = 1;
     #(CLK_PERIOD*5);
 
     $display("Reading X...");
-    for (int i = 0; i < numRows; i++) begin
-        if($fscanf(f_x, "%d", scan_data))
-            twos_to_bipolar(scan_data, x_data_p[i], x_data_n[i]);
-    end
+    #(CLK_PERIOD);
+    // for(int j = 0; j < numRows; j++) begin
+    //     $display("X[%d] = %d,(%d,%d)", j, $signed(x_data[j]), data_p_i[j], data_n_i[j]);
+    // end
 
+    test_phase = P_PERFORM_MACS;
     $display("Performing MACs...");
-    for (int i = 0; i < xBits; i++) begin
-        for (int j = 0; j < numRows; j++) begin
-            data_n_i[j] = x_data_n[j][i];
-            data_p_i[j] = x_data_p[j][i];
+    for (int h = 0; h < xBatches; h++) begin
+        for (int i = 0; i < numRows; i++) begin
+            $fscanf(f_x, "%d", x_data[i]);
         end
-        $display("[MAC] ADC_OUT: %d", adc_out);
-        #(CLK_PERIOD);
+        for (int i = 0; i < xBits-1; i++) begin
+            #(CLK_PERIOD);
+            print_adc_out();
+            save_adc_out();
+        end
     end
 
     #(CLK_PERIOD*2);

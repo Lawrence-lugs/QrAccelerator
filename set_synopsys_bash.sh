@@ -1,0 +1,1 @@
+/home/lquizon/scripts/set_synopsys_bash.sh

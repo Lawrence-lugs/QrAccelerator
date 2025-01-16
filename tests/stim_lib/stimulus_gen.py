@@ -17,12 +17,13 @@ def generate_qracc_inputs(
     wShape = (wDimX, wDimY)
     xShape = (xBatches, wDimY)
 
+    # UPDATE: Corrected range for x
     if weight_mode=='binary':
         w = np.random.randint(0,2, wShape) # Binary Weights
-        x = np.random.randint(-(2**(xTrits)), 2**(xTrits),xShape)
+        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),xShape)
     elif weight_mode=='bipolar':
         w = np.random.randint(0,2, wShape)*2-1 # Bipolar Weights
-        x = np.random.randint(-(2**(xTrits)), 2**(xTrits),xShape)
+        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),xShape)
     else:
         raise ValueError('Invalid weight_mode')
     wx = w @ x.T
@@ -30,4 +31,4 @@ def generate_qracc_inputs(
     wxBits = quant.get_array_bits(wx)
     wx_outBits = quant.saturating_clip(wx, inBits = wxBits, outBits = outBits)
 
-    return w, x, wx_outBits
+    return w, x, wx_outBits.T

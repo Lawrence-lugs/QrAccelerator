@@ -43,44 +43,4 @@ module ts_column #(
     input logic CLK
 );
 
-// SRAM modelling
-logic [numCols-1:0] mem [numRows];
-
-always_ff @( posedge CLK ) begin :  writeModel
-    if (PCH) begin
-        if (WRITE) begin
-            for (int i = 0; i < numRows; i++) begin
-                if (WL[i]) begin
-                    mem[i] <= WR_DATA;
-                end
-            end
-        end
-    end
-end
-// SA output is not registered
-always_comb begin : readModel
-    if (PCH && SAEN) begin
-        for (int i = 0; i < numRows; i++) begin
-            if (WL[i]) SA_OUT = mem[i];
-        end
-    end else begin
-        SA_OUT = 0;
-    end
-end
-
-// MAC modelling
-logic signed [31:0] mbl_value [numCols];
-logic signed [numCols-1:0][numAdcBits-1:0] adc_out;
-
-always_comb begin : toMBL
-    for (int j = 0; j < numCols; j++) begin
-        mbl_value[j] = 0;
-        for (int i = 0; i < numRows; i++) begin
-                mbl_value[j] += VDR_SEL[i] * mem[i][j];
-        end
-        adc_out[j] = mbl_value[j][6 -: numAdcBits]; // some arbitrary 4-bit subset for now
-    end
-    ADC_OUT <= adc_out; // auto-flattens since it's a packed array
-end
-
 endmodule

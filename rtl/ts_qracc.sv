@@ -70,7 +70,7 @@ end
 
 // MAC modelling
 logic signed [31:0] mbl_value [numCols];
-logic signed [numCols-1:0][numAdcBits-1:0] adc_out;
+logic signed [numAdcBits-1:0] adc_out [numCols];
 logic signed [numCols-1:0][(2**numAdcBits)-1:0] comp_out;
 
 always_comb begin : toMBL
@@ -78,13 +78,16 @@ always_comb begin : toMBL
         mbl_value[j] = 0;
         for (int i = 0; i < numRows; i++) begin
                 mbl_value[j] += VDR_SEL[i] * mem[i][j];
+                mbl_value[j] -= VSS_SEL[i] * mem[i][j];
         end
-        adc_out[j] = mbl_value[j][6 -: numAdcBits]; // some arbitrary 4-bit subset for now
+        // $display("adc_out,mbl_value[%d]: %b,%b", j, mbl_value[j], adc_out[j]);
+        adc_out[j] = mbl_value[j][5-:numAdcBits]; // some arbitrary 4-bit subset for now
     end
     
+    // Decode the ADC output
     for (int j = 0; j < numCols; j++) begin
         for (int i = 0; i < (2**numAdcBits); i++) begin
-            comp_out[j][i] = (mbl_value[j] > i) ? 1 : 0;
+            comp_out[j][i] = ($signed(adc_out[j])+8 > i) ? 1 : 0;
         end
     end
 

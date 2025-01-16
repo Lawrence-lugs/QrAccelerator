@@ -21,13 +21,27 @@ sim_args = {'vcs':  [
             ]
 }
 
-def test_tb_qracc(simulator='xrun'):
-
+def test_tb_qracc(
+    simulator='vcs',
+    tolerance = 0.1,
+    wDimX = 32, #nColumns
+    wDimY = 128, #nRows
+    xBatches = 50,
+    xTrits = 1,
+    outBits = 4,
+    seed = 0,
+    weight_mode = 'binary',
+    rmse_limit = 0.1,
+    run = True # Set to False to skip RTL simulation
+):
+    mac_mode = 1 if weight_mode == 'binary' else 0
+  
     package_list = []
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
+        '../rtl/twos_to_bipolar.sv'
     ]
     tb_name = 'tb_qracc'
     tb_path = 'qracc'
@@ -36,20 +50,30 @@ def test_tb_qracc(simulator='xrun'):
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
+
+    parameter_list = [
+        f'SRAM_ROWS={wDimY}',
+        f'SRAM_COLS={wDimX}',
+        f'xBits={xTrits+1}',
+        f'xBatches={xBatches}',
+        f'numAdcBits={outBits}',
+        f'macMode={mac_mode}'
+    ]
+    
     w,x,wx_outBits = generate_qracc_inputs(
-        wDimX = 8, #nColumns
-        wDimY = 128, #nRows
-        xBatches = 50,
-        xTrits = 4,
-        outBits = 4,
-        seed = 0,
-        weight_mode = 'binary'
+        wDimX = wDimX,
+        wDimY = wDimY,
+        xBatches = xBatches,
+        xTrits = xTrits,
+        outBits = outBits,
+        seed = seed,
+        weight_mode = weight_mode
     )
 
     wint = q.binary_array_to_int(w)
 
     np.savetxt(f'{stimulus_output_path}/w.txt',wint,fmt='%d')
-    np.savetxt(f'{stimulus_output_path}/x.txt',x.T,fmt='%d')
+    np.savetxt(f'{stimulus_output_path}/x.txt',x,fmt='%d')
     np.savetxt(f'{stimulus_output_path}/wx_4b.txt',wx_outBits,fmt='%d')
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
@@ -58,23 +82,43 @@ def test_tb_qracc(simulator='xrun'):
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
+    if simulator == 'vcs':
+        parameter_list = [f'-pvalue+{tb_name}.'+p for p in parameter_list]
+    else:
+        parameter_list = []
+
     # Simulation
 
-    with open(log_file,'w+') as f:
-
-        sim = subprocess.Popen([
+    command = [
             simulator,
             *package_list,
             tb_file
-        ] + sim_args[simulator] + rtl_file_list, 
-        shell=False,
-        cwd='./sims',
-        stdout=f
-        )
+        ] + sim_args[simulator] + rtl_file_list + parameter_list
 
-    assert not sim.wait(), get_log_tail(log_file,10)
+    print(command)
+
+    if run:
+        with open(log_file,'w+') as f:
+            sim = subprocess.Popen([
+                simulator,
+                *package_list,
+                tb_file
+            ] + sim_args[simulator] + rtl_file_list + parameter_list, 
+            shell=False,
+            cwd='./sims',
+            stdout=f
+            )
+        assert not sim.wait(), get_log_tail(log_file,10)
 
     # Post-simulation
+
+    adc_out = np.loadtxt(f'{stimulus_output_path}/adc_out.txt',dtype=int)
+    exp_out = wx_outBits.T[::-1].T
+
+    # Compute RMSE
+    rmse = np.sqrt(np.mean((adc_out - exp_out)**2))
+    print(f'RMSE:{rmse}')
+    assert rmse < rmse_limit, f'RMSE: {rmse}'
 
     with open(log_file,'r+') as f:
         f.seek(0)

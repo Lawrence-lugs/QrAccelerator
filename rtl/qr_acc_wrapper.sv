@@ -4,7 +4,7 @@
 
 module qr_acc_wrapper #(
     parameter numRows = 128,
-    parameter numCols = 1,
+    parameter numCols = 8,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8
 ) ( 
@@ -14,6 +14,7 @@ module qr_acc_wrapper #(
     // CONFIG
     input [numCfgBits-1:0] n_input_bits_cfg,
     input [numCfgBits-1:0] n_adc_bits_cfg,
+    input binary_cfg, // binary or bipolar MAC
 
     // ANALOG INTERFACE : SWITCH MATRIX
     output logic [numRows-1:0] VDR_SEL,
@@ -82,8 +83,8 @@ always_comb begin : WcSignals
     wc_read = ~rq_wr_i && rq_valid_i;
 end
 wr_controller #(
-    .numRows                (128),
-    .numCols                (8)
+    .numRows                (numRows),
+    .numCols                (numCols)
 ) u_wr_controller (
     .clk                    (clk),
     .nrst                   (nrst),
