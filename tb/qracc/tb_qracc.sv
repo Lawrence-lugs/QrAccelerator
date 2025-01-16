@@ -4,9 +4,9 @@
 
 module tb_qracc #(
     parameter SRAM_ROWS = 128,
-    parameter SRAM_COLS = 8,
+    parameter SRAM_COLS = 32,
     parameter xBits = 2, // Ternary bits + 1
-    parameter xBatches = 40,
+    parameter xBatches = 50,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
     parameter macMode = 1
@@ -256,7 +256,8 @@ task save_adc_out;
     $fwrite(f_adc_out, "\n");
 endtask
 
-static string path = "../tb/qracc/inputs/";
+// yes my directory is visible, but i do not care.
+static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc/inputs/";
 
 initial begin
 

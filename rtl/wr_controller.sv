@@ -115,7 +115,8 @@ localparam nprechargeWaveWr = 4'b1111;
 localparam targetWlWaveWr = 4'b0110;
 
 localparam saenWaveRd = 4'b0010;
-localparam cselWaveRd = 4'b1010;
+// localparam cselWaveRd = 4'b1010;
+localparam cselWaveRd = 4'b0000;
 localparam nprechargeWaveRd = 4'b1110;
 localparam targetWlWaveRd = 4'b0110;
 

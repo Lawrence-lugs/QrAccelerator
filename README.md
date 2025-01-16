@@ -4,9 +4,20 @@ This repository contains the digital design for a 22nm Charge-Redistribution In-
 
 For now, has a 128x128 IMC subarray with a 4-bit ADC. See [No citation yet] for the accelerator design.
 
+### Running Tests
+
+The following command will test all RTL files:
+`pytest tests`
+
+You should run a test before moving on to Cadence AMS simulations to create the necessary input files.
+
+Tests are executed using Pytest. The test infrastructure:
+1. Compiles and runs SystemVerilog testbenches using Cadence xrun
+2. Generates log files in `tests/logs/`
+3. Verifies test success by checking for "TEST SUCCESS" in the output
 ## Testing Infrastructure
 
-The repository includes a comprehensive testing setup for the QR Accelerator design:
+The repository includes a comprehensive testing setup for the QR Accelerator design
 
 ### Test Files
 - `tb_column.sv`: SystemVerilog testbench for testing the column-level functionality
@@ -19,11 +30,6 @@ The repository includes a comprehensive testing setup for the QR Accelerator des
   - MAC (Multiply-Accumulate) interface
   - SRAM interface with read/write capabilities
 
-### Running Tests
-Tests can be executed using Pytest. The test infrastructure:
-1. Compiles and runs SystemVerilog testbenches using Cadence xrun
-2. Generates log files in `tests/logs/`
-3. Verifies test success by checking for "TEST SUCCESS" in the output
 
 ```python
 # Run all tests of all testbenches

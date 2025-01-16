@@ -42,7 +42,10 @@ def pytest_generate_tests(metafunc):
                 raise ValueError(
                     f'Invalid simulator: {metafunc.config.getoption("simulator")}. Valid simulators: {valid_simulators}'
                 )
-        metafunc.parametrize("simulator", metafunc.config.getoption("simulator"))
+        if metafunc.config.getoption("simulator") == []:
+            metafunc.parametrize("simulator", ['vcs'])
+        else:
+            metafunc.parametrize("simulator", metafunc.config.getoption("simulator"))
 
     if 'mode' in metafunc.fixturenames:
         if 'all' in metafunc.config.getoption("mode"):

@@ -1,1 +1,0 @@
-../../../c3sram_periphery/rtl/c3sram_mac_wrap.sv

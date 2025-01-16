@@ -22,8 +22,7 @@ sim_args = {'vcs':  [
 }
 
 def test_tb_qracc(
-    simulator='vcs',
-    tolerance = 0.1,
+    simulator,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 50,
