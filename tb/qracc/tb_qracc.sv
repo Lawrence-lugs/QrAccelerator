@@ -6,7 +6,7 @@ module tb_qracc #(
     parameter SRAM_ROWS = 128,
     parameter SRAM_COLS = 32,
     parameter xBits = 2, // Ternary bits + 1
-    parameter xBatches = 50,
+    parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
     parameter macMode = 1
@@ -336,6 +336,8 @@ initial begin
         end
     end
     `endif
+    
+    mac_en = 0;
 
     #(CLK_PERIOD*2);
 

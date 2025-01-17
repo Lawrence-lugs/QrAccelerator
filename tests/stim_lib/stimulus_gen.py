@@ -10,10 +10,13 @@ def generate_qracc_inputs(
     outBits = 4,
     seed = 0,
     weight_mode = 'bipolar',
-    col_symmetric = False
+    col_symmetric = False,
+    rangeBits = None,
+    x_repeat = False
 ):
     '''
     Generates integer weights and inputs, including clipped integer reference outputs.
+
     Parameters:
     wDimX : int -- Number of columns
     wDimY : int -- Number of rows
@@ -48,10 +51,20 @@ def generate_qracc_inputs(
         else:
             raise ValueError('Invalid weight_mode')
 
-    x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),xShape)
+    if x_repeat:
+        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),wDimY)
+        x = x.repeat(xBatches).reshape(wDimY, xBatches).T
+    else:
+        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),xShape)
     wx = w @ x.T
 
-    wxBits = quant.get_array_bits(wx)
+    # Get_array_bits is incorrect. The real bit count depends on the range of the input data
+    # wxBits = quant.get_array_bits(wx)
+
+    if rangeBits is None:
+        wxBits = np.log2(wDimY) + 1 # +1 because of bipolar rep (-128,128) vs (0,128)
+    else:
+        wxBits = rangeBits
     wx_outBits = quant.saturating_clip(wx, inBits = wxBits, outBits = outBits)
 
     return w, x, wx_outBits.T

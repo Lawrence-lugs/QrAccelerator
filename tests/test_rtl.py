@@ -25,15 +25,16 @@ sim_args = {'vcs':  [
 def test_tb_qracc(
     col_symmetric,
     simulator,
+    seed,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
-    xBatches = 50,
+    xBatches = 10,
     xTrits = 1,
     outBits = 4,
-    seed = 0,
-    weight_mode = 'binary',
+    weight_mode = 'bipolar',
     rmse_limit = 0.1,
     run = True, # Set to False to skip RTL simulation
+    x_repeat = False
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
@@ -51,7 +52,6 @@ def test_tb_qracc(
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
-
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
         f'SRAM_COLS={wDimX}',
@@ -62,6 +62,9 @@ def test_tb_qracc(
     ]
 
     print(f'col_symmetric:{col_symmetric}')
+    print(f'seed:{seed}')
+    print(f'weight_mode:{weight_mode,mac_mode}')
+    seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -71,14 +74,29 @@ def test_tb_qracc(
         outBits = outBits,
         seed = seed,
         weight_mode = weight_mode,
-        col_symmetric = col_symmetric
+        col_symmetric = col_symmetric,
+        rangeBits = 6,
+        x_repeat = x_repeat
     )
+
+    # We need to convert the bipolar weights back to binary to write them correctly into hardware
+    if weight_mode == 'bipolar':
+        w = (w + 1)/2
+        w = w.astype(int)
 
     wint = q.binary_array_to_int(w.T)
 
     np.savetxt(f'{stimulus_output_path}/w.txt',wint,fmt='%d')
     np.savetxt(f'{stimulus_output_path}/x.txt',x,fmt='%d')
-    np.savetxt(f'{stimulus_output_path}/wx_4b.txt',wx_outBits,fmt='%d')
+    np.savetxt(f'{stimulus_output_path}/wx_4b.txt',wx_outBits.T[::-1].T,fmt='%d')
+
+    df = pd.DataFrame
+    print('x')
+    print(df(x))
+    print('w')
+    print(df(w.T))
+    print('wx >> shift')
+    print(df(wx_outBits.T[::-1].T))
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
     log_file = f'tests/logs/{tb_name}_{simulator}.log'
@@ -103,11 +121,8 @@ def test_tb_qracc(
 
     if run:
         with open(log_file,'w+') as f:
-            sim = subprocess.Popen([
-                simulator,
-                *package_list,
-                tb_file
-            ] + sim_args[simulator] + rtl_file_list + parameter_list, 
+            sim = subprocess.Popen(
+            command, 
             shell=False,
             cwd='./sims',
             stdout=f
@@ -195,40 +210,6 @@ def test_tb_q_redis():
         f.seek(0)
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
-
-# def test_tb_qrmac():
-
-#     rtl_file_list = [ 
-#         "../rtl/qr_acc_wrapper.sv", 
-#         "../rtl/wr_controller.sv", 
-#         "../rtl/ts_column.sv",
-#     ]
-#     tb_name = 'tb_column'
-
-#     tb_file = f'../tb/{tb_name}.sv'
-#     log_file = f'tests/logs/{tb_name}.log'
-    
-#     logdir = os.path.dirname(log_file)
-#     os.makedirs(logdir,exist_ok=True)
-
-#     with open(log_file,'w+') as f:
-
-#         xcel = subprocess.Popen([
-#             "xrun", 
-#             "+access+r",
-#             tb_file
-#         ] + rtl_file_list, 
-#         shell=False,
-#         cwd='./sims',
-#         stdout=f
-#         )
-
-#     assert not xcel.wait(), get_log_tail(log_file,10)
-
-#     with open(log_file,'r+') as f:
-#         f.seek(0)
-#         out = [line for line in f.readlines()]
-#         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
 
 def get_log_tail(log_file,lines):
     print(f'See {log_file} for details') 

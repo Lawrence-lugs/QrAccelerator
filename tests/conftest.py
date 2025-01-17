@@ -30,7 +30,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--seed",
         action="append",
-        default=[],
+        default=[0],
         help="seed for random number generator",
     )
     parser.addoption(
@@ -63,7 +63,7 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize("mode", metafunc.config.getoption("mode"))
 
     if 'seed' in metafunc.fixturenames:
-        metafunc.parametrize("seed", metafunc.config.getoption("seed")[0])
+        metafunc.parametrize("seed", metafunc.config.getoption("seed"))
 
     if 'synth' in metafunc.fixturenames:
         metafunc.parametrize("synth", metafunc.config.getoption("synth"))

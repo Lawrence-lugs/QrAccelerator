@@ -78,8 +78,17 @@ always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
         mbl_value[j] = 0;
         for (int i = 0; i < numRows; i++) begin
-                mbl_value[j] += VDR_SEL[i] * mem[i][j];
-                mbl_value[j] -= VSS_SEL[i] * mem[i][j];
+            // BINARY MODE
+            // mbl_value[j] += VDR_SEL[i] * mem[i][j];
+            // mbl_value[j] -= VSS_SEL[i] * mem[i][j];
+            // BIPOLAR MODE
+            if(mem[i][j] == 1) begin
+                mbl_value[j] += VDR_SEL[i];
+                mbl_value[j] -= VSS_SEL[i];
+            end else begin 
+                mbl_value[j] -= VDR_SEL[i];
+                mbl_value[j] += VSS_SEL[i];
+            end
         end
         // $display("adc_out,mbl_value[%d]: %b,%b", j, mbl_value[j], adc_out[j]);
         adc_out[j] = mbl_value[j][5-:numAdcBits]; // some arbitrary 4-bit subset for now
