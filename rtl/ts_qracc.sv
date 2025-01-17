@@ -10,7 +10,8 @@ module ts_qracc #(
     // But so that we also don't need to set values when synthesizing
     parameter numRows = 128,
     parameter numCols = 8,
-    parameter numAdcBits = 4
+    parameter numAdcBits = 4,
+    localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (
     // ANALOG INTERFACE : SWITCH MATRIX
     input logic [numRows-1:0] VDR_SEL,
@@ -30,7 +31,7 @@ module ts_qracc #(
     input logic SAEN,
 
     // ANALOG INTERFACE : ADC
-    output logic [(2**numAdcBits)*numCols-1:0] ADC_OUT,
+    output logic [compCount*numCols-1:0] ADC_OUT,
     input logic NF,
     input logic NFB,
     input logic M2A,
@@ -86,7 +87,7 @@ always_comb begin : toMBL
     
     // Decode the ADC output
     for (int j = 0; j < numCols; j++) begin
-        for (int i = 0; i < (2**numAdcBits); i++) begin
+        for (int i = 0; i < compCount; i++) begin
             comp_out[j][i] = ($signed(adc_out[j])+8 > i) ? 1 : 0;
         end
     end

@@ -21,6 +21,7 @@ module tb_qracc #(
 parameter numRows = SRAM_ROWS;
 parameter numCols = SRAM_COLS;
 localparam CLK_PERIOD = 20;
+localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 
 /////////////
 // SIGNALS
@@ -39,7 +40,7 @@ logic [numCols-1:0] wr_data_int;
 logic write_int;
 logic [numCols-1:0] csel_int;
 logic saen_int;
-logic [numCols*(2**numAdcBits)-1:0] adc_out_int;
+logic [numCols*compCount-1:0] adc_out_int;
 logic nf_int;
 logic nfb_int;
 logic m2a_int;

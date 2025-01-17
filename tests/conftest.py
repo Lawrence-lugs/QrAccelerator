@@ -16,6 +16,12 @@ def pytest_addoption(parser):
         help="performs synthesis during tests",
     )
     parser.addoption(
+        "--col_symmetric",
+        action="store_true",
+        default=False,
+        help="all columns are tested the same",
+    )
+    parser.addoption(
         "--postsynth",
         action="store_true",
         default=False,
@@ -46,6 +52,9 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize("simulator", ['vcs'])
         else:
             metafunc.parametrize("simulator", metafunc.config.getoption("simulator"))
+
+    if 'col_symmetric' in metafunc.fixturenames:
+        metafunc.parametrize("col_symmetric", [metafunc.config.getoption("col_symmetric")])
 
     if 'mode' in metafunc.fixturenames:
         if 'all' in metafunc.config.getoption("mode"):

@@ -22,6 +22,7 @@ sim_args = {'vcs':  [
 }
 
 def test_tb_qracc(
+    col_symmetric,
     simulator,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
@@ -31,7 +32,7 @@ def test_tb_qracc(
     seed = 0,
     weight_mode = 'binary',
     rmse_limit = 0.1,
-    run = True # Set to False to skip RTL simulation
+    run = True, # Set to False to skip RTL simulation
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
@@ -58,6 +59,8 @@ def test_tb_qracc(
         f'numAdcBits={outBits}',
         f'macMode={mac_mode}'
     ]
+
+    print(f'col_symmetric:{col_symmetric}')
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -66,7 +69,8 @@ def test_tb_qracc(
         xTrits = xTrits,
         outBits = outBits,
         seed = seed,
-        weight_mode = weight_mode
+        weight_mode = weight_mode,
+        col_symmetric = col_symmetric
     )
 
     wint = q.binary_array_to_int(w.T)

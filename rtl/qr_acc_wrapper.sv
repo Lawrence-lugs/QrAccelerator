@@ -4,9 +4,10 @@
 
 module qr_acc_wrapper #(
     parameter numRows = 128,
-    parameter numCols = 8,
+    parameter numCols = 32,
     parameter numAdcBits = 4,
-    parameter numCfgBits = 8
+    parameter numCfgBits = 8,
+    parameter compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) ( 
     input clk,
     input nrst,
@@ -34,7 +35,7 @@ module qr_acc_wrapper #(
     output logic SAEN,
 
     // ANALOG INTERFACE : ADC
-    input [numCols-1:0][(2**numAdcBits)-1:0] ADC_OUT, // comparator output pre-encoder
+    input [numCols-1:0][compCount-1:0] ADC_OUT, // comparator output pre-encoder
     output logic NF,
     output logic NFB,
     output logic M2A,
