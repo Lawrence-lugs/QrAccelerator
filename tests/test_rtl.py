@@ -69,7 +69,7 @@ def test_tb_qracc(
         weight_mode = weight_mode
     )
 
-    wint = q.binary_array_to_int(w)
+    wint = q.binary_array_to_int(w.T)
 
     np.savetxt(f'{stimulus_output_path}/w.txt',wint,fmt='%d')
     np.savetxt(f'{stimulus_output_path}/x.txt',x,fmt='%d')
@@ -112,6 +112,7 @@ def test_tb_qracc(
     # Post-simulation
 
     adc_out = np.loadtxt(f'{stimulus_output_path}/adc_out.txt',dtype=int)
+    np.savetxt(f'{stimulus_output_path}/adc_out_rtlsims.txt',adc_out,fmt='%d')
     exp_out = wx_outBits.T[::-1].T
 
     # Compute RMSE

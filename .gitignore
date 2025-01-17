@@ -11,3 +11,5 @@ tests/logs
 tests/scratch.py
 *__pycache__*
 DVEfiles
+ams
+psf

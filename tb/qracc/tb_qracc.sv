@@ -285,6 +285,7 @@ initial begin
     // Read weights
     test_phase = P_WRITE_WEIGHTS;
 
+    `ifndef SKIPWRITE
     $display("Reading weights...");
     $display("Writing into SRAM...");
     for (int i = 0; i < numRows; i=i+1) begin
@@ -294,6 +295,7 @@ initial begin
                 .t_data(scan_data)
             );
     end
+    `endif
 
     `ifndef SKIPREAD 
     test_phase = P_READ_WEIGHTS;
@@ -318,6 +320,7 @@ initial begin
     //     $display("X[%d] = %d,(%d,%d)", j, $signed(x_data[j]), data_p_i[j], data_n_i[j]);
     // end
 
+    `ifndef SKIPMACS
     test_phase = P_PERFORM_MACS;
     $display("Performing MACs...");
     for (int h = 0; h < xBatches; h++) begin
@@ -330,6 +333,7 @@ initial begin
             save_adc_out();
         end
     end
+    `endif
 
     #(CLK_PERIOD*2);
 
