@@ -4,6 +4,7 @@ import os
 import sys
 import hwacctools.quantization.quant as q
 import numpy as np
+import pandas as pd
 
 # simulator = 'xrun'
 sim_args = {'vcs':  [

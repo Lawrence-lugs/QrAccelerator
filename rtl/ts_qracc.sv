@@ -72,7 +72,7 @@ end
 // MAC modelling
 logic signed [31:0] mbl_value [numCols];
 logic signed [numAdcBits-1:0] adc_out [numCols];
-logic signed [numCols-1:0][(2**numAdcBits)-1:0] comp_out;
+logic signed [numCols-1:0][compCount-1:0] comp_out;
 
 always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin

@@ -43,4 +43,8 @@ python -m pytest tests/test_tb_column.py
 - Python 3.x
 - SystemVerilog compatible simulator
 
-# Basic Architecture
+### Latest Simulations:
+
+RTL-only vs AMS
+
+![alt](images/rtl_vs_ams.svg)

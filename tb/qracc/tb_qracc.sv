@@ -277,6 +277,7 @@ initial begin
     nrst = 0;
     wr_data = 0;
     mac_en = 0;
+    x_data = 0; // To prevent X propagation
     
     // Reset
     #(CLK_PERIOD*2);
@@ -284,9 +285,9 @@ initial begin
     #(CLK_PERIOD*2);
 
     // Read weights
-    test_phase = P_WRITE_WEIGHTS;
 
     `ifndef SKIPWRITE
+    test_phase = P_WRITE_WEIGHTS;
     $display("Reading weights...");
     $display("Writing into SRAM...");
     for (int i = 0; i < numRows; i=i+1) begin
