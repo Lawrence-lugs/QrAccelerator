@@ -2,6 +2,8 @@
 
 `timescale 1ns/1ps
 
+import qracc_pkg::*;
+
 module tb_qracc #(
     parameter SRAM_ROWS = 128,
     parameter SRAM_COLS = 32,
@@ -27,26 +29,8 @@ localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comp
 // SIGNALS
 /////////////
 
-logic [numRows-1:0] vdr_sel_int;
-logic [numRows-1:0] vdr_selb_int;
-logic [numRows-1:0] vss_sel_int;
-logic [numRows-1:0] vss_selb_int;
-logic [numRows-1:0] vrst_sel_int;
-logic [numRows-1:0] vrst_selb_int;
-logic [numRows-1:0] wl_int;
-logic [numCols-1:0] sa_out_int;
-logic pch_int;
-logic [numCols-1:0] wr_data_int;
-logic write_int;
-logic [numCols-1:0] csel_int;
-logic saen_int;
-logic [numCols*compCount-1:0] adc_out_int;
-logic nf_int;
-logic nfb_int;
-logic m2a_int;
-logic m2ab_int;
-logic r2a_int;
-logic r2ab_int;
+to_analog_t to_analog;
+from_analog_t from_analog;
 
 logic [numCfgBits-1:0] n_input_bits_cfg;
 logic [numCfgBits-1:0] n_adc_bits_cfg;
@@ -99,29 +83,10 @@ qr_acc_wrapper #(
     .n_input_bits_cfg(n_input_bits_cfg),
     .n_adc_bits_cfg(n_adc_bits_cfg),
     .binary_cfg(mode_cfg),
-    // ANALOG INTERFACE : SWITCH MATRIX
-    .VDR_SEL(vdr_sel_int),
-    .VDR_SELB(vdr_selb_int),
-    .VSS_SEL(vss_sel_int),
-    .VSS_SELB(vss_selb_int),
-    .VRST_SEL(vrst_sel_int),
-    .VRST_SELB(vrst_selb_int),
-    // ANALOG INTERFACE : SRAM
-    .SA_OUT(sa_out_int),
-    .WL(wl_int),
-    .PCH(pch_int),
-    .WR_DATA(wr_data_int),
-    .WRITE(write_int),
-    .CSEL(csel_int),
-    .SAEN(saen_int),
-    // ANALOG INTERFACE : ADC
-    .ADC_OUT(adc_out_int),
-    .NF(nf_int),
-    .NFB(nfb_int),
-    .M2A(m2a_int),
-    .M2AB(m2ab_int),
-    .R2A(r2a_int),
-    .R2AB(r2ab_int),
+    
+    .to_analog_o(to_analog),
+    .from_analog_i(from_analog),
+
     // DIGITAL INTERFACE: MAC
     .adc_out_o(adc_out),
     .mac_en_i(mac_en),
@@ -135,6 +100,89 @@ qr_acc_wrapper #(
     .rd_data_o(rd_data),
     .wr_data_i(wr_data),
     .addr_i(addr)
+);
+
+logic [numRows-1:0] VDR_SEL;
+logic [numRows-1:0] VDR_SELB;
+logic [numRows-1:0] VSS_SEL;
+logic [numRows-1:0] VSS_SELB;
+logic [numRows-1:0] VRST_SEL;
+logic [numRows-1:0] VRST_SELB;
+logic [numCols-1:0] SA_OUT;
+logic [numRows-1:0] WL;
+logic PCH;
+logic [numCols-1:0] WR_DATA;
+logic WRITE;
+logic [numCols-1:0] CSEL;
+logic SAEN;
+logic [compCount*numCols-1:0] ADC_OUT;
+logic NF;
+logic NFB;
+logic M2A;
+logic M2AB;
+logic R2A;
+logic R2AB;
+logic CLK;
+
+// We need to do this because
+// it's illegal to connect VAMS electrical to structs
+assign VDR_SEL = to_analog.VDR_SEL;
+assign VDR_SELB = to_analog.VDR_SELB;
+assign VSS_SEL = to_analog.VSS_SEL;
+assign VSS_SELB = to_analog.VSS_SELB;
+assign VRST_SEL = to_analog.VRST_SEL;
+assign VRST_SELB = to_analog.VRST_SELB;
+assign from_analog.SA_OUT = SA_OUT;
+assign WL = to_analog.WL;
+assign PCH = to_analog.PCH;
+assign WR_DATA = to_analog.WR_DATA;
+assign WRITE = to_analog.WRITE;
+assign CSEL = to_analog.CSEL;
+assign SAEN = to_analog.SAEN;
+assign from_analog.ADC_OUT = ADC_OUT;
+assign NF = to_analog.NF;
+assign NFB = to_analog.NFB;
+assign M2A = to_analog.M2A;
+assign M2AB = to_analog.M2AB;
+assign R2A = to_analog.R2A;
+assign R2AB = to_analog.R2AB;
+assign CLK = to_analog.CLK;
+
+ts_qracc #(
+    .numRows(SRAM_ROWS),
+    .numCols(SRAM_COLS),
+    .numAdcBits(numAdcBits)
+) u_ts_qracc (
+    .VDR_SEL(VDR_SEL),
+    .VDR_SELB(VDR_SELB), 
+    .VSS_SEL(VSS_SEL),
+    .VSS_SELB(VSS_SELB),
+    .VRST_SEL(VRST_SEL),
+    .VRST_SELB(VRST_SELB),
+    .SA_OUT(SA_OUT),
+    .WL(WL),
+    .PCH(PCH),
+    .WR_DATA(WR_DATA),
+    .WRITE(WRITE),
+    .CSEL(CSEL),
+    .SAEN(SAEN),
+    .ADC_OUT(ADC_OUT),
+    .NF(NF),
+    .NFB(NFB),
+    .M2A(M2A),
+    .M2AB(M2AB),
+    .R2A(R2A),
+    .R2AB(R2AB),
+    .CLK(clk)
+);
+
+twos_to_bipolar #(
+    .inBits(2),
+    .numLanes(numRows)
+) u_twos_to_bipolar (
+    .twos(x_data),
+    .bipolar_p(data_p_i),
+    .bipolar_n(data_n_i)
 );
 
 task sram_write(
@@ -172,47 +220,6 @@ task sram_read(
     while (!rd_valid) #(CLK_PERIOD);
     $display("DATA: %d", rd_data);
 endtask
-
-ts_qracc #(
-    .numRows(SRAM_ROWS),
-    .numCols(SRAM_COLS),
-    .numAdcBits(numAdcBits)
-) u_ts_qracc (
-    // ANALOG INTERFACE : SWITCH MATRIX
-    .VDR_SEL(vdr_sel_int),
-    .VDR_SELB(vdr_selb_int),
-    .VSS_SEL(vss_sel_int),
-    .VSS_SELB(vss_selb_int),
-    .VRST_SEL(vrst_sel_int),
-    .VRST_SELB(vrst_selb_int),
-    // ANALOG INTERFACE : SRAM
-    .SA_OUT(sa_out_int),
-    .WL(wl_int),
-    .PCH(pch_int),
-    .WR_DATA(wr_data_int),
-    .WRITE(write_int),
-    .CSEL(csel_int),
-    .SAEN(saen_int),
-    // ANALOG INTERFACE : ADC
-    .ADC_OUT(adc_out_int),
-    .NF(nf_int),
-    .NFB(nfb_int),
-    .M2A(m2a_int),
-
-    .M2AB(m2ab_int),
-    .R2A(r2a_int),
-    .R2AB(r2ab_int),
-    .CLK(clk)
-);
-
-twos_to_bipolar #(
-    .inBits(2),
-    .numLanes(numRows)
-) u_twos_to_bipolar (
-    .twos(x_data),
-    .bipolar_p(data_p_i),
-    .bipolar_n(data_n_i)
-);
 
 //////////////////////
 // TESTBENCH THINGS

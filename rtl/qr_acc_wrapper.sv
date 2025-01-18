@@ -2,6 +2,8 @@
 // Wraps the analog QR accelerator
 // Performs a 1-bit bipolar MAC operation with parametrizable output precision
 
+import qracc_pkg::*;
+
 module qr_acc_wrapper #(
     parameter numRows = 128,
     parameter numCols = 32,
@@ -17,31 +19,8 @@ module qr_acc_wrapper #(
     input [numCfgBits-1:0] n_adc_bits_cfg,
     input binary_cfg, // binary or bipolar MAC
 
-    // ANALOG INTERFACE : SWITCH MATRIX
-    output logic [numRows-1:0] VDR_SEL,
-    output logic [numRows-1:0] VDR_SELB,
-    output logic [numRows-1:0] VSS_SEL,
-    output logic [numRows-1:0] VSS_SELB,
-    output logic [numRows-1:0] VRST_SEL,
-    output logic [numRows-1:0] VRST_SELB,
-
-    // ANALOG INTERFACE : SRAM
-    input [numCols-1:0] SA_OUT,
-    output logic [numRows-1:0] WL, 
-    output logic PCH,
-    output logic [numCols-1:0] WR_DATA,
-    output logic WRITE,
-    output logic [numCols-1:0] CSEL,
-    output logic SAEN,
-
-    // ANALOG INTERFACE : ADC
-    input [numCols-1:0][compCount-1:0] ADC_OUT, // comparator output pre-encoder
-    output logic NF,
-    output logic NFB,
-    output logic M2A,
-    output logic M2AB,
-    output logic R2A,
-    output logic R2AB,
+    input from_analog_t from_analog_i,
+    output to_analog_t to_analog_o,
 
     // DIGITAL INTERFACE: MAC
     output logic [numCols-1:0][numAdcBits-1:0] adc_out_o,
@@ -59,26 +38,32 @@ module qr_acc_wrapper #(
     input [$clog2(numRows)-1:0] addr_i
 );
 
-// SWITCH MATRIX SELECTS
-always_comb begin : SwitchMatrixSelects
-    if (clk && mac_en_i) begin
-        VDR_SEL = 0;
-        VSS_SEL = 0;
-        VRST_SEL = '1; // '1 = all ones
-    end else begin
-        VDR_SEL = data_p_i & ~data_n_i;
-        VSS_SEL = data_n_i & ~data_p_i;
-        VRST_SEL = ~data_p_i & ~data_n_i;
-    end
-    VDR_SELB = ~VDR_SEL;
-    VSS_SELB = ~VSS_SEL;
-    VRST_SELB = ~VRST_SEL;
-end
-
-// SRAM WRITES AND READS 
 logic wc_write;
 logic wc_read;
 logic wd_done;
+logic [numCols-1:0][numAdcBits-1:0] adc_out_encoded;
+logic [numCols-1:0][compCount-1:0] adc_out;
+
+// ADC OUT -- realign flattened ADC output
+assign adc_out = from_analog_i.ADC_OUT;
+
+// SWITCH MATRIX SELECTS
+always_comb begin : SwitchMatrixSelects
+    if (clk && mac_en_i) begin
+        to_analog_o.VDR_SEL = 0;
+        to_analog_o.VSS_SEL = 0;
+        to_analog_o.VRST_SEL = '1; // '1 = all ones
+    end else begin
+        to_analog_o.VDR_SEL = data_p_i & ~data_n_i;
+        to_analog_o.VSS_SEL = data_n_i & ~data_p_i;
+        to_analog_o.VRST_SEL = ~data_p_i & ~data_n_i;
+    end
+    to_analog_o.VDR_SELB = ~to_analog_o.VDR_SEL;
+    to_analog_o.VSS_SELB = ~to_analog_o.VSS_SEL;
+    to_analog_o.VRST_SELB = ~to_analog_o.VRST_SEL;
+end
+
+// SRAM WRITES AND READS 
 always_comb begin : WcSignals
     wc_write = rq_wr_i && rq_valid_i;
     wc_read = ~rq_wr_i && rq_valid_i;
@@ -97,40 +82,39 @@ wr_controller #(
     .ready                  (rq_ready_o), 
 
     .wr_data_i              (wr_data_i),
-    .wr_data_q              (WR_DATA),
+    .wr_data_q              (to_analog_o.WR_DATA),
     
     // SRAM interface signals
-    .c3sram_w2b_o          (WRITE),
-    .c3sram_csel_o         (CSEL),
-    .c3sram_saen_o         (SAEN),
-    .c3sram_nprecharge_o   (PCH),
-    .c3sram_wl_o           (WL)
+    .c3sram_w2b_o          (to_analog_o.WRITE),
+    .c3sram_csel_o         (to_analog_o.CSEL),
+    .c3sram_saen_o         (to_analog_o.SAEN),
+    .c3sram_nprecharge_o   (to_analog_o.PCH),
+    .c3sram_wl_o           (to_analog_o.WL)
 );
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
         rd_data_o <= 0;
         rd_valid_o <= 0;
     end else begin
-        rd_data_o <= SA_OUT;
+        rd_data_o <= from_analog_i.SA_OUT;
         rd_valid_o <= wc_done;
     end
 end
 
 // ADC INTERFACE 
-logic [numCols-1:0][numAdcBits-1:0] adc_out_encoded;
 always_comb begin : AdcInterface
     if (clk && mac_en_i) begin // only allow negative feedback if MAC is enabled (this is power intensive)
-        NF = '1;
-        R2A = '1;
-        M2A = 0;
+        to_analog_o.NF = '1;
+        to_analog_o.R2A = '1;
+        to_analog_o.M2A = 0;
     end else begin
-        NF = 0;
-        R2A = 0;
-        M2A = '1;
+        to_analog_o.NF = 0;
+        to_analog_o.R2A = 0;
+        to_analog_o.M2A = '1;
     end
-    NFB = ~NF;
-    M2AB = ~M2A;
-    R2AB = ~R2A;
+    to_analog_o.NFB = ~to_analog_o.NF;
+    to_analog_o.M2AB = ~to_analog_o.M2A;
+    to_analog_o.R2AB = ~to_analog_o.R2A;
 end
 always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
     if (!nrst) begin 
@@ -141,7 +125,7 @@ always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
 end
 always_comb begin : AdcEncoderLogic
     for (int i = 0; i < numCols; i++) begin
-        casex (ADC_OUT[i])
+        casex (adc_out[i])
             15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8 // 0000
             15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9 // 0001
             15'b000_0000_0000_001x: adc_out_encoded[i] = -6; // A // 0003

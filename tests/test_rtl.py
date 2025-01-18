@@ -38,7 +38,7 @@ def test_tb_qracc(
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = []
+    package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/ts_qracc.sv',
@@ -147,34 +147,38 @@ def test_tb_qracc(
 
     return
 
-def test_tb_column():
-
+def test_tb_column(simulator,run=True):
+    package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         "../rtl/qr_acc_wrapper.sv", 
         "../rtl/wr_controller.sv", 
         "../rtl/ts_column.sv",
     ]
     tb_name = 'tb_column'
-
     tb_file = f'../tb/{tb_name}.sv'
     log_file = f'tests/logs/{tb_name}.log'
+    parameter_list = []
+
+    command = [
+            simulator,
+            *package_list,
+            tb_file
+        ] + sim_args[simulator] + rtl_file_list + parameter_list
     
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
-    with open(log_file,'w+') as f:
+    print(command)
 
-        xcel = subprocess.Popen([
-            "xrun", 
-            "+access+r",
-            tb_file
-        ] + rtl_file_list, 
-        shell=False,
-        cwd='./sims',
-        stdout=f
-        )
-
-    assert not xcel.wait()
+    if run:
+        with open(log_file,'w+') as f:
+            sim = subprocess.Popen(
+            command, 
+            shell=False,
+            cwd='./sims',
+            stdout=f
+            )
+        assert not sim.wait(), get_log_tail(log_file,10)
 
     with open(log_file,'r+') as f:
         f.seek(0)

@@ -1,8 +1,13 @@
-
+`timescale 1ns/1ps
 
 package qracc_pkg;
 
-    typedef struct packed {
+    parameter numRows = 128;
+    parameter numCols = 32;
+    parameter numAdcBits = 4;
+    parameter compCount = (2**numAdcBits)-1;
+
+    typedef struct {
         // SWITCH MATRIX
         logic [numRows-1:0] VDR_SEL;
         logic [numRows-1:0] VDR_SELB;
@@ -29,11 +34,11 @@ package qracc_pkg;
 
         // Clock
         logic CLK;
-    } analog_inputs_t;
+    } to_analog_t;
 
-    typedef struct packed {
-        logic [numCols-1:0] SA_OUT,
-        logic [compCount*numCols-1:0] ADC_OUT
-    } analog_outputs_t;
+    typedef struct {
+        logic [numCols-1:0] SA_OUT;
+        logic [compCount*numCols-1:0] ADC_OUT;
+    } from_analog_t;
 
 endpackage

@@ -45,7 +45,7 @@ python -m pytest tests/test_tb_column.py
 
 ### Latest Simulations:
 
-RTL-only vs AMS
+1b Module (qr_acc_wrapper.py) RTL vs AMS
 
 ![alt](images/rtl_vs_ams.svg)
 

@@ -5,6 +5,8 @@ uses n cycles to complete an n-bit input mac
 
 */
 
+import qracc_pkg::*;
+
 module seq_acc #(
     parameter inputBits = 4,
     parameter inputElements = 128,
@@ -22,8 +24,9 @@ module seq_acc #(
     output logic valid_o,
     output logic [outputElements-1:0][outputBits-1:0] mac_data_o,
 
-    input [outputElements-1:0][adcBits-1:0] adc_i
-
+    // Passthrough signals
+    output to_analog_t to_analog,
+    input from_analog_t from_analog_i
 );
 
 localparam accumulatorBits = $clog2(inputBits) + adcBits + 1; // +1 from addition bit growth
