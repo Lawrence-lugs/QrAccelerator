@@ -4,6 +4,18 @@ This repository contains the digital design for a 22nm Charge-Redistribution In-
 
 For now, has a 128x128 IMC subarray with a 4-bit ADC. See [No citation yet] for the accelerator design.
 
+### Setup
+
+Setup a working conda or [mamba](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html) installation.
+
+1. `conda env create --file=env.yml`
+
+To run VCS or XCelium simulations:
+1. Setup a terminal that works with either simulator first. 
+2. Create a .env file: `env > .env`
+
+This step should allow pytest to find the programs correctly.
+
 ### Running Tests
 
 The following command will test all RTL files:
