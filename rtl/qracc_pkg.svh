@@ -6,6 +6,13 @@ package qracc_pkg;
     parameter numCols = 32;
     parameter numAdcBits = 4;
     parameter compCount = (2**numAdcBits)-1;
+    parameter numCfgBits = 8;
+
+    typedef struct packed {        
+        logic [numCfgBits-1:0] n_input_bits_cfg;
+        // logic [numCfgBits-1:0] n_adc_bits_cfg;
+        logic binary_cfg;
+    } qracc_config_t;
 
     typedef struct {
         // SWITCH MATRIX

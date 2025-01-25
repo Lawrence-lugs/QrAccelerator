@@ -29,15 +29,59 @@ module seq_acc #(
     input from_analog_t from_analog_i
 );
 
+// Parameters
 localparam accumulatorBits = $clog2(inputBits) + adcBits + 1; // +1 from addition bit growth
 localparam pipelineStages = inputBits + 2;
 
+// Signals
 logic [pipelineStages-1:0] pipeline_tracker;
 logic [inputElements-1:0][inputBits-1:0] piso_buffer_q;
 logic [outputElements-1:0][outputBits-1:0] mac_data_o;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic doiroundup;
 
+// Modules
+qr_acc_wrapper #(
+    .numRows(numRows),
+    .numCols(numCols),
+    .numAdcBits(numAdcBits),
+    .numCfgBits(numCfgBits)
+) u_qr_acc_wrapper (
+    .clk(clk),
+    .nrst(nrst),
+    // CONFIG
+    .n_input_bits_cfg(n_input_bits_cfg),
+    .n_adc_bits_cfg(n_adc_bits_cfg),
+    .binary_cfg(mode_cfg),
+    
+    .to_analog_o(to_analog),
+    .from_analog_i(from_analog),
+
+    // DIGITAL INTERFACE: MAC
+    .adc_out_o(adc_out),
+    .mac_en_i(mac_en),
+    .data_p_i(data_p_i),
+    .data_n_i(data_n_i),
+    // DIGITAL INTERFACE: SRAM
+    .rq_wr_i(rq_wr),
+    .rq_valid_i(rq_valid),
+    .rq_ready_o(rq_ready),
+    .rd_valid_o(rd_valid),
+    .rd_data_o(rd_data),
+    .wr_data_i(wr_data),
+    .addr_i(addr)
+);
+
+twos_to_bipolar #(
+    .inBits(2),
+    .numLanes(numRows)
+) u_twos_to_bipolar (
+    .twos(x_data),
+    .bipolar_p(data_p_i),
+    .bipolar_n(data_n_i)
+);
+
+// Registers
 always_ff @( posedge clk ) begin : seqAccRegs
     // State reg
     if(!nrst) state_q <= S_IDLE;
@@ -81,6 +125,7 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end
 end
 
+// Datapaths
 always_comb begin : seqAccDpath
     // If something is in the first 3 stages of the pipeline
     // We cannot take in new data

@@ -8,16 +8,13 @@ module qr_acc_wrapper #(
     parameter numRows = 128,
     parameter numCols = 32,
     parameter numAdcBits = 4,
-    parameter numCfgBits = 8,
     parameter compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) ( 
     input clk,
     input nrst,
 
     // CONFIG
-    input [numCfgBits-1:0] n_input_bits_cfg,
-    input [numCfgBits-1:0] n_adc_bits_cfg,
-    input binary_cfg, // binary or bipolar MAC
+    input qracc_config_t cfg,
 
     input from_analog_t from_analog_i,
     output to_analog_t to_analog_o,

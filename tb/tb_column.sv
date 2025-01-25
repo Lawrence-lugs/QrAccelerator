@@ -98,6 +98,7 @@ logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
 logic [$clog2(numRows)-1:0] addr;
+qracc_config_t qracc_cfg;
 
 //////////////////////
 // MODULE INSTANTIATION
@@ -113,10 +114,8 @@ qr_acc_wrapper #(
     .clk(clk),
     .nrst(nrst),
     // CONFIG
-    .n_input_bits_cfg(n_input_bits_cfg),
-    .n_adc_bits_cfg(n_adc_bits_cfg),
-    .binary_cfg(mode_cfg),
-    
+    .cfg(qracc_cfg),
+
     .to_analog_o(to_analog),
     .from_analog_i(from_analog),
 

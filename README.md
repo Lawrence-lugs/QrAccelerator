@@ -2,9 +2,9 @@
 
 This repository contains the digital design for a 22nm Charge-Redistribution In-memory Computing based accelerator with a 10T1C SRAM bitcell.
 
-For now, has a 128x128 IMC subarray with a 4-bit ADC. See [No citation yet] for the accelerator design.
+For now, has a 128x32 IMC subarray with a 4-bit ADC.
 
-### Setup
+## Setup
 
 Setup a working conda or [mamba](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html) installation.
 
@@ -14,12 +14,12 @@ To run VCS or XCelium simulations:
 1. Setup a terminal that works with either simulator first. 
 2. Create a .env file: `env > .env`
 
-This step should allow pytest to find the programs correctly.
+This step should allow pytest to find the programs correctly everytime.
 
-### Running Tests
+## Running Tests
 
 The following command will test all RTL files:
-`pytest tests`
+`pytest`
 
 You should run a test before moving on to Cadence AMS simulations to create the necessary input files.
 
@@ -27,6 +27,7 @@ Tests are executed using Pytest. The test infrastructure:
 1. Compiles and runs SystemVerilog testbenches using Cadence xrun
 2. Generates log files in `tests/logs/`
 3. Verifies test success by checking for "TEST SUCCESS" in the output
+
 ## Testing Infrastructure
 
 The repository includes a comprehensive testing setup for the QR Accelerator design
