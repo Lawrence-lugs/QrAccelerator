@@ -16,17 +16,20 @@ module seq_acc #(
 ) (
     input clk, nrst,
 
+    input qracc_config_t cfg,
+
     // Data inputs
     input [inputElements-1:0][inputBits-1:0] mac_data_i,
-    input [inputElements-1:0] mac_valid_i,
+    input mac_valid_i,
     output logic ready_o,
     
     output logic valid_o,
     output logic [outputElements-1:0][outputBits-1:0] mac_data_o,
 
     // Passthrough signals
-    output to_analog_t to_analog,
-    input from_analog_t from_analog_i
+    output to_analog_t to_analog_o,
+    input from_analog_t from_analog_i,
+    sram_itf.slave sram_itf
 );
 
 // Parameters
@@ -39,10 +42,11 @@ logic [inputElements-1:0][inputBits-1:0] piso_buffer_q;
 logic [outputElements-1:0][outputBits-1:0] mac_data_o;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic doiroundup;
-qracc_config_t cfg;
 logic [inputElements-1:0][1:0] x_data; // 2-bit signed bit
 logic [inputElements-1:0] data_p_i;
 logic [inputElements-1:0] data_n_i;
+logic [outputElements-1:0][adcBits-1:0] adc_out;
+logic mac_en;
 
 // Modules
 qr_acc_wrapper #(
@@ -57,22 +61,17 @@ qr_acc_wrapper #(
     .cfg(cfg),
     
     // ANALOG
-    .to_analog_o(to_analog),
-    .from_analog_i(from_analog),
+    .to_analog_o(to_analog_o),
+    .from_analog_i(from_analog_i),
 
     // DIGITAL INTERFACE: MAC
     .adc_out_o(adc_out),
     .mac_en_i(mac_en),
     .data_p_i(data_p_i),
     .data_n_i(data_n_i),
+
     // DIGITAL INTERFACE: SRAM
-    .rq_wr_i(rq_wr),
-    .rq_valid_i(rq_valid),
-    .rq_ready_o(rq_ready),
-    .rd_valid_o(rd_valid),
-    .rd_data_o(rd_data),
-    .wr_data_i(wr_data),
-    .addr_i(addr)
+    .sram_itf(sram_itf)
 );
 
 twos_to_bipolar #(
@@ -86,9 +85,6 @@ twos_to_bipolar #(
 
 // Registers
 always_ff @( posedge clk ) begin : seqAccRegs
-    // State reg
-    if(!nrst) state_q <= S_IDLE;
-    else state_q <= state_d;
 
     // PISO Buffer
     if (!nrst) begin
@@ -122,7 +118,7 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         if (mac_valid_i && ready_o) begin
             for (int i = 0; i < outputElements; i++) begin
-                accumulator[i] <= (accumulator[i] <<< 1) + accumulatorBits'(signed'(adc_i[i]));
+                accumulator[i] <= (accumulator[i] <<< 1) + accumulatorBits'(signed'(adc_out[i]));
             end
         end
     end
@@ -130,10 +126,10 @@ end
 
 // Datapaths
 always_comb begin : seqAccDpath
-    // If something is in the first 3 stages of the pipeline
-    // We cannot take in new data
-    ready_o = (pipeline_tracker[pipelineStage-3:0] != 3'b000)
+    // If something is in the first 3 stages of the pipeline we cannot take new data
+    ready_o = (pipeline_tracker[inputBits-2:0] != 3'b000);
     valid_o = pipeline_tracker[pipelineStages-1];
+    mac_en = (pipeline_tracker[inputBits-1:0] != 4'b0000); 
 
     // Rounding adds a teeny tiny adder to the output delay.
     // Could be pipelined again, but that may be overengineering

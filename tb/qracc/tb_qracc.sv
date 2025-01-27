@@ -331,9 +331,6 @@ initial begin
 
     $display("Reading X...");
     #(CLK_PERIOD);
-    // for(int j = 0; j < numRows; j++) begin
-    //     $display("X[%d] = %d,(%d,%d)", j, $signed(x_data[j]), data_p_i[j], data_n_i[j]);
-    // end
 
     `ifndef SKIPMACS
     test_phase = P_PERFORM_MACS;

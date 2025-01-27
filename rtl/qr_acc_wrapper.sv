@@ -26,7 +26,6 @@ module qr_acc_wrapper #(
     input [numRows-1:0] data_n_i,
     
     sram_itf.slave sram_itf
-
 );
 
 logic wc_write;

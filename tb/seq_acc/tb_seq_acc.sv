@@ -7,11 +7,12 @@ import qracc_pkg::*;
 module tb_seq_acc #(
     parameter SRAM_ROWS = 128,
     parameter SRAM_COLS = 32,
-    parameter xBits = 2, // Ternary bits + 1
+    parameter xBits = 5, // Ternary bits + 1
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
-    parameter macMode = 1
+    parameter macMode = 1,
+    parameter outBits = 4
 ) ( 
     
 );
@@ -33,17 +34,11 @@ localparam xTrits = xBits-1;
 to_analog_t to_analog;
 from_analog_t from_analog;
 
-logic [numCfgBits-1:0] n_input_bits_cfg;
-logic [numCfgBits-1:0] n_adc_bits_cfg;
-logic mode_cfg;
-
 logic clk;
 logic nrst;
-logic [numCols-1:0][numAdcBits-1:0] adc_out;
-logic [numCols-1:0] sa_out;
-logic [numRows-1:0] data_p_i;
-logic [numRows-1:0] data_n_i;
-logic signed [numRows-1:0][xBits-1:0] x_data;
+logic signed [numRows-1:0][xBits-1:0] mac_data;
+logic signed mac_data_valid;
+logic signed [numCols-1:0][outBits-1:0] mac_result;
 
 integer i;
 
@@ -57,6 +52,7 @@ typedef enum logic [3:0] {
 } test_phase_t;
 
 test_phase_t test_phase;
+qracc_config_t cfg;
 
 logic mac_en;
 logic rq_wr;
@@ -66,45 +62,6 @@ logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
 logic [$clog2(numRows)-1:0] addr;
-
-//////////////////////
-// MODULE INSTANTIATION
-//////////////////////
-
-// Instantiate both modules and connect their interfaces
-seq_acc #(
-    .inputBits(xTrits),
-    .numRows(numRows),
-    .numCols(numCols),
-    .numAdcBits(numAdcBits),
-    .numCfgBits(numCfgBits)
-) u_seq_acc (
-    .clk(clk),
-    .nrst(nrst),
-    
-    // CONFIG
-    .n_input_bits_cfg(n_input_bits_cfg),
-    .n_adc_bits_cfg(n_adc_bits_cfg),
-    .binary_cfg(mode_cfg),
-    
-    .to_analog_o(to_analog),
-    .from_analog_i(from_analog),
-
-    // DIGITAL INTERFACE: MAC
-    .adc_out_o(adc_out),
-    .mac_en_i(mac_en),
-    .data_p_i(data_p_i),
-    .data_n_i(data_n_i),
-    // DIGITAL INTERFACE: SRAM
-    .rq_wr_i(rq_wr),
-    .rq_valid_i(rq_valid),
-    .rq_ready_o(rq_ready),
-    .rd_valid_o(rd_valid),
-    .rd_data_o(rd_data),
-    .wr_data_i(wr_data),
-    .addr_i(addr)
-);
-
 logic [numRows-1:0] VDR_SEL;
 logic [numRows-1:0] VDR_SELB;
 logic [numRows-1:0] VSS_SEL;
@@ -126,6 +83,10 @@ logic M2AB;
 logic R2A;
 logic R2AB;
 logic CLK;
+sram_itf #(
+    .numRows(SRAM_ROWS),
+    .numCols(SRAM_COLS)
+) u_sram_itf ();
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
@@ -150,7 +111,45 @@ assign M2AB = to_analog.M2AB;
 assign R2A = to_analog.R2A;
 assign R2AB = to_analog.R2AB;
 assign CLK = to_analog.CLK;
+assign u_sram_itf.rq_wr_i = rq_wr;
+assign u_sram_itf.rq_valid_i = rq_valid;
+assign rq_ready = u_sram_itf.rq_ready_o;
+assign rd_valid = u_sram_itf.rd_valid_o;
+assign rd_data = u_sram_itf.rd_data_o;
+assign u_sram_itf.wr_data_i = wr_data;
+assign u_sram_itf.addr_i = addr;
 
+//////////////////////
+// MODULE INSTANTIATION
+//////////////////////
+
+// Instantiate both modules and connect their interfaces
+seq_acc #(
+    .inputBits(xTrits),
+    .numRows(numRows),
+    .numCols(numCols),
+    .numAdcBits(numAdcBits),
+    .numCfgBits(numCfgBits)
+) u_seq_acc (
+    .clk(clk),
+    .nrst(nrst),
+    
+    .cfg(cfg),
+    
+    .mac_data_i(mac_data),
+    .mac_valid_i(mac_data_valid),
+    .ready_o(ready_o),
+    .valid_o(valid_o),
+    .mac_data_o(mac_result),
+    
+    // Passthrough Signals
+    .to_analog_o(to_analog),
+    .from_analog_i(from_analog),
+    .sram_itf(u_sram_itf)
+);
+
+// TS = Test Schematic
+// Cadence VAMS doesn't support structs
 ts_qracc #(
     .numRows(SRAM_ROWS),
     .numCols(SRAM_COLS),
@@ -177,15 +176,6 @@ ts_qracc #(
     .R2A(R2A),
     .R2AB(R2AB),
     .CLK(clk)
-);
-
-twos_to_bipolar #(
-    .inBits(2),
-    .numLanes(numRows)
-) u_twos_to_bipolar (
-    .twos(x_data),
-    .bipolar_p(data_p_i),
-    .bipolar_n(data_n_i)
 );
 
 task sram_write(
@@ -224,13 +214,25 @@ task sram_read(
     $display("DATA: %d", rd_data);
 endtask
 
+task send_mac_request();
+    mac_data_valid = 1;
+    for (i = 0; i < numRows; i++) $fscanf(f_x, "%d", mac_data[i]);
+    while (!ready_o) #(CLK_PERIOD); // Wait for request take
+endtask
+
 //////////////////////
 // TESTBENCH THINGS
 //////////////////////
 
-logic [numCols-1:0] flag;
 int f_w,f_x,f_wx,f_adc_out;
 int scan_data; 
+
+// Keep reading the outputs
+always @(posedge clk) begin
+    if (valid_o) begin
+        $display("MAC Output: %d", mac_result);
+    end
+end
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
@@ -241,61 +243,43 @@ end
 // Waveform dumping
 `ifdef SYNOPSYS
 initial begin
-    $vcdplusfile("tb_qracc.vpd");
+    $vcdplusfile("tb_seq_acc.vpd");
     $vcdpluson();
     $vcdplusmemon();
     $dumpvars(0);
 end
 `endif
 initial begin
-    $dumpfile("tb_qracc.vcd");
+    $dumpfile("tb_seq_acc.vcd");
     $dumpvars(0);
 end
 
-task print_adc_out;
-    $write("[");
-    for (int k = 0; k < numCols; k++) begin
-        $write("%d,", $signed(adc_out[k]));
-    end
-    $display("]");
-endtask
-
-task save_adc_out;
-    for (int k = 0; k < numCols; k++) begin
-        $fwrite(f_adc_out, "%d ", $signed(adc_out[k]));
-    end
-    $fwrite(f_adc_out, "\n");
-endtask
-
 // yes my directory is visible, but i do not care.
-static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc/inputs/";
+static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/seq_acc/inputs/";
 
 initial begin
 
     test_phase = P_INIT;
-
-    mode_cfg = 0;
+    cfg.binary_cfg = 0;
 
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
-    f_wx = $fopen({path, "wx_4b.txt"}, "r");
+    f_wx = $fopen({path, "wx_clipped.txt"}, "r");
     f_adc_out = $fopen({path, "adc_out.txt"}, "w");
 
     // Initialize
-    flag = 0;
     nrst = 0;
     wr_data = 0;
-    mac_en = 0;
-    x_data = 0; // To prevent X propagation
-    
+    mac_data_valid = 0;
+    mac_data = 0;
+
     // Reset
     #(CLK_PERIOD*2);
     nrst = 1;
     #(CLK_PERIOD*2);
 
     // Read weights
-
     `ifndef SKIPWRITE
     test_phase = P_WRITE_WEIGHTS;
     $display("Reading weights...");
@@ -320,7 +304,6 @@ initial begin
     `endif
     
     // Allow initial voltage transients to settle
-    
     $display("Activating MAC...");
     test_phase = P_READ_X;
     mac_en = 1;
@@ -328,22 +311,14 @@ initial begin
 
     $display("Reading X...");
     #(CLK_PERIOD);
-    // for(int j = 0; j < numRows; j++) begin
-    //     $display("X[%d] = %d,(%d,%d)", j, $signed(x_data[j]), data_p_i[j], data_n_i[j]);
-    // end
 
     `ifndef SKIPMACS
     test_phase = P_PERFORM_MACS;
     $display("Performing MACs...");
     for (int h = 0; h < xBatches; h++) begin
-        for (int i = 0; i < numRows; i++) begin
-            $fscanf(f_x, "%d", x_data[i]);
-        end
-        for (int i = 0; i < xBits-1; i++) begin
-            #(CLK_PERIOD);
-            print_adc_out();
-            save_adc_out();
-        end
+        send_mac_request();
+        // We do not need to read result here because it is 
+        // done by the always block somewhere above
     end
     `endif
     
