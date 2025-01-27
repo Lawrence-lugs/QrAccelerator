@@ -57,7 +57,6 @@ typedef enum logic [3:0] {
 
 test_phase_t test_phase;
 
-logic mac_en;
 logic rq_wr;
 logic rq_valid;
 logic rq_ready;
@@ -65,6 +64,20 @@ logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
 logic [$clog2(numRows)-1:0] addr;
+sram_itf #(
+    .numRows(SRAM_ROWS),
+    .numCols(SRAM_COLS)
+) u_sram_itf ();
+
+assign u_sram_itf.rq_wr_i = rq_wr;
+assign u_sram_itf.rq_valid_i = rq_valid;
+assign rq_ready = u_sram_itf.rq_ready_o;
+assign rd_valid = u_sram_itf.rd_valid_o;
+assign rd_data = u_sram_itf.rd_data_o;
+assign u_sram_itf.wr_data_i = wr_data;
+assign u_sram_itf.addr_i = addr;
+
+logic mac_en;
 qracc_config_t qracc_cfg;
 
 //////////////////////
@@ -92,13 +105,7 @@ qr_acc_wrapper #(
     .data_p_i(data_p_i),
     .data_n_i(data_n_i),
     // DIGITAL INTERFACE: SRAM
-    .rq_wr_i(rq_wr),
-    .rq_valid_i(rq_valid),
-    .rq_ready_o(rq_ready),
-    .rd_valid_o(rd_valid),
-    .rd_data_o(rd_data),
-    .wr_data_i(wr_data),
-    .addr_i(addr)
+    .sram_itf(u_sram_itf.slave)
 );
 
 logic [numRows-1:0] VDR_SEL;

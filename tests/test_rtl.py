@@ -118,7 +118,7 @@ def test_tb_qracc(
         ] + sim_args[simulator] + rtl_file_list + parameter_list
 
     print(command)
-
+    print(log_file)
     if run:
         with open(log_file,'w+') as f:
             sim = subprocess.Popen(
@@ -178,7 +178,7 @@ def test_tb_column(simulator,run=True):
             cwd='./sims',
             stdout=f
             )
-        assert not sim.wait(), get_log_tail(log_file,10)
+            assert not sim.wait(), get_log_tail(log_file,10)
 
     with open(log_file,'r+') as f:
         f.seek(0)

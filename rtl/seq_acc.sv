@@ -39,6 +39,10 @@ logic [inputElements-1:0][inputBits-1:0] piso_buffer_q;
 logic [outputElements-1:0][outputBits-1:0] mac_data_o;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic doiroundup;
+qracc_config_t cfg;
+logic [inputElements-1:0][1:0] x_data; // 2-bit signed bit
+logic [inputElements-1:0] data_p_i;
+logic [inputElements-1:0] data_n_i;
 
 // Modules
 qr_acc_wrapper #(
@@ -50,10 +54,9 @@ qr_acc_wrapper #(
     .clk(clk),
     .nrst(nrst),
     // CONFIG
-    .n_input_bits_cfg(n_input_bits_cfg),
-    .n_adc_bits_cfg(n_adc_bits_cfg),
-    .binary_cfg(mode_cfg),
+    .cfg(cfg),
     
+    // ANALOG
     .to_analog_o(to_analog),
     .from_analog_i(from_analog),
 
@@ -74,7 +77,7 @@ qr_acc_wrapper #(
 
 twos_to_bipolar #(
     .inBits(2),
-    .numLanes(numRows)
+    .numLanes(inputElements)
 ) u_twos_to_bipolar (
     .twos(x_data),
     .bipolar_p(data_p_i),
@@ -138,6 +141,20 @@ always_comb begin : seqAccDpath
     for (int i = 0; i < outputElements; i++) begin
         mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup;
     end
+
+    // Bipolar converter
+    for (int i = 0; i < inputElements; i++) begin
+        if (piso_buffer_q[i][0]) begin
+            if (piso_buffer_q[i][inputBits-1]) begin // Negative
+                x_data[i] = 2'b11; // -1
+            end else begin
+                x_data[i] = 2'b01; // 1
+            end
+        end else begin
+            x_data[i] = 2'b00; // 0
+        end
+    end
+
 end
 
     

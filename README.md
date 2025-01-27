@@ -63,6 +63,10 @@ python -m pytest tests/test_tb_column.py
 ![alt](images/rtl_vs_ams.svg)
 
 
+### sec_acc datapath
+
+![alt text](images/seq_acc_pipeline.png)
+
 ### Results notes
 
 | CSV | Notes |
@@ -70,3 +74,7 @@ python -m pytest tests/test_tb_column.py
 | 1.csv | Initial AMS where the testing settings were on binary mode but the circuit was in bipolar |
 | 2.csv | After putting the testing into binary mode. Now is off by +-1 sometimes. Reason could be that shifting rounds to -infty but this doesn't. |
 | 3.csv | Comparison against rounded, also corrected ADC ref range. Now only the rounding is biased low. |
+
+## Todo
+
+* Replace default parameters with compiler directives
