@@ -18,11 +18,11 @@ always_comb begin : dataPath
         end
         else begin
             if (twos[i][inBits-1]) begin
-                bipolar_p[i] = ~ntwos[i];
+                bipolar_p[i] = '0;
                 bipolar_n[i] = ntwos[i];
             end else begin
                 bipolar_p[i] = twos[i];
-                bipolar_n[i] = ~twos[i];
+                bipolar_n[i] = '0;
             end
         end
     end
