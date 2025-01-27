@@ -150,7 +150,7 @@ def test_tb_qracc(
 def test_tb_column(simulator,run=True):
     package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
-        "../rtl/qr_acc_wrapper.sv", 
+        "../rtl/column_wrapper.sv", 
         "../rtl/wr_controller.sv", 
         "../rtl/ts_column.sv",
     ]

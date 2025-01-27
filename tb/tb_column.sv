@@ -105,12 +105,12 @@ qracc_config_t qracc_cfg;
 //////////////////////
 
 // Instantiate both modules and connect their interfaces
-qr_acc_wrapper #(
+column_wrapper #(
     .numRows(numRows),
     .numCols(numCols),
     .numAdcBits(numAdcBits),
     .numCfgBits(numCfgBits)
-) u_qr_acc_wrapper (
+) u_column_wrapper (
     .clk(clk),
     .nrst(nrst),
     // CONFIG
