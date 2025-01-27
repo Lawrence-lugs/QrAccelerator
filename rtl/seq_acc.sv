@@ -53,8 +53,8 @@ logic mac_en;
 
 // Modules
 qr_acc_wrapper #(
-    .numRows(numRows),
-    .numCols(numCols),
+    .numRows(inputElements),
+    .numCols(outputElements),
     .numAdcBits(numAdcBits),
     .numCfgBits(numCfgBits)
 ) u_qr_acc_wrapper (
@@ -70,8 +70,8 @@ qr_acc_wrapper #(
     // DIGITAL INTERFACE: MAC
     .adc_out_o(adc_out),
     .mac_en_i(mac_en),
-    .data_p_i(piso_buffer_p_d[0]),
-    .data_n_i(piso_buffer_n_d[0]),
+    .data_p_i(data_p_i),
+    .data_n_i(data_n_i),
 
     // DIGITAL INTERFACE: SRAM
     .sram_itf(sram_itf)
@@ -146,6 +146,12 @@ always_comb begin : seqAccDpath
     for (int i = 0; i < outputElements; i++) begin
         doiroundup[i] = accumulator[i][accumulatorBits-outputBits-1];
         mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup[i];
+    end
+
+    // Data input
+    for (int i = 0; i < inputElements; i++) begin
+        data_p_i[i] = piso_buffer_p_q[i][0];
+        data_n_i[i] = piso_buffer_n_q[i][0];
     end
 end
 
