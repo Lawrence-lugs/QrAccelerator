@@ -132,12 +132,12 @@ def test_seq_acc(
 
     # Post-simulation
 
-    adc_out = np.loadtxt(f'{stimulus_output_path}/adc_out.txt',dtype=int)
-    np.savetxt(f'{stimulus_output_path}/adc_out_rtlsims.txt',adc_out,fmt='%d')
+    mac_out = np.loadtxt(f'{stimulus_output_path}/mac_out.txt',dtype=int)
+    np.savetxt(f'{stimulus_output_path}/mac_out_rtlsims.txt',mac_out,fmt='%d')
     exp_out = wx_outBits.T[::-1].T
 
     # Compute RMSE
-    rmse = np.sqrt(np.mean((adc_out - exp_out)**2))
+    rmse = np.sqrt(np.mean((mac_out - exp_out)**2))
     print(f'RMSE:{rmse}')
     assert rmse < rmse_limit, f'RMSE: {rmse}'
 

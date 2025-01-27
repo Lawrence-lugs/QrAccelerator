@@ -125,11 +125,11 @@ assign u_sram_itf.addr_i = addr;
 
 // Instantiate both modules and connect their interfaces
 seq_acc #(
-    .inputBits(xTrits),
-    .numRows(numRows),
-    .numCols(numCols),
-    .numAdcBits(numAdcBits),
-    .numCfgBits(numCfgBits)
+    .inputBits(xBits),
+    .inputElements(numRows),
+    .outputBits(outBits),
+    .outputElements(numCols),
+    .adcBits(numAdcBits)
 ) u_seq_acc (
     .clk(clk),
     .nrst(nrst),
@@ -218,19 +218,37 @@ task send_mac_request();
     mac_data_valid = 1;
     for (i = 0; i < numRows; i++) $fscanf(f_x, "%d", mac_data[i]);
     while (!ready_o) #(CLK_PERIOD); // Wait for request take
+    #(CLK_PERIOD);
+    mac_data_valid = 0;
 endtask
 
 //////////////////////
 // TESTBENCH THINGS
 //////////////////////
 
-int f_w,f_x,f_wx,f_adc_out;
+int f_w,f_x,f_wx,f_mac_out;
 int scan_data; 
+
+logic signed [outBits-1:0] mac_result_readable [numCols];
+
+always_comb begin
+    for (int i = 0; i < numCols; i++) begin
+        mac_result_readable[i] = mac_result[i];
+    end
+end
 
 // Keep reading the outputs
 always @(posedge clk) begin
     if (valid_o) begin
-        $display("MAC Output: %d", mac_result);
+        $write("[");
+        for (int k = 0; k < numCols; k++) begin
+            $write("%d,", $signed(mac_result[k]));
+        end
+        $display("]");
+        for (int i = 0; i < numCols; i++) begin
+            $fwrite(f_mac_out, "%d ", $signed(mac_result[i]));
+        end
+        $fwrite(f_mac_out, "\n");
     end
 end
 
@@ -266,7 +284,7 @@ initial begin
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
     f_wx = $fopen({path, "wx_clipped.txt"}, "r");
-    f_adc_out = $fopen({path, "adc_out.txt"}, "w");
+    f_mac_out = $fopen({path, "mac_out.txt"}, "w");
 
     // Initialize
     nrst = 0;
@@ -321,10 +339,10 @@ initial begin
         // done by the always block somewhere above
     end
     `endif
-    
-    mac_en = 0;
 
-    #(CLK_PERIOD*2);
+    while (!valid_o) #(CLK_PERIOD);
+
+    #(CLK_PERIOD*10);
 
     $display("TEST SUCCESS");
 

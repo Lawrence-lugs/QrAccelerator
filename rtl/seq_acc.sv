@@ -8,11 +8,12 @@ uses n cycles to complete an n-bit input mac
 import qracc_pkg::*;
 
 module seq_acc #(
-    parameter inputBits = 4,
+    parameter inputBits = 5,
     parameter inputElements = 128,
     parameter outputBits = 4,
     parameter outputElements = 32,
-    parameter adcBits = 4
+    parameter adcBits = 4,
+    localparam inputTrits = inputBits - 1
 ) (
     input clk, nrst,
 
@@ -33,15 +34,14 @@ module seq_acc #(
 );
 
 // Parameters
-localparam accumulatorBits = $clog2(inputBits) + adcBits + 1; // +1 from addition bit growth
-localparam pipelineStages = inputBits + 2;
+localparam accumulatorBits = $clog2(inputTrits) + adcBits + 1; // +1 from addition bit growth
+localparam pipelineStages = inputTrits + 2;
 
 // Signals
 logic [pipelineStages-1:0] pipeline_tracker;
 logic [inputElements-1:0][inputBits-1:0] piso_buffer_q;
-logic [outputElements-1:0][outputBits-1:0] mac_data_o;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
-logic doiroundup;
+logic [outputElements-1:0] doiroundup;
 logic [inputElements-1:0][1:0] x_data; // 2-bit signed bit
 logic [inputElements-1:0] data_p_i;
 logic [inputElements-1:0] data_n_i;
@@ -116,8 +116,10 @@ always_ff @( posedge clk ) begin : seqAccRegs
     if (!nrst) begin
         accumulator <= '0;
     end else begin
-        if (mac_valid_i && ready_o) begin
-            for (int i = 0; i < outputElements; i++) begin
+        for (int i = 0; i < outputElements; i++) begin
+            if (pipeline_tracker[1]) begin // == 'h02
+                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])); 
+            end else begin
                 accumulator[i] <= (accumulator[i] <<< 1) + accumulatorBits'(signed'(adc_out[i]));
             end
         end
@@ -125,23 +127,24 @@ always_ff @( posedge clk ) begin : seqAccRegs
 end
 
 // Datapaths
+
 always_comb begin : seqAccDpath
     // If something is in the first 3 stages of the pipeline we cannot take new data
-    ready_o = (pipeline_tracker[inputBits-2:0] != 3'b000);
+    ready_o = (pipeline_tracker[inputTrits-2:0] == 3'b000);
     valid_o = pipeline_tracker[pipelineStages-1];
-    mac_en = (pipeline_tracker[inputBits-1:0] != 4'b0000); 
+    mac_en = (pipeline_tracker[inputTrits-1:0] != 4'b0000); 
 
     // Rounding adds a teeny tiny adder to the output delay.
     // Could be pipelined again, but that may be overengineering
-    doiroundup = accumulatorBits[accumulatorBits-outputBits-1:0] != 0;
     for (int i = 0; i < outputElements; i++) begin
-        mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup;
+        doiroundup[i] = accumulator[i][accumulatorBits-outputBits-1];
+        mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup[i];
     end
 
     // Bipolar converter
     for (int i = 0; i < inputElements; i++) begin
         if (piso_buffer_q[i][0]) begin
-            if (piso_buffer_q[i][inputBits-1]) begin // Negative
+            if (piso_buffer_q[i][inputTrits-1]) begin // Negative
                 x_data[i] = 2'b11; // -1
             end else begin
                 x_data[i] = 2'b01; // 1
@@ -153,5 +156,4 @@ always_comb begin : seqAccDpath
 
 end
 
-    
 endmodule
