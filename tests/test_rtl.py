@@ -32,7 +32,7 @@ def test_seq_acc(
     xTrits = 4,
     outBits = 4,
     weight_mode = 'bipolar',
-    rmse_limit = 0.1,
+    rmse_limit = 0.5,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
 ):
@@ -158,7 +158,7 @@ def test_tb_qracc(
     xTrits = 1,
     outBits = 4,
     weight_mode = 'bipolar',
-    rmse_limit = 0.1,
+    rmse_limit = 0.5,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
 ):

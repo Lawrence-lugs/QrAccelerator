@@ -39,7 +39,10 @@ localparam pipelineStages = inputTrits + 2;
 
 // Signals
 logic [pipelineStages-1:0] pipeline_tracker;
-logic [inputElements-1:0][inputBits-1:0] piso_buffer_q;
+logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_n_q;
+logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_q;
+logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_n_d;
+logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_d;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic [outputElements-1:0] doiroundup;
 logic [inputElements-1:0][1:0] x_data; // 2-bit signed bit
@@ -67,20 +70,20 @@ qr_acc_wrapper #(
     // DIGITAL INTERFACE: MAC
     .adc_out_o(adc_out),
     .mac_en_i(mac_en),
-    .data_p_i(data_p_i),
-    .data_n_i(data_n_i),
+    .data_p_i(piso_buffer_p_d[0]),
+    .data_n_i(piso_buffer_n_d[0]),
 
     // DIGITAL INTERFACE: SRAM
     .sram_itf(sram_itf)
 );
 
 twos_to_bipolar #(
-    .inBits(2),
+    .inBits(inputBits),
     .numLanes(inputElements)
 ) u_twos_to_bipolar (
-    .twos(x_data),
-    .bipolar_p(data_p_i),
-    .bipolar_n(data_n_i)
+    .twos(mac_data_i),
+    .bipolar_p(piso_buffer_p_d),
+    .bipolar_n(piso_buffer_n_d)
 );
 
 // Registers
@@ -88,13 +91,17 @@ always_ff @( posedge clk ) begin : seqAccRegs
 
     // PISO Buffer
     if (!nrst) begin
-        piso_buffer_q <= '0;
+        piso_buffer_n_q <= '0;
+        piso_buffer_p_q <= '0;
     end else begin
         if (mac_valid_i && ready_o) begin
-            piso_buffer_q <= mac_data_i;
+            piso_buffer_n_q <= piso_buffer_n_d;
+            piso_buffer_p_q <= piso_buffer_p_d;
         end else begin
-            // We need the sign bit preserved
-            piso_buffer_q <= piso_buffer_q >>> 1;
+            for (int i = 0; i < inputElements; i++) begin
+                piso_buffer_n_q[i] <= piso_buffer_n_q[i] >> 1;
+                piso_buffer_p_q[i] <= piso_buffer_p_q[i] >> 1;
+            end
         end
     end
 
@@ -118,9 +125,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         for (int i = 0; i < outputElements; i++) begin
             if (pipeline_tracker[1]) begin // == 'h02
-                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])); 
+                accumulator[i] <= adc_out[i] <<< (accumulatorBits - adcBits); 
             end else begin
-                accumulator[i] <= (accumulator[i] <<< 1) + accumulatorBits'(signed'(adc_out[i]));
+                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + (adc_out[i] <<< (accumulatorBits - adcBits));
             end
         end
     end
@@ -140,20 +147,6 @@ always_comb begin : seqAccDpath
         doiroundup[i] = accumulator[i][accumulatorBits-outputBits-1];
         mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup[i];
     end
-
-    // Bipolar converter
-    for (int i = 0; i < inputElements; i++) begin
-        if (piso_buffer_q[i][0]) begin
-            if (piso_buffer_q[i][inputTrits-1]) begin // Negative
-                x_data[i] = 2'b11; // -1
-            end else begin
-                x_data[i] = 2'b01; // 1
-            end
-        end else begin
-            x_data[i] = 2'b00; // 0
-        end
-    end
-
 end
 
 endmodule

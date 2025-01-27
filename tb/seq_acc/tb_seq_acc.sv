@@ -352,7 +352,7 @@ end
 // FREEZE WATCHDOG
 initial begin
     #(CLK_PERIOD*50000); // after 1ms
-    $display("WATCHDOG TIMED OUT");
+    $display("ERROR: WATCHDOG TIMED OUT");
     $finish();
 end
 
