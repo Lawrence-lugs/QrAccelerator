@@ -12,7 +12,8 @@ def generate_qracc_inputs(
     weight_mode = 'bipolar',
     col_symmetric = False,
     rangeBits = None,
-    x_repeat = False
+    x_repeat = False,
+    clip_output = True
 ):
     '''
     Generates integer weights and inputs, including clipped integer reference outputs.
@@ -65,6 +66,10 @@ def generate_qracc_inputs(
         wxBits = np.log2(wDimY) + 1 # +1 because of bipolar rep (-128,128) vs (0,128)
     else:
         wxBits = rangeBits
-    wx_outBits = quant.saturating_clip(wx, inBits = wxBits, outBits = outBits)
+
+    if clip_output:
+        wx_outBits = quant.saturating_clip(wx, inBits = wxBits, outBits = outBits)
+    else:
+        wx_outBits = wx
 
     return w, x, wx_outBits.T

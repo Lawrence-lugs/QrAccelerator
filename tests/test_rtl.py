@@ -78,7 +78,8 @@ def test_seq_acc(
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
         rangeBits = 6,
-        x_repeat = x_repeat
+        x_repeat = x_repeat,
+        clip_output = False
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware
