@@ -12,7 +12,7 @@ module tb_seq_acc #(
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
     parameter macMode = 1,
-    parameter outBits = 4
+    parameter outBits = 8
 ) ( 
     
 );

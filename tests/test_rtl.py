@@ -30,7 +30,7 @@ def test_seq_acc(
     wDimY = 4, #nRows
     xBatches = 10,
     xTrits = 4,
-    outBits = 4,
+    outBits = 8,
     weight_mode = 'bipolar',
     rmse_limit = 0.5,
     run = True, # Set to False to skip RTL simulation
@@ -58,8 +58,9 @@ def test_seq_acc(
         f'SRAM_COLS={wDimX}',
         f'xBits={xTrits+1}',
         f'xBatches={xBatches}',
-        f'numAdcBits={outBits}',
-        f'macMode={mac_mode}'
+        f'numAdcBits=4',
+        f'macMode={mac_mode}',
+        f'outBits={outBits}'
     ]
 
     print(f'col_symmetric:{col_symmetric}')
@@ -137,7 +138,7 @@ def test_seq_acc(
     exp_out = wx_outBits.T[::-1].T
 
     # Compute RMSE
-    rmse = np.sqrt(np.mean((mac_out - exp_out)**2))
+    rmse = np.sqrt(np.mean((mac_out - exp_out)**2)) 
     print(f'RMSE:{rmse}')
     assert rmse < rmse_limit, f'RMSE: {rmse}'
 

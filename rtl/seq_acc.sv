@@ -10,7 +10,7 @@ import qracc_pkg::*;
 module seq_acc #(
     parameter inputBits = 5,
     parameter inputElements = 128,
-    parameter outputBits = 4,
+    parameter outputBits = 8,
     parameter outputElements = 32,
     parameter adcBits = 4,
     localparam inputTrits = inputBits - 1
@@ -19,11 +19,10 @@ module seq_acc #(
 
     input qracc_config_t cfg,
 
-    // Data inputs
+    // Data
     input [inputElements-1:0][inputBits-1:0] mac_data_i,
     input mac_valid_i,
     output logic ready_o,
-    
     output logic valid_o,
     output logic [outputElements-1:0][outputBits-1:0] mac_data_o,
 
@@ -145,8 +144,11 @@ always_comb begin : seqAccDpath
     // Could be pipelined again, but that may be overengineering
     for (int i = 0; i < outputElements; i++) begin
         doiroundup[i] = accumulator[i][accumulatorBits-outputBits-1];
-        mac_data_o[i] = accumulator[i][accumulatorBits-1 -: outputBits] + doiroundup[i];
+        mac_data_o[i] = accumulator[i][accumulatorBits-outputBits +: outputBits] + doiroundup[i];
     end
+
+    // 7 - 4 - 1 = 2 
+    // accumulator[i][6:3] + doiroundup[i]
 
     // Data input
     for (int i = 0; i < inputElements; i++) begin
