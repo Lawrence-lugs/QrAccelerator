@@ -91,7 +91,7 @@ always_comb begin : toMBL
             end
         end
         // $display("adc_out,mbl_value[%d]: %b,%b", j, mbl_value[j], adc_out[j]);
-        adc_out[j] = mbl_value[j][5-:numAdcBits]; // some arbitrary 4-bit subset for now
+        adc_out[j] = mbl_value[j][3:0]; // some arbitrary 4-bit subset for now
 
         // The real circuit doesn't shift, it rounds.
 

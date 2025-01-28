@@ -15,8 +15,8 @@
 // Note: write_i and read_i should not be asserted simultaneously
 
 module wr_controller #(
-    parameter int numRows = 8,
-    parameter int numCols = 8
+    parameter int numRows = 128,
+    parameter int numCols = 32
 ) (
     input clk,
     input nrst,

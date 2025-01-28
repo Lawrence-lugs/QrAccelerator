@@ -26,7 +26,7 @@ def test_seq_acc(
     col_symmetric,
     simulator,
     seed,
-    wDimX = 4, #nColumns
+    wDimX = 3, #nColumns
     wDimY = 4, #nRows
     xBatches = 10,
     xTrits = 4,

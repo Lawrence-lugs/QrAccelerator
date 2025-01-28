@@ -16,3 +16,4 @@ psf
 tb/*/*inputs*
 .pytest_cache
 .env
+AN.DB

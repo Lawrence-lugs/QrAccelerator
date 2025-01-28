@@ -58,6 +58,7 @@ always_comb begin : WcSignals
     wc_write = sram_itf.rq_wr_i && sram_itf.rq_valid_i;
     wc_read = ~sram_itf.rq_wr_i && sram_itf.rq_valid_i;
 end
+
 wr_controller #(
     .numRows                (numRows),
     .numCols                (numCols)

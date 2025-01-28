@@ -4,7 +4,7 @@ package qracc_pkg;
 
     parameter numRows = 128;
     parameter numCols = 32;
-    parameter numAdcBits = 4; 
+    parameter numAdcBits = 4;
     parameter compCount = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
 
