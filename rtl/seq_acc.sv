@@ -10,10 +10,10 @@ import qracc_pkg::*;
 module seq_acc #(
     parameter inputBits = 5,
     parameter inputElements = 128,
-    parameter outputBits = 8,
     parameter outputElements = 32,
     parameter adcBits = 4,
-    localparam inputTrits = inputBits - 1
+    localparam inputTrits = inputBits - 1,
+    localparam accumulatorBits = $clog2(inputTrits) + adcBits + 1 // +1 from addition bit growth
 ) (
     input clk, nrst,
 
@@ -24,7 +24,7 @@ module seq_acc #(
     input mac_valid_i,
     output logic ready_o,
     output logic valid_o,
-    output logic [outputElements-1:0][outputBits-1:0] mac_data_o,
+    output logic [outputElements-1:0][accumulatorBits-1:0] mac_data_o,
 
     // Passthrough signals
     output to_analog_t to_analog_o,
@@ -33,7 +33,6 @@ module seq_acc #(
 );
 
 // Parameters
-localparam accumulatorBits = $clog2(inputTrits) + adcBits + 1; // +1 from addition bit growth
 localparam pipelineStages = inputTrits + 2;
 
 // Signals
@@ -43,8 +42,6 @@ logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_q;
 logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_n_d;
 logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_d;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
-logic [outputElements-1:0] doiroundup;
-logic [inputElements-1:0][1:0] x_data; // 2-bit signed bit
 logic [inputElements-1:0] data_p_i;
 logic [inputElements-1:0] data_n_i;
 logic [outputElements-1:0][adcBits-1:0] adc_out;
@@ -140,15 +137,9 @@ always_comb begin : seqAccDpath
     valid_o = pipeline_tracker[pipelineStages-1];
     mac_en = (pipeline_tracker[inputTrits-1:0] != 4'b0000); 
 
-    // Rounding adds a teeny tiny adder to the output delay.
-    // Could be pipelined again, but that may be overengineering
     for (int i = 0; i < outputElements; i++) begin
-        doiroundup[i] = accumulator[i][accumulatorBits-outputBits-1];
-        mac_data_o[i] = accumulator[i][accumulatorBits-outputBits +: outputBits] + doiroundup[i];
+        mac_data_o[i] = accumulator[i];
     end
-
-    // 7 - 4 - 1 = 2 
-    // accumulator[i][6:3] + doiroundup[i]
 
     // Data input
     for (int i = 0; i < inputElements; i++) begin

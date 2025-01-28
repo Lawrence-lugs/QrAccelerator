@@ -26,6 +26,7 @@ parameter numCols = SRAM_COLS;
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
+localparam accumulatorBits = $clog2(xTrits) + numAdcBits + 1; // +1 from addition bit growth
 
 /////////////
 // SIGNALS
@@ -38,7 +39,7 @@ logic clk;
 logic nrst;
 logic signed [numRows-1:0][xBits-1:0] mac_data;
 logic signed mac_data_valid;
-logic signed [numCols-1:0][outBits-1:0] mac_result;
+logic signed [numCols-1:0][accumulatorBits-1:0] mac_result;
 
 integer i;
 
@@ -243,11 +244,9 @@ always @(posedge clk) begin
         $write("[");
         for (int k = 0; k < numCols; k++) begin
             $write("%d,", $signed(mac_result[k]));
+            $fwrite(f_mac_out, "%d ", $signed(mac_result[k]));
         end
         $display("]");
-        for (int i = 0; i < numCols; i++) begin
-            $fwrite(f_mac_out, "%d ", $signed(mac_result[i]));
-        end
         $fwrite(f_mac_out, "\n");
     end
 end
