@@ -1,4 +1,4 @@
-//Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
+    //Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
 
 `timescale 1ns/1ps
 
@@ -86,10 +86,8 @@ logic M2AB;
 logic R2A;
 logic R2AB;
 logic CLK;
-sram_itf #(
-    .numRows(SRAM_ROWS),
-    .numCols(SRAM_COLS)
-) u_sram_itf ();
+from_sram_t from_sram;
+to_sram_t to_sram;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
@@ -114,13 +112,13 @@ assign M2AB = to_analog.M2AB;
 assign R2A = to_analog.R2A;
 assign R2AB = to_analog.R2AB;
 assign CLK = to_analog.CLK;
-assign u_sram_itf.rq_wr_i = rq_wr;
-assign u_sram_itf.rq_valid_i = rq_valid;
-assign rq_ready = u_sram_itf.rq_ready_o;
-assign rd_valid = u_sram_itf.rd_valid_o;
-assign rd_data = u_sram_itf.rd_data_o;
-assign u_sram_itf.wr_data_i = wr_data;
-assign u_sram_itf.addr_i = addr;
+assign to_sram.rq_wr_i = rq_wr;
+assign to_sram.rq_valid_i = rq_valid;
+assign rq_ready = from_sram.rq_ready_o;
+assign rd_valid = from_sram.rd_valid_o;
+assign rd_data = from_sram.rd_data_o;
+assign to_sram.wr_data_i = wr_data;
+assign to_sram.addr_i = addr;
 
 //////////////////////
 // MODULE INSTANTIATION
@@ -148,7 +146,8 @@ seq_acc #(
     // Passthrough Signals
     .to_analog_o(to_analog),
     .from_analog_i(from_analog),
-    .sram_itf(u_sram_itf)
+    .from_sram(from_sram),
+    .to_sram(to_sram)
 );
 
 // TS = Test Schematic

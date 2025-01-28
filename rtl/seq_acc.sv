@@ -29,7 +29,9 @@ module seq_acc #(
     // Passthrough signals
     output to_analog_t to_analog_o,
     input from_analog_t from_analog_i,
-    sram_itf.slave sram_itf
+    
+    output from_sram_t from_sram,
+    input to_sram_t to_sram
 );
 
 // Parameters
@@ -70,7 +72,8 @@ qr_acc_wrapper #(
     .data_n_i(data_n_i),
 
     // DIGITAL INTERFACE: SRAM
-    .sram_itf(sram_itf)
+    .from_sram(from_sram),
+    .to_sram(to_sram)
 );
 
 twos_to_bipolar #(

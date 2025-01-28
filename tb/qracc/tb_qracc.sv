@@ -67,18 +67,16 @@ logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
 logic [$clog2(numRows)-1:0] addr;
-sram_itf #(
-    .numRows(SRAM_ROWS),
-    .numCols(SRAM_COLS)
-) u_sram_itf ();
+from_sram_t from_sram;
+to_sram_t to_sram;
 
-assign u_sram_itf.rq_wr_i = rq_wr;
-assign u_sram_itf.rq_valid_i = rq_valid;
-assign rq_ready = u_sram_itf.rq_ready_o;
-assign rd_valid = u_sram_itf.rd_valid_o;
-assign rd_data = u_sram_itf.rd_data_o;
-assign u_sram_itf.wr_data_i = wr_data;
-assign u_sram_itf.addr_i = addr;
+assign to_sram.rq_wr_i = rq_wr;
+assign to_sram.rq_valid_i = rq_valid;
+assign rq_ready = from_sram.rq_ready_o;
+assign rd_valid = from_sram.rd_valid_o;
+assign rd_data = from_sram.rd_data_o;
+assign to_sram.wr_data_i = wr_data;
+assign to_sram.addr_i = addr;
 
 logic mac_en;
 qracc_config_t qracc_cfg;
@@ -108,7 +106,8 @@ qr_acc_wrapper #(
     .data_p_i(data_p_i),
     .data_n_i(data_n_i),
     // DIGITAL INTERFACE: SRAM
-    .sram_itf(u_sram_itf.slave)
+    .from_sram(from_sram),
+    .to_sram(to_sram)
 );
 
 logic [numRows-1:0] VDR_SEL;

@@ -25,7 +25,8 @@ module qr_acc_wrapper #(
     input [numRows-1:0] data_p_i,
     input [numRows-1:0] data_n_i,
     
-    sram_itf.slave sram_itf
+    output from_sram_t from_sram,
+    input to_sram_t to_sram
 );
 
 logic wc_write;
@@ -55,8 +56,8 @@ end
 
 // SRAM WRITES AND READS 
 always_comb begin : WcSignals
-    wc_write = sram_itf.rq_wr_i && sram_itf.rq_valid_i;
-    wc_read = ~sram_itf.rq_wr_i && sram_itf.rq_valid_i;
+    wc_write = to_sram.rq_wr_i && to_sram.rq_valid_i;
+    wc_read = ~to_sram.rq_wr_i && to_sram.rq_valid_i;
 end
 
 wr_controller #(
@@ -68,11 +69,11 @@ wr_controller #(
 
     .write_i                (wc_write),    
     .read_i                 (wc_read),     
-    .addr_i                 (sram_itf.addr_i),     
+    .addr_i                 (to_sram.addr_i),     
     .done                   (wc_done),  
-    .ready                  (sram_itf.rq_ready_o), 
+    .ready                  (from_sram.rq_ready_o), 
 
-    .wr_data_i              (sram_itf.wr_data_i),
+    .wr_data_i              (to_sram.wr_data_i),
     .wr_data_q              (to_analog_o.WR_DATA),
     
     // SRAM interface signals
@@ -84,11 +85,11 @@ wr_controller #(
 );
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
-        sram_itf.rd_data_o <= 0;
-        sram_itf.rd_valid_o <= 0;
+        from_sram.rd_data_o <= 0;
+        from_sram.rd_valid_o <= 0;
     end else begin
-        sram_itf.rd_data_o <= from_analog_i.SA_OUT;
-        sram_itf.rd_valid_o <= wc_done;
+        from_sram.rd_data_o <= from_analog_i.SA_OUT;
+        from_sram.rd_valid_o <= wc_done;
     end
 end
 

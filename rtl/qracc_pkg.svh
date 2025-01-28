@@ -48,7 +48,21 @@ package qracc_pkg;
         logic [compCount*numCols-1:0] ADC_OUT;
     } from_analog_t;
 
+    typedef struct packed {
+        logic rq_ready_o; // if ready and valid; request is taken
+        logic rd_valid_o; // once asserted; rdata is valid for read requests
+        logic [numCols-1:0] rd_data_o;
+    } from_sram_t;
+
+    typedef struct packed {
+        logic rq_wr_i; // write or read request
+        logic rq_valid_i; // request is valid
+        logic [numCols-1:0] wr_data_i;
+        logic [$clog2(numRows)-1:0] addr_i;
+    } to_sram_t;
+
 endpackage
+
 
 interface sram_itf #(
     parameter numRows = 128,
