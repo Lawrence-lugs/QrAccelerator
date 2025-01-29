@@ -73,9 +73,13 @@ end
 logic signed [31:0] mbl_value [numCols];
 logic signed [numAdcBits-1:0] adc_out [numCols];
 logic signed [numCols-1:0][compCount-1:0] comp_out;
+logic doiroundup[numCols];
 
 localparam signed maxValue = {1'b0, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b1}}};  // 0111
 localparam signed minValue = {1'b1, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b0}}};  // 1000
+localparam signed maxValueAdc = {1'b0, {(numAdcBits-1){1'b1}}};  // 0111
+localparam signed minValueAdc = {1'b1, {(numAdcBits-1){1'b0}}};  // 1000
+
 
 always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
@@ -96,16 +100,24 @@ always_comb begin : toMBL
         
         // ADC reference voltage range is divided by 2**NUM_ADC_REF_RANGE_SHIFTS
         // to follow the "best resolution"
-        adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];
+        // The real circuit doesn't shift, it rounds.e
+        if(`NUM_ADC_REF_RANGE_SHIFTS == 0) begin
+            doiroundup[j] = 0;
+        end else begin
+            doiroundup[j] = (mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS-1]);
+        end
+
         if (mbl_value[j] > maxValue) begin
-            adc_out[j] = maxValue;
+            // $display("MBL value %d is greater than max value %d", mbl_value[j], maxValue);
+            adc_out[j] = maxValueAdc;
+        end else begin
+            if (mbl_value[j] < minValue) begin
+                // $display("MBL value %d is less than min value %d", mbl_value[j], minValue);
+                adc_out[j] = minValueAdc;
+            end else begin
+                adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];// + doiroundup[j];
+            end
         end
-        if (mbl_value[j] < minValue) begin
-            adc_out[j] = minValue;
-        end
-
-        // The real circuit doesn't shift, it rounds.
-
     end
     
     // Decode the ADC output
@@ -114,7 +126,7 @@ always_comb begin : toMBL
             comp_out[j][i] = ($signed(adc_out[j])+8 > i) ? 1 : 0;
         end
     end
-
+    
     ADC_OUT <= comp_out;
 end
 
