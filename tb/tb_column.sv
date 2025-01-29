@@ -29,7 +29,7 @@ localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comp
 // SIGNALS
 /////////////
 
-to_analog_t to_analog;
+to_column_analog_t to_analog;
 from_analog_t from_analog;
 
 logic [numRows-1:0] VDR_SEL;

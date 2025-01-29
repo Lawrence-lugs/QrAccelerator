@@ -29,12 +29,12 @@ def test_seq_acc(
     col_symmetric,
     simulator,
     seed,
+    weight_mode,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
     xTrits = 3,
     outBits = 8,
-    weight_mode = 'bipolar',
     rmse_limit = 0.5,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
@@ -158,12 +158,12 @@ def test_tb_qracc(
     col_symmetric,
     simulator,
     seed,
+    weight_mode,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
     xTrits = 1,
     outBits = 4,
-    weight_mode = 'bipolar',
     rmse_limit = 0.5,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False

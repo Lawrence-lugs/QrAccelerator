@@ -14,12 +14,19 @@ module ts_qracc #(
     localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (
     // ANALOG INTERFACE : SWITCH MATRIX
-    input logic [numRows-1:0] VDR_SEL,
-    input logic [numRows-1:0] VDR_SELB,
-    input logic [numRows-1:0] VSS_SEL,
-    input logic [numRows-1:0] VSS_SELB,
-    input logic [numRows-1:0] VRST_SEL,
-    input logic [numRows-1:0] VRST_SELB,
+    input logic [numRows-1:0] PSM_VDR_SEL,
+    input logic [numRows-1:0] PSM_VDR_SELB,
+    input logic [numRows-1:0] PSM_VSS_SEL,
+    input logic [numRows-1:0] PSM_VSS_SELB,
+    input logic [numRows-1:0] PSM_VRST_SEL,
+    input logic [numRows-1:0] PSM_VRST_SELB,
+
+    input logic [numRows-1:0] NSM_VDR_SEL,
+    input logic [numRows-1:0] NSM_VDR_SELB,
+    input logic [numRows-1:0] NSM_VSS_SEL,
+    input logic [numRows-1:0] NSM_VSS_SELB,
+    input logic [numRows-1:0] NSM_VRST_SEL,
+    input logic [numRows-1:0] NSM_VRST_SELB,
 
     // ANALOG INTERFACE : SRAM
     output logic [numCols-1:0] SA_OUT,
@@ -85,17 +92,18 @@ always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
         mbl_value[j] = 0;
         for (int i = 0; i < numRows; i++) begin
-            // BINARY MODE
-            // mbl_value[j] += VDR_SEL[i] * mem[i][j];
-            // mbl_value[j] -= VSS_SEL[i] * mem[i][j];
-            // BIPOLAR MODE
             if(mem[i][j] == 1) begin
-                mbl_value[j] += VDR_SEL[i];
-                mbl_value[j] -= VSS_SEL[i];
+                // if it's neither, then VRST is being selected and we add nothing
+                // $display("mem[%d][%d](%d) | PSM:(%d,%d)", i, j, mem[i][j], PSM_VDR_SEL[i],PSM_VSS_SEL[i]);
+                mbl_value[j] += PSM_VDR_SEL[i];
+                mbl_value[j] -= PSM_VSS_SEL[i];
             end else begin 
-                mbl_value[j] -= VDR_SEL[i];
-                mbl_value[j] += VSS_SEL[i];
+                // if it's neither, then VRST is being selected and we add nothing
+                // $display("mem[%d][%d](%d) | NSM:(%d,%d)", i, j, mem[i][j], NSM_VDR_SEL[i],NSM_VSS_SEL[i]);
+                mbl_value[j] += NSM_VDR_SEL[i];
+                mbl_value[j] -= NSM_VSS_SEL[i];
             end
+            // $display("mbl_value[%d] = %d", j, mbl_value[j]);
         end
         
         // ADC reference voltage range is divided by 2**NUM_ADC_REF_RANGE_SHIFTS

@@ -42,6 +42,42 @@ package qracc_pkg;
 
         // Clock
         logic CLK;
+    } to_column_analog_t;
+
+    typedef struct {
+        // SWITCH MATRIX
+        logic [numRows-1:0] PSM_VDR_SEL;
+        logic [numRows-1:0] PSM_VDR_SELB;
+        logic [numRows-1:0] PSM_VSS_SEL;
+        logic [numRows-1:0] PSM_VSS_SELB;
+        logic [numRows-1:0] PSM_VRST_SEL;
+        logic [numRows-1:0] PSM_VRST_SELB;
+
+        logic [numRows-1:0] NSM_VDR_SEL;
+        logic [numRows-1:0] NSM_VDR_SELB;
+        logic [numRows-1:0] NSM_VSS_SEL;
+        logic [numRows-1:0] NSM_VSS_SELB;
+        logic [numRows-1:0] NSM_VRST_SEL;
+        logic [numRows-1:0] NSM_VRST_SELB;
+
+        // SRAM
+        logic [numRows-1:0] WL;
+        logic PCH;
+        logic [numCols-1:0] WR_DATA;
+        logic WRITE;
+        logic [numCols-1:0] CSEL;
+        logic SAEN;
+
+        // ADC
+        logic NF;
+        logic NFB;
+        logic M2A;
+        logic M2AB;
+        logic R2A;
+        logic R2AB;
+
+        // Clock
+        logic CLK;
     } to_analog_t;
 
     typedef struct {

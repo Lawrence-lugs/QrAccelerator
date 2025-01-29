@@ -14,7 +14,7 @@ module tb_seq_acc #(
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
-    parameter macMode = 1,
+    parameter macMode = 0,
     parameter outBits = 8
 ) ( 
 );
@@ -66,12 +66,21 @@ logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
 logic [$clog2(numRows)-1:0] addr;
-logic [numRows-1:0] VDR_SEL;
-logic [numRows-1:0] VDR_SELB;
-logic [numRows-1:0] VSS_SEL;
-logic [numRows-1:0] VSS_SELB;
-logic [numRows-1:0] VRST_SEL;
-logic [numRows-1:0] VRST_SELB;
+
+logic [numRows-1:0] PSM_VDR_SEL;
+logic [numRows-1:0] PSM_VDR_SELB;
+logic [numRows-1:0] PSM_VSS_SEL;
+logic [numRows-1:0] PSM_VSS_SELB;
+logic [numRows-1:0] PSM_VRST_SEL;
+logic [numRows-1:0] PSM_VRST_SELB;
+
+logic [numRows-1:0] NSM_VDR_SEL;
+logic [numRows-1:0] NSM_VDR_SELB;
+logic [numRows-1:0] NSM_VSS_SEL;
+logic [numRows-1:0] NSM_VSS_SELB;
+logic [numRows-1:0] NSM_VRST_SEL;
+logic [numRows-1:0] NSM_VRST_SELB;
+
 logic [numCols-1:0] SA_OUT;
 logic [numRows-1:0] WL;
 logic PCH;
@@ -92,12 +101,19 @@ to_sram_t to_sram;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
-assign VDR_SEL = to_analog.VDR_SEL;
-assign VDR_SELB = to_analog.VDR_SELB;
-assign VSS_SEL = to_analog.VSS_SEL;
-assign VSS_SELB = to_analog.VSS_SELB;
-assign VRST_SEL = to_analog.VRST_SEL;
-assign VRST_SELB = to_analog.VRST_SELB;
+assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
+
 assign from_analog.SA_OUT = SA_OUT;
 assign WL = to_analog.WL;
 assign PCH = to_analog.PCH;
@@ -158,12 +174,18 @@ ts_qracc #(
     .numCols(SRAM_COLS),
     .numAdcBits(numAdcBits)
 ) u_ts_qracc (
-    .VDR_SEL(VDR_SEL),
-    .VDR_SELB(VDR_SELB), 
-    .VSS_SEL(VSS_SEL),
-    .VSS_SELB(VSS_SELB),
-    .VRST_SEL(VRST_SEL),
-    .VRST_SELB(VRST_SELB),
+    .PSM_VDR_SEL(PSM_VDR_SEL),
+    .PSM_VDR_SELB(PSM_VDR_SELB),
+    .PSM_VSS_SEL(PSM_VSS_SEL),
+    .PSM_VSS_SELB(PSM_VSS_SELB),
+    .PSM_VRST_SEL(PSM_VRST_SEL),
+    .PSM_VRST_SELB(PSM_VRST_SELB),
+    .NSM_VDR_SEL(NSM_VDR_SEL),
+    .NSM_VDR_SELB(NSM_VDR_SELB),
+    .NSM_VSS_SEL(NSM_VSS_SEL), 
+    .NSM_VSS_SELB(NSM_VSS_SELB),
+    .NSM_VRST_SEL(NSM_VRST_SEL),
+    .NSM_VRST_SELB(NSM_VRST_SELB),
     .SA_OUT(SA_OUT),
     .WL(WL),
     .PCH(PCH),
@@ -271,8 +293,9 @@ static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2
 initial begin
 
     test_phase = P_INIT;
-    cfg.binary_cfg = 0;
-    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
+    cfg.binary_cfg = macMode;
+    if (cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
+    else $display("MAC MODE: BIPOLAR");
 
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");

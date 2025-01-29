@@ -20,7 +20,7 @@ module column_wrapper #(
     qracc_config_t cfg,
 
     input from_analog_t from_analog_i,
-    output to_analog_t to_analog_o,
+    output to_column_analog_t to_analog_o,
 
     // DIGITAL INTERFACE: MAC
     output logic [numCols-1:0][numAdcBits-1:0] adc_out_o,

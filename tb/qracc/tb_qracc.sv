@@ -110,12 +110,20 @@ qr_acc_wrapper #(
     .to_sram(to_sram)
 );
 
-logic [numRows-1:0] VDR_SEL;
-logic [numRows-1:0] VDR_SELB;
-logic [numRows-1:0] VSS_SEL;
-logic [numRows-1:0] VSS_SELB;
-logic [numRows-1:0] VRST_SEL;
-logic [numRows-1:0] VRST_SELB;
+logic [numRows-1:0] PSM_VDR_SEL;
+logic [numRows-1:0] PSM_VDR_SELB;
+logic [numRows-1:0] PSM_VSS_SEL;
+logic [numRows-1:0] PSM_VSS_SELB;
+logic [numRows-1:0] PSM_VRST_SEL;
+logic [numRows-1:0] PSM_VRST_SELB;
+
+logic [numRows-1:0] NSM_VDR_SEL;
+logic [numRows-1:0] NSM_VDR_SELB;
+logic [numRows-1:0] NSM_VSS_SEL;
+logic [numRows-1:0] NSM_VSS_SELB;
+logic [numRows-1:0] NSM_VRST_SEL;
+logic [numRows-1:0] NSM_VRST_SELB;
+
 logic [numCols-1:0] SA_OUT;
 logic [numRows-1:0] WL;
 logic PCH;
@@ -134,12 +142,19 @@ logic CLK;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
-assign VDR_SEL = to_analog.VDR_SEL;
-assign VDR_SELB = to_analog.VDR_SELB;
-assign VSS_SEL = to_analog.VSS_SEL;
-assign VSS_SELB = to_analog.VSS_SELB;
-assign VRST_SEL = to_analog.VRST_SEL;
-assign VRST_SELB = to_analog.VRST_SELB;
+assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
+
 assign from_analog.SA_OUT = SA_OUT;
 assign WL = to_analog.WL;
 assign PCH = to_analog.PCH;
@@ -160,13 +175,19 @@ ts_qracc #(
     .numRows(SRAM_ROWS),
     .numCols(SRAM_COLS),
     .numAdcBits(numAdcBits)
-) u_ts_qracc (
-    .VDR_SEL(VDR_SEL),
-    .VDR_SELB(VDR_SELB), 
-    .VSS_SEL(VSS_SEL),
-    .VSS_SELB(VSS_SELB),
-    .VRST_SEL(VRST_SEL),
-    .VRST_SELB(VRST_SELB),
+) u_ts_qracc (    
+    .PSM_VDR_SEL(PSM_VDR_SEL),
+    .PSM_VDR_SELB(PSM_VDR_SELB),
+    .PSM_VSS_SEL(PSM_VSS_SEL),
+    .PSM_VSS_SELB(PSM_VSS_SELB),
+    .PSM_VRST_SEL(PSM_VRST_SEL),
+    .PSM_VRST_SELB(PSM_VRST_SELB),
+    .NSM_VDR_SEL(NSM_VDR_SEL),
+    .NSM_VDR_SELB(NSM_VDR_SELB),
+    .NSM_VSS_SEL(NSM_VSS_SEL), 
+    .NSM_VSS_SELB(NSM_VSS_SELB),
+    .NSM_VRST_SEL(NSM_VRST_SEL),
+    .NSM_VRST_SELB(NSM_VRST_SELB),
     .SA_OUT(SA_OUT),
     .WL(WL),
     .PCH(PCH),
@@ -279,17 +300,19 @@ initial begin
 
     test_phase = P_INIT;
 
-    mode_cfg = 0;
+    qracc_cfg.binary_cfg = macMode;
+    if (qracc_cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
+    else $display("MAC MODE: BIPOLAR");
 
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
-    f_wx = $fopen({path, "wx_4b.txt"}, "r");\
+    f_wx = $fopen({path, "wx_4b.txt"}, "r");
 
     `ifdef AMS
-        f_mac_out = $fopen({path, "adc_out_ams.txt"}, "w");
+        f_adc_out  = $fopen({path, "adc_out_ams.txt"}, "w");
     `else
-        f_mac_out = $fopen({path, "adc_out.txt"}, "w");
+        f_adc_out = $fopen({path, "adc_out.txt"}, "w");
     `endif
 
     // Initialize

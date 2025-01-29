@@ -40,18 +40,57 @@ assign adc_out = from_analog_i.ADC_OUT;
 
 // SWITCH MATRIX SELECTS
 always_comb begin : SwitchMatrixSelects
-    if (clk && mac_en_i) begin
-        to_analog_o.VDR_SEL = 0;
-        to_analog_o.VSS_SEL = 0;
-        to_analog_o.VRST_SEL = '1; // '1 = all ones
+    if (cfg.binary_cfg) begin
+        // Binary configuration
+        if (clk && mac_en_i) begin
+            to_analog_o.PSM_VDR_SEL = 0;
+            to_analog_o.PSM_VSS_SEL = 0;
+            to_analog_o.PSM_VRST_SEL = '1; // '1 = all ones
+        end else begin
+            to_analog_o.PSM_VDR_SEL = data_p_i & ~data_n_i;
+            to_analog_o.PSM_VSS_SEL = data_n_i & ~data_p_i;
+            to_analog_o.PSM_VRST_SEL = ~data_p_i & ~data_n_i;
+        end
+        to_analog_o.PSM_VDR_SELB = ~to_analog_o.PSM_VDR_SEL;
+        to_analog_o.PSM_VSS_SELB = ~to_analog_o.PSM_VSS_SEL;
+        to_analog_o.PSM_VRST_SELB = ~to_analog_o.PSM_VRST_SEL;
+
+        // In binary config, the NSM always points to VRST
+        to_analog_o.NSM_VDR_SEL = 0;
+        to_analog_o.NSM_VSS_SEL = 0;
+        to_analog_o.NSM_VRST_SEL = '1; // '1 = all ones
+        to_analog_o.NSM_VDR_SELB = ~to_analog_o.NSM_VDR_SEL;
+        to_analog_o.NSM_VSS_SELB = ~to_analog_o.NSM_VSS_SEL;
+        to_analog_o.NSM_VRST_SELB = ~to_analog_o.NSM_VRST_SEL;
+        
     end else begin
-        to_analog_o.VDR_SEL = data_p_i & ~data_n_i;
-        to_analog_o.VSS_SEL = data_n_i & ~data_p_i;
-        to_analog_o.VRST_SEL = ~data_p_i & ~data_n_i;
+        // Bipolar configuration
+        if (clk && mac_en_i) begin
+            to_analog_o.PSM_VDR_SEL = 0;
+            to_analog_o.PSM_VSS_SEL = 0;
+            to_analog_o.PSM_VRST_SEL = '1; // '1 = all ones
+        end else begin
+            to_analog_o.PSM_VDR_SEL = data_p_i & ~data_n_i;
+            to_analog_o.PSM_VSS_SEL = data_n_i & ~data_p_i;
+            to_analog_o.PSM_VRST_SEL = ~data_p_i & ~data_n_i;
+        end
+        to_analog_o.PSM_VDR_SELB = ~to_analog_o.PSM_VDR_SEL;
+        to_analog_o.PSM_VSS_SELB = ~to_analog_o.PSM_VSS_SEL;
+        to_analog_o.PSM_VRST_SELB = ~to_analog_o.PSM_VRST_SEL;
+
+        if (clk && mac_en_i) begin
+            to_analog_o.NSM_VDR_SEL = 0;
+            to_analog_o.NSM_VSS_SEL = 0;
+            to_analog_o.NSM_VRST_SEL = '1; // '1 = all ones
+        end else begin
+            to_analog_o.NSM_VDR_SEL = data_n_i & ~data_p_i; // only this part is different
+            to_analog_o.NSM_VSS_SEL = data_p_i & ~data_n_i; // only this part is different
+            to_analog_o.NSM_VRST_SEL = ~data_p_i & ~data_n_i;
+        end
+        to_analog_o.NSM_VDR_SELB = ~to_analog_o.NSM_VDR_SEL;
+        to_analog_o.NSM_VSS_SELB = ~to_analog_o.NSM_VSS_SEL;
+        to_analog_o.NSM_VRST_SELB = ~to_analog_o.NSM_VRST_SEL;
     end
-    to_analog_o.VDR_SELB = ~to_analog_o.VDR_SEL;
-    to_analog_o.VSS_SELB = ~to_analog_o.VSS_SEL;
-    to_analog_o.VRST_SELB = ~to_analog_o.VRST_SEL;
 end
 
 // SRAM WRITES AND READS 

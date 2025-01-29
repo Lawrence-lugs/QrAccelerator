@@ -67,3 +67,6 @@ def pytest_generate_tests(metafunc):
 
     if 'synth' in metafunc.fixturenames:
         metafunc.parametrize("synth", metafunc.config.getoption("synth"))
+
+    if 'weight_mode' in metafunc.fixturenames:
+        metafunc.parametrize("weight_mode", ['bipolar','binary'])
