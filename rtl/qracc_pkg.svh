@@ -12,6 +12,7 @@ package qracc_pkg;
         logic [numCfgBits-1:0] n_input_bits_cfg;
         // logic [numCfgBits-1:0] n_adc_bits_cfg;
         logic binary_cfg;
+        logic [2:0] adc_ref_range_shifts; // up to 8 shifts
     } qracc_config_t;
 
     typedef struct {

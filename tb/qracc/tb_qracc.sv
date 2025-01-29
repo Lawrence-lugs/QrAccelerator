@@ -1,5 +1,5 @@
 //Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
-// asdfasd
+// as
 
 `timescale 1ns/1ps
 
@@ -284,8 +284,13 @@ initial begin
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
-    f_wx = $fopen({path, "wx_4b.txt"}, "r");
-    f_adc_out = $fopen({path, "adc_out.txt"}, "w");
+    f_wx = $fopen({path, "wx_4b.txt"}, "r");\
+
+    `ifdef AMS
+        f_mac_out = $fopen({path, "adc_out_ams.txt"}, "w");
+    `else
+        f_mac_out = $fopen({path, "adc_out.txt"}, "w");
+    `endif
 
     // Initialize
     flag = 0;

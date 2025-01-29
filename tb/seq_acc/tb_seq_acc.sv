@@ -1,4 +1,5 @@
-    //Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
+//Verilog HDL for "test_caps", "tb_q_redis", "systemVerilog"
+// Adasdsd
 
 `timescale 1ns/1ps
 
@@ -271,12 +272,18 @@ initial begin
 
     test_phase = P_INIT;
     cfg.binary_cfg = 0;
+    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
 
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");
     f_x = $fopen({path, "x.txt"}, "r");
     f_wx = $fopen({path, "wx_clipped.txt"}, "r");
-    f_mac_out = $fopen({path, "mac_out.txt"}, "w");
+
+    `ifdef AMS
+        f_mac_out = $fopen({path, "mac_out_ams.txt"}, "w");
+    `else
+        f_mac_out = $fopen({path, "mac_out.txt"}, "w");
+    `endif
 
     // Initialize
     nrst = 0;
