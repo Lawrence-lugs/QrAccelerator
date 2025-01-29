@@ -13,7 +13,8 @@ module seq_acc #(
     parameter outputElements = 32,
     parameter adcBits = 4,
     localparam inputTrits = inputBits - 1,
-    localparam accumulatorBits = (inputTrits - 1) + adcBits + 1 // +1 from addition bit growth
+    // localparam accumulatorBits = (inputTrits - 1) + adcBits + 1 // +1 from addition bit growth
+    localparam accumulatorBits = 8
 ) (
     input clk, nrst,
 
@@ -124,9 +125,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         for (int i = 0; i < outputElements; i++) begin
             if (pipeline_tracker[1]) begin // == 'h02
-                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (accumulatorBits - adcBits - 1); 
+                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (inputTrits - 1); 
             end else begin
-                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (accumulatorBits - adcBits - 1) );
+                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (inputTrits - 1) );
             end
         end
     end

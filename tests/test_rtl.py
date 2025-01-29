@@ -32,7 +32,7 @@ def test_seq_acc(
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
-    xTrits = 4,
+    xTrits = 3,
     outBits = 8,
     weight_mode = 'bipolar',
     rmse_limit = 0.5,

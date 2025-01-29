@@ -4,7 +4,7 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 0
+`define NUM_ADC_REF_RANGE_SHIFTS 1
 
 module tb_seq_acc #(
     parameter SRAM_ROWS = 128,
@@ -16,7 +16,6 @@ module tb_seq_acc #(
     parameter macMode = 1,
     parameter outBits = 8
 ) ( 
-    
 );
 
 /////////////
@@ -28,7 +27,8 @@ parameter numCols = SRAM_COLS;
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
-localparam accumulatorBits = (xTrits - 1) + numAdcBits + 1; // +1 from addition bit growth
+// localparam accumulatorBits = (xTrits - 1) + numAdcBits + 1; // +1 from addition bit growth
+localparam accumulatorBits = 8;
 
 /////////////
 // SIGNALS

@@ -74,8 +74,8 @@ logic signed [31:0] mbl_value [numCols];
 logic signed [numAdcBits-1:0] adc_out [numCols];
 logic signed [numCols-1:0][compCount-1:0] comp_out;
 
-localparam signed maxValue = {1'b0, {(numAdcBits-1){1'b1}}};  // 0111...111
-localparam signed minValue = {1'b1, {(numAdcBits-1){1'b0}}};  // 1000...000
+localparam signed maxValue = {1'b0, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b1}}};  // 0111
+localparam signed minValue = {1'b1, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b0}}};  // 1000
 
 always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
@@ -96,18 +96,6 @@ always_comb begin : toMBL
         
         // ADC reference voltage range is divided by 2**NUM_ADC_REF_RANGE_SHIFTS
         // to follow the "best resolution"
-        // adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];
- 
-        // Also, the real circuit needs to saturate.
-        // 31:4 if 3:0, 31:5 if 4:1 etc.
-        // if (mbl_value[j][31:`NUM_ADC_REF_RANGE_SHIFTS+numAdcBits] == 0) begin
-        //     adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];
-        // end else begin
-        //     if(mbl_value[j][31]) 
-        //         adc_out[j] = minValue;
-        //     else
-        //         adc_out[j] = maxValue;
-        // end
         adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];
         if (mbl_value[j] > maxValue) begin
             adc_out[j] = maxValue;
