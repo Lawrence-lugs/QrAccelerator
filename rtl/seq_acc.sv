@@ -13,7 +13,7 @@ module seq_acc #(
     parameter outputElements = 32,
     parameter adcBits = 4,
     localparam inputTrits = inputBits - 1,
-    localparam accumulatorBits = $clog2(inputTrits) + adcBits + 1 // +1 from addition bit growth
+    localparam accumulatorBits = (inputTrits - 1) + adcBits + 1 // +1 from addition bit growth
 ) (
     input clk, nrst,
 
@@ -124,9 +124,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         for (int i = 0; i < outputElements; i++) begin
             if (pipeline_tracker[1]) begin // == 'h02
-                accumulator[i] <= adc_out[i] <<< (accumulatorBits - adcBits); 
+                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (accumulatorBits - adcBits - 1); 
             end else begin
-                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + (adc_out[i] <<< (accumulatorBits - adcBits));
+                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (accumulatorBits - adcBits - 1) );
             end
         end
     end
@@ -141,7 +141,7 @@ always_comb begin : seqAccDpath
     mac_en = (pipeline_tracker[inputTrits-1:0] != 4'b0000); 
 
     for (int i = 0; i < outputElements; i++) begin
-        mac_data_o[i] = accumulator[i];
+        mac_data_o[i] = accumulator[i] << `NUM_ADC_REF_RANGE_SHIFTS;
     end
 
     // Data input

@@ -71,5 +71,4 @@ def generate_qracc_inputs(
         wx_outBits = quant.saturating_clip(wx, inBits = wxBits, outBits = outBits)
     else:
         wx_outBits = wx
-
     return w, x, wx_outBits.T

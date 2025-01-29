@@ -28,7 +28,7 @@ parameter numCols = SRAM_COLS;
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
-localparam accumulatorBits = $clog2(xTrits) + numAdcBits + 1; // +1 from addition bit growth
+localparam accumulatorBits = (xTrits - 1) + numAdcBits + 1; // +1 from addition bit growth
 
 /////////////
 // SIGNALS
@@ -230,14 +230,6 @@ endtask
 
 int f_w,f_x,f_wx,f_mac_out;
 int scan_data; 
-
-logic signed [outBits-1:0] mac_result_readable [numCols];
-
-always_comb begin
-    for (int i = 0; i < numCols; i++) begin
-        mac_result_readable[i] = mac_result[i];
-    end
-end
 
 // Keep reading the outputs
 always @(posedge clk) begin

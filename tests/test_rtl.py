@@ -5,6 +5,9 @@ import sys
 import hwacctools.quantization.quant as q
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_theme()
 
 # simulator = 'xrun'
 sim_args = {'vcs':  [
@@ -26,8 +29,8 @@ def test_seq_acc(
     col_symmetric,
     simulator,
     seed,
-    wDimX = 3, #nColumns
-    wDimY = 4, #nRows
+    wDimX = 32, #nColumns
+    wDimY = 128, #nRows
     xBatches = 10,
     xTrits = 4,
     outBits = 8,
@@ -141,6 +144,7 @@ def test_seq_acc(
     # Compute RMSE
     rmse = np.sqrt(np.mean((mac_out - exp_out)**2)) 
     print(f'RMSE:{rmse}')
+
     assert rmse < rmse_limit, f'RMSE: {rmse}'
 
     with open(log_file,'r+') as f:
