@@ -65,6 +65,8 @@ python -m pytest tests/test_tb_column.py
 
 ### sec_acc datapath
 
+![alt text](images/seq_acc_bd.png)
+
 ![alt text](images/seq_acc_pipeline.png)
 
 ### Results notes
