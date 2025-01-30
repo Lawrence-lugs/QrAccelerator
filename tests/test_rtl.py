@@ -34,8 +34,8 @@ def test_qracc_ams(
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
-    xTrits = 3,
-    outBits = 8,
+    xTrits = 1,
+    outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False

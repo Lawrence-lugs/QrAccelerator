@@ -14,7 +14,7 @@ module tb_qracc #(
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
-    parameter macMode = 1
+    parameter macMode = 0
 ) ( 
     
 );
@@ -310,12 +310,12 @@ initial begin
     f_wx = $fopen({path, "wx_4b.txt"}, "r");
 
     `ifdef AMS
-        if (cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
+        if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
         else f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
     `else
         f_adc_out = $fopen({path, "adc_out_rtl.txt"}, "w");
     `endif
-    
+
     // Initialize
     flag = 0;
     nrst = 0;
