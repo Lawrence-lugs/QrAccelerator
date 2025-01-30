@@ -89,8 +89,7 @@ qracc_config_t qracc_cfg;
 qr_acc_wrapper #(
     .numRows(numRows),
     .numCols(numCols),
-    .numAdcBits(numAdcBits),
-    .numCfgBits(numCfgBits)
+    .numAdcBits(numAdcBits)
 ) u_qr_acc_wrapper (
     .clk(clk),
     .nrst(nrst),

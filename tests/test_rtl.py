@@ -444,4 +444,6 @@ def save_scatter_fig(expected, actual, title, filename):
     ax.set_title(title)
     ax.set_xlabel('Actual')
     ax.set_ylabel('Ideal')
+    lim = [expected.min(),expected.max()]
+    sns.lineplot(x=lim,y=lim,color='gray',linestyle='--')
     plt.savefig(f'images/{filename}.svg')

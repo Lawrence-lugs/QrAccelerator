@@ -35,6 +35,8 @@ module seq_acc #(
     input to_sram_t to_sram
 );
 
+qracc_config_t cfg;
+
 // Parameters
 localparam pipelineStages = inputTrits + 2;
 
@@ -54,8 +56,7 @@ logic mac_en;
 qr_acc_wrapper #(
     .numRows(inputElements),
     .numCols(outputElements),
-    .numAdcBits(numAdcBits),
-    .numCfgBits(numCfgBits)
+    .numAdcBits(numAdcBits)
 ) u_qr_acc_wrapper (
     .clk(clk),
     .nrst(nrst),
