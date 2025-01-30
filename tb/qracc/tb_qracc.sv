@@ -310,11 +310,12 @@ initial begin
     f_wx = $fopen({path, "wx_4b.txt"}, "r");
 
     `ifdef AMS
-        f_adc_out  = $fopen({path, "adc_out_ams.txt"}, "w");
+        if (cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
+        else f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
     `else
-        f_adc_out = $fopen({path, "adc_out.txt"}, "w");
+        f_adc_out = $fopen({path, "adc_out_rtl.txt"}, "w");
     `endif
-
+    
     // Initialize
     flag = 0;
     nrst = 0;

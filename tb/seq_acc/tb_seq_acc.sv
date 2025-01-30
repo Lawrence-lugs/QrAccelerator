@@ -5,7 +5,7 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 2
+`define NUM_ADC_REF_RANGE_SHIFTS 1
 
 module tb_seq_acc #(
     parameter SRAM_ROWS = 128,
@@ -293,6 +293,7 @@ static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2
 initial begin
 
     test_phase = P_INIT;
+    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
     cfg.binary_cfg = macMode;
     if (cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
     else $display("MAC MODE: BIPOLAR");
@@ -303,9 +304,10 @@ initial begin
     f_wx = $fopen({path, "wx_clipped.txt"}, "r");
 
     `ifdef AMS
-        f_mac_out = $fopen({path, "mac_out_ams.txt"}, "w");
+        if (cfg.binary_cfg == 1) f_mac_out = $fopen({path, "mac_out_ams_binary.txt"}, "w");
+        else f_mac_out = $fopen({path, "mac_out_ams_bipolar.txt"}, "w");
     `else
-        f_mac_out = $fopen({path, "mac_out.txt"}, "w");
+        f_mac_out = $fopen({path, "mac_out_rtl.txt"}, "w");
     `endif
 
     // Initialize
