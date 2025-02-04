@@ -136,10 +136,11 @@ end
 // Datapaths
 
 always_comb begin : seqAccDpath
-    // If something is in the first 3 stages of the pipeline we cannot take new data
-    ready_o = (pipeline_tracker[inputTrits-2:0] == 3'b000);
+    // If something is in the first inputTrits-1 stages of the pipeline we cannot take new data (ready_o asserted in the last cycle that PISOs are needed)
+    ready_o = (pipeline_tracker[inputTrits-2:0] == {(inputTrits-1){1'b0}});
     valid_o = pipeline_tracker[pipelineStages-1];
-    mac_en = (pipeline_tracker[inputTrits-1:0] != 4'b0000); 
+    // If something is in the first inputTrits stages of the pipeline, we need to enable the MAC
+    mac_en = (pipeline_tracker[inputTrits-1:0] != {(inputTrits){1'b0}}); 
 
     for (int i = 0; i < outputElements; i++) begin
         mac_data_o[i] = accumulator[i] << cfg.adc_ref_range_shifts;

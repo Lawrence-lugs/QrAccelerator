@@ -29,7 +29,8 @@ localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
 // localparam accumulatorBits = (xTrits - 1) + numAdcBits + 1; // +1 from addition bit growth
-localparam accumulatorBits = 8;
+// localparam accumulatorBits = 8;
+localparam accumulatorBits = 16;
 
 /////////////
 // SIGNALS
@@ -41,6 +42,7 @@ from_analog_t from_analog;
 logic clk;
 logic nrst;
 logic signed [numRows-1:0][xBits-1:0] mac_data;
+// logic signed [numRows-1:0][15:0] mac_data;
 logic signed mac_data_valid;
 logic signed [numCols-1:0][accumulatorBits-1:0] mac_result;
 
