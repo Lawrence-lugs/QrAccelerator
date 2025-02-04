@@ -172,29 +172,28 @@ endtask
 
 ts_column u_ts_column (
     // ANALOG INTERFACE : SWITCH MATRIX
-    .VDR_SEL(vdr_sel_int),
-    .VDR_SELB(vdr_selb_int),
-    .VSS_SEL(vss_sel_int),
-    .VSS_SELB(vss_selb_int),
-    .VRST_SEL(vrst_sel_int),
-    .VRST_SELB(vrst_selb_int),
+    .VDR_SEL(VDR_SEL),
+    .VDR_SELB(VDR_SELB),
+    .VSS_SEL(VSS_SEL), 
+    .VSS_SELB(VSS_SELB),
+    .VRST_SEL(VRST_SEL),
+    .VRST_SELB(VRST_SELB),
     // ANALOG INTERFACE : SRAM
-    .SA_OUT(sa_out_int),
-    .WL(wl_int),
-    .PCH(pch_int),
-    .WR_DATA(wr_data_int),
-    .WRITE(write_int),
-    .CSEL(csel_int),
-    .SAEN(saen_int),
+    .SA_OUT(SA_OUT),
+    .WL(WL),
+    .PCH(PCH),
+    .WR_DATA(WR_DATA),
+    .WRITE(WRITE),
+    .CSEL(CSEL),
+    .SAEN(SAEN),
     // ANALOG INTERFACE : ADC
-    .ADC_OUT(adc_out_int),
-    .NF(nf_int),
-    .NFB(nfb_int),
-    .M2A(m2a_int),
-
-    .M2AB(m2ab_int),
-    .R2A(r2a_int),
-    .R2AB(r2ab_int),
+    .ADC_OUT(ADC_OUT),
+    .NF(NF),
+    .NFB(NFB),
+    .M2A(M2A),
+    .M2AB(M2AB),
+    .R2A(R2A),
+    .R2AB(R2AB),
     .CLK(clk)
 );
 

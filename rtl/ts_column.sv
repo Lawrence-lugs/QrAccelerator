@@ -30,8 +30,8 @@ module ts_column #(
     input logic [numCols-1:0] CSEL,
     input logic [numCols-1:0] SAEN,
 
-    // ANALOG INTERFACE : ADC
-    output logic [numAdcBits*numCols-1:0] ADC_OUT,
+    // ANALOG INTERF2ACE : ADC
+    output logic [15*numCols-1:0] ADC_OUT,
     input logic [numCols-1:0] NF,
     input logic [numCols-1:0] NFB,
     input logic [numCols-1:0] M2A,
