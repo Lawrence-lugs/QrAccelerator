@@ -10,11 +10,11 @@ import qracc_pkg::*;
 module tb_seq_acc #(
     parameter SRAM_ROWS = 128,
     parameter SRAM_COLS = 32,
-    parameter xBits = 5, // Ternary bits + 1
+    parameter xBits = 8, // Ternary bits + 1
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
-    parameter macMode = 0,
+    parameter macMode = 1,
     parameter outBits = 8
 ) ( 
 );

@@ -72,8 +72,8 @@ def test_seq_acc_ams(
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
-    xTrits = 3,
-    outBits = 8,
+    xTrits = 7,
+    outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
@@ -90,7 +90,7 @@ def test_seq_acc_ams(
         seed = seed,
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
-        rangeBits = 6,
+        # rangeBits = 6,
         x_repeat = x_repeat,
         clip_output = False
     )
