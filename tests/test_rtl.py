@@ -50,7 +50,7 @@ def test_qracc_ams(
         seed = seed,
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
-        rangeBits = 6,
+        rangeBits = 5,
         x_repeat = x_repeat,
         clip_output = True
     )
@@ -108,10 +108,10 @@ def test_seq_acc(
     simulator,
     seed,
     weight_mode,
+    xTrits = 7,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
-    xTrits = 3,
     outBits = 8,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
@@ -215,7 +215,7 @@ def test_seq_acc(
 
     # Post-simulation
 
-    actual = np.loadtxt(f'{stimulus_output_path}/mac_out_rtl.txt',dtype=int)
+    actual = np.loadtxt(f'{stimulus_output_path}/mac_out_rtl_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
     save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_{weight_mode}')
@@ -338,7 +338,7 @@ def test_tb_qracc(
 
     # Post-simulation
 
-    actual = np.loadtxt(f'{stimulus_output_path}/adc_out_rtl.txt',dtype=int)
+    actual = np.loadtxt(f'{stimulus_output_path}/adc_out_rtl_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
     save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_{weight_mode}')

@@ -5,7 +5,7 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 2
+`define NUM_ADC_REF_RANGE_SHIFTS 1
 
 module tb_qracc #(
     parameter SRAM_ROWS = 128,

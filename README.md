@@ -2,7 +2,9 @@
 
 This repository contains the digital design for a 22nm Charge-Redistribution In-memory Computing based accelerator with a 10T1C SRAM bitcell.
 
-For now, has a 128x32 IMC subarray with a 4-bit ADC.
+Implements QR-based IMC with a 128x32 10T1C SRAM subarray with a 4-bit ADC.
+
+See the [results](results.md) document to get a rundown of metrics.
 
 ## Setup
 
@@ -33,8 +35,10 @@ Tests are executed using Pytest. The test infrastructure:
 The repository includes a comprehensive testing setup for the QR Accelerator design
 
 ### Test Files
-- `tb_column.sv`: SystemVerilog testbench for testing the column-level functionality
-- `test_tb_column.py`: Python test runner that executes the SystemVerilog testbenches using Cadence xrun
+- `tb_column.sv`: SystemVerilog testbench for testing ts_column (single ADC column)
+- `tb_qr_acc.sv`: SystemVerilog testbench for testing the main QR Accelerator wrapper
+- `tb_seq_acc.sv`: SystemVerilog testbench for testing sequential accumulator module
+- `test_rtl.py`: Pytest files that performs input generation pre-test and post-test data processing. Runs the simulators as subprocess.
 
 ### Key Components Under Test
 - QR Accelerator wrapper (`qr_acc_wrapper.sv`) which includes:
@@ -43,12 +47,11 @@ The repository includes a comprehensive testing setup for the QR Accelerator des
   - MAC (Multiply-Accumulate) interface
   - SRAM interface with read/write capabilities
 
-
 ```python
 # Run all tests of all testbenches
-python -m pytest tests
-# Or
-python -m pytest tests/test_tb_column.py
+python -m pytest
+# Or specific parts
+python -m pytest -k qracc # or seq_acc or column or ams
 ```
 
 ### Required Tools
@@ -71,11 +74,7 @@ python -m pytest tests/test_tb_column.py
 
 ### Results notes
 
-| CSV | Notes |
-|--|--|
-| 1.csv | Initial AMS where the testing settings were on binary mode but the circuit was in bipolar |
-| 2.csv | After putting the testing into binary mode. Now is off by +-1 sometimes. Reason could be that shifting rounds to -infty but this doesn't. |
-| 3.csv | Comparison against rounded, also corrected ADC ref range. Now only the rounding is biased low. |
+* The binary mode seq_acc output can have disastrously bad SNR (~9dB) with only slight changes (~3-4dB) in the qrAcc result. The result seems to immediately shoot up to ~20dB SNR if the qrAcc result is improved. Is this a fact of life on noisy 4b inputs accumulated into an 8b input? Is there a jump in 8b SNR when the 4b SNR is swept?
 
 ## Todo
 

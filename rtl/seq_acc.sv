@@ -13,8 +13,8 @@ module seq_acc #(
     parameter outputElements = 32,
     parameter adcBits = 4,
     localparam inputTrits = inputBits - 1,
-    // localparam accumulatorBits = (inputTrits - 1) + adcBits + 1 // +1 from addition bit growth
-    localparam accumulatorBits = 8
+    // localparam accumulatorBits = inputTrits  + adcBits + 1 // +1 from addition bit growth
+    localparam accumulatorBits = 16
 ) (
     input clk, nrst,
 

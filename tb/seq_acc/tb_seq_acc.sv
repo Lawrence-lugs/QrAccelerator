@@ -5,7 +5,7 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 1
+`define NUM_ADC_REF_RANGE_SHIFTS 0
 
 module tb_seq_acc #(
     parameter SRAM_ROWS = 128,
@@ -14,7 +14,7 @@ module tb_seq_acc #(
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
-    parameter macMode = 1,
+    parameter macMode = 0,
     parameter outBits = 8
 ) ( 
 );
@@ -307,7 +307,8 @@ initial begin
         if (cfg.binary_cfg == 1) f_mac_out = $fopen({path, "mac_out_ams_binary.txt"}, "w");
         else f_mac_out = $fopen({path, "mac_out_ams_bipolar.txt"}, "w");
     `else
-        f_mac_out = $fopen({path, "mac_out_rtl.txt"}, "w");
+        if (cfg.binary_cfg == 1) f_mac_out = $fopen({path, "mac_out_rtl_binary.txt"}, "w");
+        else f_mac_out = $fopen({path, "mac_out_rtl_bipolar.txt"}, "w");
     `endif
 
     // Initialize
