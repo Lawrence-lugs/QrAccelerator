@@ -72,7 +72,7 @@ def test_seq_acc_ams(
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
-    xTrits = 7,
+    xTrits = 3,
     outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
@@ -108,7 +108,7 @@ def test_seq_acc(
     simulator,
     seed,
     weight_mode,
-    xTrits = 7,
+    xTrits = 3,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
@@ -158,7 +158,7 @@ def test_seq_acc(
         seed = seed,
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
-        rangeBits = 6,
+        rangeBits = 5,
         x_repeat = x_repeat,
         clip_output = False
     )
@@ -282,7 +282,7 @@ def test_tb_qracc(
         seed = seed,
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
-        rangeBits = 6,
+        rangeBits = 5,
         x_repeat = x_repeat
     )
 

@@ -312,7 +312,8 @@ initial begin
         if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
         else f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
     `else
-        f_adc_out = $fopen({path, "adc_out_rtl.txt"}, "w");
+        if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_rtl_binary.txt"}, "w");
+        else f_adc_out = $fopen({path, "adc_out_rtl_bipolar.txt"}, "w");
     `endif
 
     // Initialize
