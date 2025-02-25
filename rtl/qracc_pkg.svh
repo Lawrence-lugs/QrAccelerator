@@ -98,8 +98,24 @@ package qracc_pkg;
         logic [$clog2(numRows)-1:0] addr_i;
     } to_sram_t;
 
+    typedef enum logic [3:0] { 
+        I_READ_SRAM = 4'b0000,
+        I_WRITE_SRAM = 4'b0001,
+        I_MAC = 4'b0010,
+        I_WRITE_CONFIG = 4'b0011
+    } qracc_inst_t;
+
 endpackage
 
+interface qracc_ctrl_interface #(
+    parameter ctrlItfSize = 31
+);    
+    logic inst;
+    logic valid;
+    logic ready;
+    logic [ctrlItfSize-1:0] data;
+
+endinterface
 
 interface sram_itf #(
     parameter numRows = 128,
