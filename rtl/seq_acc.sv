@@ -24,6 +24,8 @@ module seq_acc #(
     input [inputElements-1:0][inputBits-1:0] mac_data_i,
     input mac_valid_i,
     output logic ready_o,
+
+    // Valid but no ready, cannot stall
     output logic valid_o,
     output logic [outputElements-1:0][accumulatorBits-1:0] mac_data_o,
 

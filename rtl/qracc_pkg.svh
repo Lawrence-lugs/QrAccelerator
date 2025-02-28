@@ -8,11 +8,19 @@ package qracc_pkg;
     parameter compCount = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
 
+    typedef enum logic [3:0] {
+        I_NOP,
+        I_POINTER_RESET,
+        I_LOAD_WEIGHT,
+        I_LOAD_ACTIVATION,
+        I_LOAD_OUTPUT,
+        I_READ_ACTIVATION
+    } global_buffer_instruction_t;
+
     typedef struct packed {        
         logic [numCfgBits-1:0] n_input_bits_cfg;
-        // logic [numCfgBits-1:0] n_adc_bits_cfg;
-        logic binary_cfg;
-        logic [2:0] adc_ref_range_shifts; // up to 8 shifts
+        logic binary_cfg; // binary or bipolar mode
+        logic [2:0] adc_ref_range_shifts; // up to 8 shifts, depends on ADC, can be updated later for dynamic ADC ranging
     } qracc_config_t;
 
     typedef struct {
@@ -103,19 +111,55 @@ package qracc_pkg;
         I_WRITE_SRAM = 4'b0001,
         I_MAC = 4'b0010,
         I_WRITE_CONFIG = 4'b0011
-    } qracc_inst_t;
+    } qracc_inst_t; // NEEDS OVERHAUL FOR MICROCODE LOOP
+
+
 
 endpackage
 
-interface qracc_ctrl_interface #(
-    parameter ctrlItfSize = 31
+interface qracc_ctrl_interface #( // Generic control interface
+    parameter ctrlItfSize = 32
 );    
-    logic inst;
+
+    logic [31:0] data;
+    logic addr;
+    logic wen;
     logic valid;
     logic ready;
-    logic [ctrlItfSize-1:0] data;
 
-endinterface
+    modport slave (
+        input data, addr, wen, valid,
+        output ready
+    );
+
+    modport master (
+        output data, addr, wen, valid,
+        input ready
+    );
+
+endinterface // qracc_ctrl_interface
+
+interface qracc_data_interface #( // Generic data interface
+    parameter busSize = 32
+);
+
+    logic [31:0] data;
+    logic addr;
+    logic wen;
+    logic valid;
+    logic ready;
+
+    modport slave (
+        input data, addr, wen, valid,
+        output ready
+    );
+
+    modport master (
+        output data, addr, wen, valid,
+        input ready
+    );
+
+endinterface // qracc_data_interface
 
 interface sram_itf #(
     parameter numRows = 128,
