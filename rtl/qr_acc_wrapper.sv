@@ -156,23 +156,23 @@ always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
 end
 always_comb begin : AdcEncoderLogic
     for (int i = 0; i < numCols; i++) begin
-        casex (adc_out[i])
+        casez (adc_out[i])
             15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8 // 0000
             15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9 // 0001
-            15'b000_0000_0000_001x: adc_out_encoded[i] = -6; // A // 0003
-            15'b000_0000_0000_01xx: adc_out_encoded[i] = -5; // B // 0007
-            15'b000_0000_0000_1xxx: adc_out_encoded[i] = -4; // C // 000F
-            15'b000_0000_0001_xxxx: adc_out_encoded[i] = -3; // D // 001F
-            15'b000_0000_001x_xxxx: adc_out_encoded[i] = -2; // E // 003F
-            15'b000_0000_01xx_xxxx: adc_out_encoded[i] = -1; // F // 007F
-            15'b000_0000_1xxx_xxxx: adc_out_encoded[i] = 0;  // 0 // 00FF
-            15'b000_0001_xxxx_xxxx: adc_out_encoded[i] = 1;  // 1 // 01FF
-            15'b000_001x_xxxx_xxxx: adc_out_encoded[i] = 2;  // 2 // 03FF
-            15'b000_01xx_xxxx_xxxx: adc_out_encoded[i] = 3;  // 3 // 07FF
-            15'b000_1xxx_xxxx_xxxx: adc_out_encoded[i] = 4;  // 4 // 0FFF
-            15'b001_xxxx_xxxx_xxxx: adc_out_encoded[i] = 5;  // 5 // 1FFF
-            15'b01x_xxxx_xxxx_xxxx: adc_out_encoded[i] = 6;  // 6 // 3FFF
-            15'b1xx_xxxx_xxxx_xxxx: adc_out_encoded[i] = 7;  // 7 // 7FFF
+            15'b000_0000_0000_001?: adc_out_encoded[i] = -6; // A // 0003
+            15'b000_0000_0000_01??: adc_out_encoded[i] = -5; // B // 0007
+            15'b000_0000_0000_1???: adc_out_encoded[i] = -4; // C // 000F
+            15'b000_0000_0001_????: adc_out_encoded[i] = -3; // D // 001F
+            15'b000_0000_001?_????: adc_out_encoded[i] = -2; // E // 003F
+            15'b000_0000_01??_????: adc_out_encoded[i] = -1; // F // 007F
+            15'b000_0000_1???_????: adc_out_encoded[i] = 0;  // 0 // 00FF
+            15'b000_0001_????_????: adc_out_encoded[i] = 1;  // 1 // 01FF
+            15'b000_001?_????_????: adc_out_encoded[i] = 2;  // 2 // 03FF
+            15'b000_01??_????_????: adc_out_encoded[i] = 3;  // 3 // 07FF
+            15'b000_1???_????_????: adc_out_encoded[i] = 4;  // 4 // 0FFF
+            15'b001_????_????_????: adc_out_encoded[i] = 5;  // 5 // 1FFF
+            15'b01?_????_????_????: adc_out_encoded[i] = 6;  // 6 // 3FFF
+            15'b1??_????_????_????: adc_out_encoded[i] = 7;  // 7 // 7FFF
             default: adc_out_encoded[i] = 0;
         endcase
     end

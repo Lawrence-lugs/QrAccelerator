@@ -84,30 +84,27 @@ seq_acc #(
     .valid_o        (qracc_output_valid),
     .mac_data_o     (qracc_mac_output),
     
-    // Passthrough Signals      (Analog)
+    // Passthrough Signals
     .to_analog_o    (to_analog),
     .from_analog_i  (from_analog),
     .from_sram      (from_sram),
     .to_sram        (to_sram)
 );
 
-global_buffer #(
+activation_buffer #(
     .dataSize       (globalBufferDataSize),
     .depth          (globalBufferDepth),
     .interfaceDepth (globalBufferInterfaceWidth),
     .addrWidth      (globalBufferAddrWidth)
-) u_global_buffer (
+) u_activation_buffer (
     .clk            (clk),
     .nrst           (nrst),
     
-    .inst_i         (qracc_ctrl.qracc_global_buffer_instruction),
-    .ready_o        (global_buffer_ready),
-    .obuf_rd_addr_o (qracc_ctrl.qracc_global_buffer_read_addr),
-    
-    // Data interfaces from outside and the accelerator
-    .ext_data_itf_i (bus_i),
-    .obuf_data_itf_i(qracc_ctrl.qracc_global_buffer_data),
-    .ctrl_itf_i     (qracc_ctrl.qracc_global_buffer_ctrl)
+    // Write Interface
+    .wr_data_i      (),
+    .rd_data_o      (),
+    .ctrl_wr_en     (),
+    .ctrl_rd_en     ()
 );
 
 

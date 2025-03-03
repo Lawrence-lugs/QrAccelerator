@@ -16,9 +16,11 @@ module feature_loader #(
     input logic                     valid_i ,
 
     // Output Interface
-    output logic [aflDimY-1:0][elementWidth-1:0] data_o,
+    output logic [aflDimY-1:0][elementWidth-1:0] data_o
 );
 
+// numFeeders*elementWidth > inputWidth
+// However, the alignment can be handled by shifting with a control offset
 logic [numFeeders-1:0][elementWidth-1:0] feeder_serial_inputs;
 
 // Slice and align input data to offset
@@ -28,7 +30,7 @@ end
 
 // Module : window_row_feeder
 generate
-    for(int i = 0; i < aflDimY; i++) begin
+    for(genvar i = 0; i < aflDimY; i++) begin
         window_row_feeder u_wf(
             .clk(clk),
             .nrst(nrst),
