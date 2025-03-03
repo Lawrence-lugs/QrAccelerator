@@ -5,12 +5,11 @@ Implements output scaling per
 
 */
 
-import accelerator_package::*;
-
 module output_scaler #(
     parameter numElements = 4,
     parameter elementWidth = 20,
     parameter outputWidth = 8,
+    // Static Parameters, mostly
     parameter fixedPointBits = 16,
     parameter shiftBits = 16
 ) (
@@ -22,8 +21,6 @@ module output_scaler #(
     input [fixedPointBits-1:0] output_scale,
     input [shiftBits-1:0] output_shift
 );
-
-cfg_oscaler_t cfg_q;
 
 localparam scaledWidth = elementWidth+fixedPointBits;
 localparam signed saturateHigh = {1'b0, {(outputWidth-1){1'b1}}};  // 0111...111

@@ -31,7 +31,7 @@ module qr_acc_wrapper #(
 
 logic wc_write;
 logic wc_read;
-logic wd_done;
+logic wc_done;
 logic [numCols-1:0][numAdcBits-1:0] adc_out_encoded;
 logic [numCols-1:0][compCount-1:0] adc_out;
 
@@ -99,6 +99,9 @@ always_comb begin : WcSignals
     wc_read = ~to_sram.rq_wr_i && to_sram.rq_valid_i;
 end
 
+logic wr_controller_ready;
+assign wr_controller_ready = from_sram.rq_ready_o;
+
 wr_controller #(
     .numRows                (numRows),
     .numCols                (numCols)
@@ -110,7 +113,7 @@ wr_controller #(
     .read_i                 (wc_read),     
     .addr_i                 (to_sram.addr_i),     
     .done                   (wc_done),  
-    .ready                  (from_sram.rq_ready_o), 
+    .ready                  (wr_controller_ready), 
 
     .wr_data_i              (to_sram.wr_data_i),
     .wr_data_q              (to_analog_o.WR_DATA),
@@ -122,6 +125,7 @@ wr_controller #(
     .c3sram_nprecharge_o   (to_analog_o.PCH),
     .c3sram_wl_o           (to_analog_o.WL)
 );
+
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
         from_sram.rd_data_o <= 0;

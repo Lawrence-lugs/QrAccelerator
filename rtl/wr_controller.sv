@@ -48,7 +48,7 @@ typedef enum logic [2:0] {
 wr_ctrl_state_t state_q;
 wr_ctrl_state_t state_d;
 
-logic [2:0] pos_ctr;
+logic [1:0] pos_ctr;
 logic [$clog2(numRows)-1:0] addr_i_q;
 
 // FSM
@@ -106,6 +106,7 @@ always_ff @(posedge clk or negedge nrst) begin : positionCounter
         case (state_q)
             S_IDLE: pos_ctr <= 3;
             S_WRITING, S_READING: pos_ctr <= pos_ctr - 1;
+            default: pos_ctr <= pos_ctr;
         endcase
     end
 end

@@ -1,26 +1,39 @@
 `timescale 1ns/1ps
 
+`ifndef QRACC_PKG // evil hack for linting again
+`define QRACC_PKG
+
 package qracc_pkg;
 
+    // QRAcc Parameters
     parameter numRows = 128;
     parameter numCols = 32;
     parameter numAdcBits = 4; 
     parameter compCount = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
+    
+    // Output Scaler Parameters
+    parameter accumulatorBits = 16;
+    parameter outputBits = 8;
 
-    typedef enum logic [3:0] {
-        I_NOP,
-        I_POINTER_RESET,
-        I_LOAD_WEIGHT,
-        I_LOAD_ACTIVATION,
-        I_LOAD_OUTPUT,
-        I_READ_ACTIVATION
-    } global_buffer_instruction_t;
+    // Control signals for QRAcc
+    typedef struct packed {
+        logic activation_buffer_int_wr_en;
+        logic activation_buffer_int_rd_en;
+        logic activation_buffer_ext_wr_en;
+        logic activation_buffer_ext_rd_en;
+        logic qracc_mac_data_valid;
+        logic abuf_frombus;
+    } qracc_control_t;
 
+    // Config that changes per-layer
     typedef struct packed {        
         logic [numCfgBits-1:0] n_input_bits_cfg;
         logic binary_cfg; // binary or bipolar mode
         logic [2:0] adc_ref_range_shifts; // up to 8 shifts, depends on ADC, can be updated later for dynamic ADC ranging
+    
+        logic [accumulatorBits-1:0] output_scaler_output_scale;
+        logic [accumulatorBits-1:0] output_scaler_output_shift;
     } qracc_config_t;
 
     typedef struct {
@@ -93,13 +106,13 @@ package qracc_pkg;
         logic [compCount*numCols-1:0] ADC_OUT;
     } from_analog_t;
 
-    typedef struct packed {
+    typedef struct {
         logic rq_ready_o; // if ready and valid; request is taken
         logic rd_valid_o; // once asserted; rdata is valid for read requests
         logic [numCols-1:0] rd_data_o;
     } from_sram_t;
 
-    typedef struct packed {
+    typedef struct {
         logic rq_wr_i; // write or read request
         logic rq_valid_i; // request is valid
         logic [numCols-1:0] wr_data_i;
@@ -143,7 +156,8 @@ interface qracc_data_interface #( // Generic data interface
     parameter busSize = 32
 );
 
-    logic [31:0] data;
+    logic [31:0] data_in;
+    logic [31:0] data_out;
     logic addr;
     logic wen;
     logic valid;
@@ -195,3 +209,5 @@ interface sram_itf #(
     );
 
 endinterface //sram_itf
+
+`endif

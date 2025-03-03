@@ -12,9 +12,9 @@ module seq_acc #(
     parameter inputElements = 128,
     parameter outputElements = 32,
     parameter adcBits = 4,
-    localparam inputTrits = inputBits - 1,
+    parameter accumulatorBits = 16,
+    localparam inputTrits = inputBits - 1
     // localparam accumulatorBits = inputTrits  + adcBits + 1 // +1 from addition bit growth
-    localparam accumulatorBits = 16
 ) (
     input clk, nrst,
 
@@ -25,7 +25,7 @@ module seq_acc #(
     input mac_valid_i,
     output logic ready_o,
 
-    // Valid but no ready, cannot stall
+    // Valid but no ready because we cannot stall
     output logic valid_o,
     output logic [outputElements-1:0][accumulatorBits-1:0] mac_data_o,
 
@@ -56,8 +56,7 @@ logic mac_en;
 qr_acc_wrapper #(
     .numRows(inputElements),
     .numCols(outputElements),
-    .numAdcBits(numAdcBits),
-    .numCfgBits(numCfgBits)
+    .numAdcBits(numAdcBits)
 ) u_qr_acc_wrapper (
     .clk(clk),
     .nrst(nrst),

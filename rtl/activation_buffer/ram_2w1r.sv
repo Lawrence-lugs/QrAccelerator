@@ -2,21 +2,23 @@
 // Ultra generic single-cycle memory
 // Responds in 1 cycle
 
-module RAM #(
-    parameter addrWidth = 32,
+module ram_2w1r #(
+    parameter addrWidth1 = 32,
+    parameter addrWidth2 = 32,
     parameter dataSize = 8,
-    parameter interfaceWidth = 32,
+    parameter interfaceWidth1 = 32,
+    parameter interfaceWidth2 = 256,
     parameter depth = 1024
 ) (
     input logic clk, nrst,
 
     input logic wr_en_1_i,
     input logic [addrWidth-1:0] wr_addr_1_i,
-    input logic [interfaceWidth-1:0] wr_data_1_i,
+    input logic [interfaceWidth1-1:0] wr_data_1_i,
 
     input logic wr_en_2_i,
     input logic [addrWidth-1:0] wr_addr_2_i,
-    input logic [interfaceWidth-1:0] wr_data_2_i,
+    input logic [interfaceWidth2-1:0] wr_data_2_i,
 
     input logic rd_en_i,
     input logic [addrWidth-1:0] rd_addr_i,

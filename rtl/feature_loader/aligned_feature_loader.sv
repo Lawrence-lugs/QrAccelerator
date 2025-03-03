@@ -1,7 +1,7 @@
 // Aligned Feature Loader (from UNPU)
 // "Memory with weird shifting"
 
-module aligned_ #(
+module aligned_feature_loader #(
     parameter aflDimY       = 128   ,
     parameter aflDimX       = 6    ,
     parameter inputWidth    = 32    ,
