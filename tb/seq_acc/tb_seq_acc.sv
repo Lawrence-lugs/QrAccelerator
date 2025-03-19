@@ -276,16 +276,17 @@ initial begin
 end
 
 // Waveform dumping
-`ifdef SYNOPSYS
-initial begin
-    $vcdplusfile("tb_seq_acc.vpd");
-    $vcdpluson();
-    $vcdplusmemon();
-    $dumpvars(0);
-end
-`endif
+// `ifdef SYNOPSYS
+// initial begin
+//     $vcdplusfile("tb_seq_acc.vpd");
+//     $vcdpluson();
+//     $vcdplusmemon();
+//     $dumpvars(0);
+// end
+// `endif
 initial begin
     $dumpfile("tb_seq_acc.vcd");
+    $vcdplusmemon();
     $dumpvars(0);
 end
 

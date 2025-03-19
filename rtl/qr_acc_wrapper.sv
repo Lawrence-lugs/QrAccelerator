@@ -100,7 +100,7 @@ always_comb begin : WcSignals
 end
 
 logic wr_controller_ready;
-assign wr_controller_ready = from_sram.rq_ready_o;
+assign from_sram.rq_ready_o = wr_controller_ready;
 
 wr_controller #(
     .numRows                (numRows),

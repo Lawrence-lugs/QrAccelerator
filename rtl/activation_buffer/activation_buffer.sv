@@ -36,12 +36,6 @@ module activation_buffer #(
 // Signals
 //-----------------------------------
 
-// RAM
-logic [addrWidth-1:0] ram_wr_addr;
-logic [interfaceWidth-1:0] ram_wr_data;
-logic [interfaceWidth-1:0] ram_rd_data;
-logic [addrWidth-1:0] ram_rd_addr;
-
 logic [addrWidth-1:0] head;
 logic [addrWidth-1:0] tail;
 
@@ -49,7 +43,8 @@ logic [addrWidth-1:0] tail;
 // Modules
 //-----------------------------------
 ram_2w1r #(
-    .addrWidth      (addrWidth),
+    .addrWidth1      (addrWidth),
+    .addrWidth2      (addrWidth),
     .dataSize       (dataSize),
     .interfaceWidth1(extInterfaceWidth), // 32b
     .interfaceWidth2(intInterfaceWidth), // 256b

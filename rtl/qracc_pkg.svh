@@ -164,13 +164,13 @@ interface qracc_data_interface #( // Generic data interface
     logic ready;
 
     modport slave (
-        input data, addr, wen, valid,
-        output ready
+        input data_in, addr, wen, valid,
+        output ready, data_out
     );
 
     modport master (
-        output data, addr, wen, valid,
-        input ready
+        output data_in, addr, wen, valid,
+        input ready, data_out
     );
 
 endinterface // qracc_data_interface
