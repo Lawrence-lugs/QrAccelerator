@@ -20,7 +20,6 @@ module aligned_feature_loader #(
     output logic [aflDimY-1:0][elementWidth-1:0] data_o,
 
     // Control
-    // TODO : What's the consequences of broadcasting this?
     input logic [aflDimX-1:0][aflDimY-1:0][1:0] ctrl_load_direction_i 
 );
 
@@ -45,5 +44,17 @@ generate
         end
     end
 endgenerate
+
+always_comb begin
+    if (valid_i) begin
+        for (int i = 0; i < aflDimY; i++) begin
+            feature_pass[0][input_addr_offset+i] = data_i[(i+1)*elementWidth-1:i*elementWidth];
+        end
+    end
+    // data_o decode
+    for (int i = 0; i < aflDimY; i++) begin
+        data_o[i] = feature_pass[aflDimX-1][i];
+    end
+end
 
 endmodule

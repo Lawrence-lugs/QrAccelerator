@@ -18,3 +18,4 @@ tb/*/*inputs*
 .env
 AN.DB
 ams*
+*scratch*
