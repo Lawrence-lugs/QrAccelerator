@@ -1,44 +1,36 @@
-// Aligned Feature Loader (from UNPU)
+// Element-addressable feature loader
 
 module feature_loader #(
-    parameter aflDimY       = 128   ,
-    parameter aflDimX       = 32    ,
-    parameter inputWidth    = 32    ,
-    parameter elementWidth  = 4     ,
-    // No touch
-    parameter kernelWidth   = 3     ,
-    localparam inputElements = inputWidth/elementWidth,
-    localparam numFeeders = aflDimY/kernelWidth
+    parameter inputWidth    = 256   ,
+    parameter addrWidth     = 8     , 
+    parameter elementWidth = 8      ,
+    parameter numElements   = 256   
 ) (
-    // Input Interface
     input logic [inputWidth-1:0]    data_i  ,
-    input logic [numFeeders-1:0]    feeder_offset,
-    input logic                     valid_i ,
+    input logic [addrWidth-1:0]     addr_i  ,
+    input logic wr_en,
 
-    // Output Interface
     output logic [aflDimY-1:0][elementWidth-1:0] data_o
 );
 
-// numFeeders*elementWidth > inputWidth
-// However, the alignment can be handled by shifting with a control offset
-logic [numFeeders-1:0][elementWidth-1:0] feeder_serial_inputs;
+logic [elementWidth-1:0] staging_register [numElements];
 
-// Slice and align input data to offset
-always_comb begin : dataSlicingOffset
-    feeder_serial_inputs = data_i << (feeder_offset * elementWidth);
+always_ff @( posedge clk or negedge nrst ) begin : writeDecode
+    if (!nrst) begin
+        for (int i = 0; i < numElements; i++) begin
+            staging_register[i] <= 0;
+        end
+    end else begin
+        if (wr_en) begin
+            staging_register[addr_i] <= data_i;
+        end
+    end
 end
 
-// Module : window_row_feeder
-generate
-    for(genvar i = 0; i < aflDimY; i++) begin
-        window_row_feeder u_wf(
-            .clk(clk),
-            .nrst(nrst),
-            .feature_serial_i(feeder_serial_inputs[i]),
-            .feature_o(data_o[i]),
-            .load_i(valid_i)
-        );
+always_comb begin : outDecode
+    for (int i = 0; i < numElements; i++) begin
+        data_o[i] <= staging_register[i];
     end
-endgenerate
-    
+end
+
 endmodule

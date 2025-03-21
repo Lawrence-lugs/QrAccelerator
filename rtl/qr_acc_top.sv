@@ -28,7 +28,7 @@ module qr_acc_top #(
     parameter globalBufferDepth = 1024,
     parameter globalBufferExtInterfaceWidth = 32,
     parameter globalBufferReadInterfaceWidth = 32,
-    parameter globalBufferIntInterfaceWidth = 256,
+    parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
     parameter globalBufferAddrWidth = 32,
     parameter globalBufferDataSize = 8,          // Byte-Addressability
 
@@ -87,11 +87,11 @@ assign bus_handshake_success = bus_i.valid && bus_i.ready;
 
 // Main matrix multiplication
 seq_acc #(
-    .qrAccInputBits      (qrAccInputBits),
-    .qrAccInputElements  (qrAccInputElements),
-    .qrAccOutputElements (qrAccOutputElements),
-    .qrAccAdcBits        (qrAccAdcBits),1
-    .qrAccAccumulatorBits(qrAccAccumulatorBits)
+    .inputBits        (qrAccInputBits),
+    .inputElements    (qrAccInputElements),
+    .outputElements   (qrAccOutputElements),
+    .adcBits          (qrAccAdcBits),
+    .accumulatorBits  (qrAccAccumulatorBits)
 ) u_seq_acc (
     .clk            (clk),
     .nrst           (nrst),
@@ -135,31 +135,7 @@ activation_buffer #(
     .ctrl_int_rd_en         (qracc_ctrl.activation_buffer_int_rd_en),
 
     // For debug
-    .ofmap_head_snoop   (),
-    .ifmap_head_snoop   ()
-);
-
-// Windowed convolution data setup based on UNPU
-aligned_feature_loader #(
-    .aflDimY                    (aflDimY),
-    .aflDimX                    (aflDimX),
-    .inputWidth                 (globalBufferExtInterfaceWidth),
-    .elementWidth               (inputBits),
-    .addrWidth                  (aflAddrWidth)  
-) u_afl (
-    .clk                        (clk),
-    .nrst                       (nrst),
-    
-    // Input Interface
-    .data_i                     (activation_buffer_rd_data),
-    .input_addr_offset          (qracc_ctrl.input_addr_offset),
-    .valid_i                    (qracc_ctrl.afl_valid),
-
-    // Output Interface
-    .data_o                     (qracc_mac_data),
-    
-    // Control
-    .ctrl_load_direction_i      (qracc_ctrl.afl_ctrl_load_direction)
+    .write_head_snoop       ()
 );
 
 // Fixed point scaling from quantization methods in TFLite
