@@ -132,7 +132,7 @@ always_comb  begin
             c3sram_nprecharge_o = 0;
         end
         S_READING: begin
-            c3sram_csel_o = cselWaveRd[pos_ctr];
+            c3sram_csel_o = {numCols*{cselWaveRd[pos_ctr]}};
             c3sram_saen_o = saenWaveRd[pos_ctr];
             c3sram_w2b_o = 0;
             c3sram_wl_o = 0;

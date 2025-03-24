@@ -18,22 +18,22 @@ package qracc_pkg;
 
     // Control signals for QRAcc
     typedef struct packed {
-        logic activation_buffer_int_wr_en;
-        logic activation_buffer_int_rd_en;
+        logic qracc_mac_data_valid;
+
         logic activation_buffer_ext_wr_en;
         logic activation_buffer_ext_rd_en;
-        logic qracc_mac_data_valid;
-        logic abuf_frombus;
+        logic activation_buffer_int_wr_en;
+        logic activation_buffer_int_rd_en;
+        
+        logic feature_loader_addr;
+        logic feature_loader_wr_en;
     } qracc_control_t;
 
     // Config that changes per-layer
     typedef struct packed {        
-        logic [numCfgBits-1:0] n_input_bits_cfg;
+        logic [2:0] n_input_bits_cfg;
         logic binary_cfg; // binary or bipolar mode
         logic [2:0] adc_ref_range_shifts; // up to 8 shifts, depends on ADC, can be updated later for dynamic ADC ranging
-    
-        logic [accumulatorBits-1:0] output_scaler_output_scale;
-        logic [accumulatorBits-1:0] output_scaler_output_shift;
     } qracc_config_t;
 
     typedef struct {
@@ -131,34 +131,33 @@ package qracc_pkg;
 endpackage
 
 interface qracc_ctrl_interface #( // Generic control interface
-    parameter ctrlItfSize = 32
 );    
 
     logic [31:0] data;
-    logic addr;
+    logic [31:0] read_data;
+    logic [31:0] addr;
     logic wen;
     logic valid;
     logic ready;
 
     modport slave (
         input data, addr, wen, valid,
-        output ready
+        output ready, read_data
     );
 
     modport master (
         output data, addr, wen, valid,
-        input ready
+        input ready, read_data
     );
 
 endinterface // qracc_ctrl_interface
 
 interface qracc_data_interface #( // Generic data interface
-    parameter busSize = 32
 );
 
     logic [31:0] data_in;
     logic [31:0] data_out;
-    logic addr;
+    logic [31:0] addr;
     logic wen;
     logic valid;
     logic ready;

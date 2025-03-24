@@ -1,16 +1,19 @@
 // Element-addressable feature loader
+`timescale 1ns/1ps
 
 module feature_loader #(
     parameter inputWidth    = 256   ,
     parameter addrWidth     = 8     , 
-    parameter elementWidth = 8      ,
-    parameter numElements   = 256   
+    parameter elementWidth  = 8     ,
+    parameter numElements   = 128   
 ) (
+    input clk, nrst,
+
     input logic [inputWidth-1:0]    data_i  ,
     input logic [addrWidth-1:0]     addr_i  ,
     input logic wr_en,
 
-    output logic [aflDimY-1:0][elementWidth-1:0] data_o
+    output logic [numElements-1:0][elementWidth-1:0] data_o
 );
 
 logic [elementWidth-1:0] staging_register [numElements];

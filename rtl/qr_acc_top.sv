@@ -85,6 +85,17 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 assign periph_handshake_success = periph_i.valid && periph_i.ready;
 assign bus_handshake_success = bus_i.valid && bus_i.ready;
 
+qracc_controller #(
+
+) u_qracc_controller (
+    .clk            (clk),
+    .nrst           (nrst),
+
+    .periph_i       (periph_i),
+    .bus_i          (bus_i),
+    .ctrl_o         (qracc_ctrl)
+);
+
 // Main matrix multiplication
 seq_acc #(
     .inputBits        (qrAccInputBits),
@@ -138,20 +149,42 @@ activation_buffer #(
     .write_head_snoop       ()
 );
 
+// Feature Loader - stages the input data for qrAcc
+feature_loader #(
+    .inputWidth        (aflAddrWidth),
+    .addrWidth         (qrAccInputBits),
+    .elementWidth      (qrAccInputElements),
+    .numElements       (qrAccInputElements)
+) u_feature_loader (
+    .clk               (clk),
+    .nrst              (nrst),
+
+    // Interface with buffer
+    .addr_i            (qracc_ctrl.feature_loader_addr),  
+    .data_i            (activation_buffer_rd_data),
+    .wr_en             (qracc_ctrl.feature_loader_wr_en),  
+    
+    // Interface with QR accelerator
+    .data_o            (qracc_mac_data)
+);
+
 // Fixed point scaling from quantization methods in TFLite
-output_scaler #(
+output_scaler_set #(
     .numElements    (qrAccOutputElements),
-    .elementWidth   (qrAccAccumulatorBits),
+    .inputWidth     (qrAccAccumulatorBits),
     .outputWidth    (qrAccOutputBits)
-) u_output_scaler (
+) u_output_scaler_set (
     .clk            (clk),
     .nrst           (nrst),
     
     .wx_i           (qracc_mac_output),
     .y_o            (output_scaler_output),
 
-    .output_scale   (qracc_cfg.output_scaler_output_scale),
-    .output_shift   (qracc_cfg.output_scaler_output_shift)
+    .scale_w_en_i   (qracc_ctrl.output_scaler_scale_w_en),
+    .scale_w_data_i (qracc_ctrl.output_scaler_scale_w_data),
+
+    .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
+    .shift_w_data_i (qracc_ctrl.output_scaler_shift_w_data)
 );
 
 endmodule
