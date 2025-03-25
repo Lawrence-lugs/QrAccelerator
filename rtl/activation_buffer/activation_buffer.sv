@@ -12,78 +12,59 @@ module activation_buffer #(
     localparam totalSize = depth*dataSize,
     localparam maxAddr = $clog2(depth)
 ) (
-    input logic clk,
-    input logic nrst,
+    input clk,
+    input nrst,
     
-    // Interface to External
+    // External Port
     input        [extInterfaceWidth-1:0]   ext_wr_data_i,
-    input logic ctrl_ext_wr_en,
+    input ext_wr_en,
     output logic [extInterfaceWidth-1:0]   ext_rd_data_o,
-    input logic ctrl_ext_rd_en,
+    input [addrWidth-1:0] ext_addr_i,
 
-    // Interface to Internal 
+    // Internal Port
     input        [intInterfaceWidth-1:0]   int_wr_data_i,
-    input logic ctrl_int_wr_en,
+    input int_wr_en,
     output logic [intInterfaceWidth-1:0]   int_rd_data_o,
-    input logic ctrl_int_rd_en,
-    
-    // For Debugging
-    output logic [addrWidth-1:0]        write_head_snoop
+    input [addrWidth-1:0] int_addr_i
 );
 
 //-----------------------------------
 // Signals
 //-----------------------------------
 
-logic [addrWidth-1:0] head;
+logic [addrWidth-1:0] fmap_ptr_1;
+logic [addrWidth-1:0] fmap_ptr_2;
 
 //-----------------------------------
 // Modules
 //-----------------------------------
-ram_2w1r #(
-    .addrWidth1      (addrWidth),
-    .addrWidth2      (addrWidth),
+ram_2wr #(
+    .addrWidth      (addrWidth),
     .dataSize       (dataSize),
+    
     .interfaceWidth1(extInterfaceWidth), // 32b
     .interfaceWidth2(intInterfaceWidth), // 256b
+    
     .depth          (depth)
-) u_ram (
+) u_act_memory (
     .clk            (clk),
     .nrst           (nrst),
 
-    .wr_en_1_i      (ctrl_ext_wr_en),
-    .wr_addr_1_i    (head),
+    .wr_en_1_i      (ext_wr_en),
+    .addr_1_i       (ext_addr_i),
     .wr_data_1_i    (ext_wr_data_i),
+    .rd_data_1_o    (ext_rd_data_o),
 
-    .wr_en_2_i      (ctrl_int_wr_en),
-    .wr_addr_2_i    (head),
+    .wr_en_2_i      (int_wr_en),
+    .addr_2_i       (int_addr_i),
     .wr_data_2_i    (int_wr_data_i),
-    
-    .rd_en_i        (ctrl_rd_en),
-    .rd_data_o      (rd_data_o),
-    .rd_addr_i      (tail)
+    .rd_data_2_o    (int_rd_data_o)
 );
 
 //-----------------------------------
-// Control Logic
+// Logic
 //-----------------------------------
 
-always_ff @( posedge clk or negedge nrst ) begin : headsControl
-    if (!nrst) begin
-        head <= 0;
-    end else begin
-        if (ctrl_wr_en) begin
-            if (head == maxAddr - 1) begin
-                head <= 0;
-            end else begin
-                head <= head + 1;
-            end
-        end
-    end
-end
 
-always_comb begin : headsAssigns
-    write_head_snoop = head;
-end
 
 endmodule

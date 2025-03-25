@@ -33,8 +33,8 @@ localparam addrWidth = $clog2(numElements);
 // Registers
 logic signed [scaleBits-1:0] output_scale [numElements];
 logic signed [shiftBits-1:0] output_shift [numElements];
-logic [addrWidth-1:0] scale_w_addr_i;
-logic [addrWidth-1:0] shift_w_addr_i;
+logic [addrWidth-1:0] scale_w_addr;
+logic [addrWidth-1:0] shift_w_addr;
 
 // Modules
 always_ff @( posedge clk or negedge nrst) begin : scalerMemory
@@ -43,16 +43,16 @@ always_ff @( posedge clk or negedge nrst) begin : scalerMemory
             output_scale[i] <= 0;
             output_shift[i] <= 0;
         end
-        scale_w_addr_i <= 0;
-        shift_w_addr_i <= 0;
+        scale_w_addr <= 0;
+        shift_w_addr <= 0;
     end else begin
         if (scale_w_en_i) begin
-            output_scale[scale_w_addr_i] <= scale_w_data_i;
-            scale_w_addr_i <= (scale_w_addr_i < numElements) ? scale_w_addr_i + 1 : 0;
+            output_scale[scale_w_addr] <= scale_w_data_i;
+            scale_w_addr <= (scale_w_addr < numElements) ? scale_w_addr + 1 : 0;
         end
         if (shift_w_en_i) begin
-            output_shift[shift_w_addr_i] <= shift_w_data_i;
-            shift_w_addr_i <= (shift_w_addr_i < numElements) ? shift_w_addr_i + 1 : 0;
+            output_shift[shift_w_addr] <= shift_w_data_i;
+            shift_w_addr <= (shift_w_addr < numElements) ? shift_w_addr + 1 : 0;
         end
     end
 end

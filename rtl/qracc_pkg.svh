@@ -18,22 +18,45 @@ package qracc_pkg;
 
     // Control signals for QRAcc
     typedef struct packed {
+        // QRAcc
         logic qracc_mac_data_valid;
 
+        // Activation buffer
         logic activation_buffer_ext_wr_en;
         logic activation_buffer_ext_rd_en;
+        logic [31:0] activation_buffer_ext_wr_addr;
+        logic [31:0] activation_buffer_ext_rd_addr;
         logic activation_buffer_int_wr_en;
         logic activation_buffer_int_rd_en;
+        logic [31:0] activation_buffer_int_wr_addr;
+        logic [31:0] activation_buffer_int_rd_addr;
         
-        logic feature_loader_addr;
+        // Feature loader
+        logic [31:0] feature_loader_addr;
         logic feature_loader_wr_en;
+
+        logic output_scaler_scale_w_en;
+        logic output_scaler_shift_w_en;
     } qracc_control_t;
 
     // Config that changes per-layer
     typedef struct packed {        
         logic [2:0] n_input_bits_cfg;
         logic binary_cfg; // binary or bipolar mode
-        logic [2:0] adc_ref_range_shifts; // up to 8 shifts, depends on ADC, can be updated later for dynamic ADC ranging
+        logic [2:0] adc_ref_range_shifts; // for analog IMC
+
+        logic [3:0] activation_read_strides;
+        logic [3:0] filter_size_y;
+        logic [3:0] filter_size_x;
+        logic [31:0] input_fmap_size;  // H * W * C
+        logic [31:0] output_fmap_size;
+        logic [31:0] input_fmap_dimx;  // W
+        logic [31:0] input_fmap_dimy;  // H
+        logic [31:0] output_fmap_dimx; 
+        logic [31:0] output_fmap_dimy;
+
+        logic [9:0] num_input_channels;
+        logic [9:0] num_output_channels;
     } qracc_config_t;
 
     typedef struct {
@@ -160,16 +183,17 @@ interface qracc_data_interface #( // Generic data interface
     logic [31:0] addr;
     logic wen;
     logic valid;
+    logic rd_data_valid;
     logic ready;
 
     modport slave (
         input data_in, addr, wen, valid,
-        output ready, data_out
+        output ready, data_out, rd_data_valid
     );
 
     modport master (
         output data_in, addr, wen, valid,
-        input ready, data_out
+        input ready, data_out, rd_data_valid
     );
 
 endinterface // qracc_data_interface

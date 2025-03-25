@@ -1,5 +1,5 @@
 /* 
-n-Bit input MAC accelerator
+n-Bit input DNN accelerator
 uses n cycles to complete an n-bit input mac
 asdasd
 */
@@ -123,30 +123,31 @@ seq_acc #(
 );
 
 // Main feature map buffer
-activation_buffer #(
+ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
     .addrWidth          (globalBufferAddrWidth),
-    .extInterfaceWidth  (globalBufferExtInterfaceWidth),
-    .intInterfaceWidth  (globalBufferIntInterfaceWidth)
+    .interfaceWidth1    (globalBufferExtInterfaceWidth),
+    .interfaceWidth2    (globalBufferIntInterfaceWidth)
 ) u_activation_buffer (
     .clk                (clk),
     .nrst               (nrst),
     
     // External Interface
-    .ext_wr_data_i          (bus_i.data_in),
-    .ext_rd_data_o          (bus_i.data_out),
-    .ctrl_ext_wr_en         (qracc_ctrl.activation_buffer_ext_wr_en),
-    .ctrl_ext_rd_en         (qracc_ctrl.activation_buffer_ext_rd_en),
+    .wr_data_1_i        (bus_i.data_in),
+    .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
+    .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
+    .rd_data_1_o        (bus_i.data_out), // nothing else is connected to data out
+    .rd_addr_1_i        (qracc_ctrl.activation_buffer_ext_rd_addr),
+    .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
     // Internal Interface
-    .int_wr_data_i          (activation_buffer_int_wr_data),
-    .int_rd_data_o          (activation_buffer_rd_data),
-    .ctrl_int_wr_en         (qracc_ctrl.activation_buffer_int_wr_en),
-    .ctrl_int_rd_en         (qracc_ctrl.activation_buffer_int_rd_en),
-
-    // For debug
-    .write_head_snoop       ()
+    .wr_data_2_i       (output_scaler_output),
+    .wr_en_2_i         (qracc_ctrl.activation_buffer_int_wr_en),
+    .wr_addr_2_i       (qracc_ctrl.activation_buffer_int_wr_addr),
+    .rd_data_2_o       (activation_buffer_rd_data),
+    .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
+    .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
 );
 
 // Feature Loader - stages the input data for qrAcc
@@ -172,7 +173,9 @@ feature_loader #(
 output_scaler_set #(
     .numElements    (qrAccOutputElements),
     .inputWidth     (qrAccAccumulatorBits),
-    .outputWidth    (qrAccOutputBits)
+    .outputWidth    (qrAccOutputBits),
+    .scaleBits      (16),
+    .shiftBits      (4)
 ) u_output_scaler_set (
     .clk            (clk),
     .nrst           (nrst),
@@ -181,10 +184,30 @@ output_scaler_set #(
     .y_o            (output_scaler_output),
 
     .scale_w_en_i   (qracc_ctrl.output_scaler_scale_w_en),
-    .scale_w_data_i (qracc_ctrl.output_scaler_scale_w_data),
+    .scale_w_data_i (bus_i.data_in[15:0]),
 
     .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
-    .shift_w_data_i (qracc_ctrl.output_scaler_shift_w_data)
+    .shift_w_data_i (bus_i.data_in[7:0])
 );
+
+
+// csr #(
+// ) u_csr (
+//     .clk                      (clk),
+//     .nrst                     (nrst),
+
+//     .csr_data_i               (periph_i.data),
+//     .csr_addr_i               (periph_i.addr[1:0]), // Figure out later on
+//     .csr_data_o               (periph_i.read_data),
+//     .csr_wr_en_i              (periph_write),
+//     .csr_rd_en_i              (periph_read),
+
+//     .cfg_o                    (cfg),
+    
+//     .csr_main_clear           (csr_main_clear),
+//     .csr_main_start           (csr_main_start),
+//     .csr_main_busy            (csr_main_busy),
+//     .csr_main_inst_write_mode (csr_main_inst_write_mode)
+// );
 
 endmodule
