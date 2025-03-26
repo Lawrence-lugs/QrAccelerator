@@ -111,22 +111,24 @@ qr_acc_top #(
 );
 
 /////////////
-// TESTING
+// TESTING BOILERPLATE
 /////////////
 
-static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
+static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
+
+static string tb_name = "tb_qracc_top";
 
 // Waveform dumping
 `ifdef SYNOPSYS
 initial begin
-    $vcdplusfile("tb_qracc_top.vpd");
+    $vcdplusfile({tb_name,".vpd"});
     $vcdpluson();
     $vcdplusmemon();
     $dumpvars(0);
 end
 `endif
 initial begin
-    $dumpfile("tb_qracc_top.vcd");
+    $dumpfile({tb_name,".vcd"});
     $dumpvars(0);
 end
 
@@ -136,14 +138,60 @@ initial begin
     clk = 0; 
 end
 
-int f_ifmap, f_ofmap, f_mapped_matrix;
-
 // Watchdog
 initial begin
-    #(CLK_PERIOD*3_000_000_000); // 60 seconds
-    $display("TEST FAILED");
+    #(100_000_000); // 100 ms
+    $display("TEST FAILED - WATCHDOG TIMEOUT");
     $finish;
 end
+
+/////////////
+// FILE THINGS
+/////////////
+
+string files[10] = {
+    "flat_output",
+    "flat_output_shape",
+    "ifmap",
+    "ifmap_shape",
+    "matrix_shape",
+    "matrix",
+    "result_shape",
+    "result",
+    "toeplitz_shape",
+    "toeplitz"
+};
+
+int file_descriptors[10];
+
+initial begin
+    foreach (files[i]) begin
+        file_descriptors[i] = $fopen({files_path,files[i],".txt"},"r");
+        if (file_descriptors[i] == 0) begin
+            $display("Error opening file %s",files[i]);
+            $finish;
+        end
+    end
+end
+
+function int get_index_of_file(string file_name);
+    int i;
+    for (i=0; i<10; i++) begin
+        if (files[i] == file_name) begin
+            return i;
+        end
+    end
+endfunction
+
+function int input_files(string file_name);
+    return file_descriptors[get_index_of_file(file_name)];
+endfunction 
+
+/////////////
+// TASKS & TEST SCRIPT
+/////////////
+
+int f_ifmap, f_ofmap, f_mapped_matrix;
 
 initial begin
     
@@ -153,9 +201,13 @@ initial begin
     nrst = 1;
     #(CLK_PERIOD*2);
 
+    csr_main_start = 1;
 
-
-
+    while (!$feof(input_files("ifmap"))) begin
+        $fscanf(input_files("ifmap"),"%h",f_ifmap);
+        $display("ifmap: %h",f_ifmap);
+    end
+    void'($fseek(input_files("ifmap"),0,0));
 
     $display("TEST SUCCESS");
 
