@@ -26,6 +26,94 @@ sim_args = {'vcs':  [
             ]
 }
 
+def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True,top_module=None):
+    
+    if simulator == 'vcs':
+        parameter_list = [f'-pvalue+{tb_name}.'+p for p in parameter_list]
+    else:
+        parameter_list = []
+
+    top_command = ['-top',top_module] if top_module else []
+
+    command = [
+            simulator,
+            *package_list,
+            tb_file
+        ] + sim_args[simulator] + rtl_file_list + parameter_list + top_command
+    
+    print(command)
+    print(log_file)
+    
+    if run:
+        with open(log_file,'w+') as f:
+            sim = subprocess.Popen(
+            command, 
+            shell=False,
+            cwd='./sims',
+            stdout=f
+            )
+        retval = sim.wait()
+        if retval:
+            get_log(log_file)
+        assert not retval, get_log_tail(log_file,10)
+
+    # Read log file
+    with open(log_file,'r+') as f:
+        f.seek(0)
+        out = [line for line in f.readlines()]
+        assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
+
+def test_qr_acc_top(
+    col_symmetric,
+    simulator,
+    seed,
+    # weight_mode,
+    padding = 1,
+    stride = 1,
+    ifmap_shape = (1,3,16,16),
+    ifmap_bits = 4,
+    kernel_shape = (32,3,3,3), # K C H W
+    kernel_bits = 1
+):
+    weight_mode = 'binary'
+    mac_mode = 1 if weight_mode == 'binary' else 0
+  
+    package_list = ['../rtl/qracc_pkg.svh']
+    rtl_file_list = [ 
+        '../rtl/qr_acc_wrapper.sv',
+        '../rtl/seq_acc.sv',
+        '../rtl/ts_qracc.sv',
+        '../rtl/wr_controller.sv',
+        '../rtl/twos_to_bipolar.sv',
+        '../rtl/qr_acc_top.sv',
+        '../rtl/output_scaler/output_scaler_set.sv',
+        '../rtl/output_scaler/output_scaler.sv',
+        '../rtl/memory/ram_2w2r.sv',
+        '../rtl/feature_loader/feature_loader.sv',
+        '../rtl/control/qracc_controller.sv'
+    ]
+    tb_name = 'tb_qracc_top'
+    tb_path = 'qracc_top'
+    stimulus_output_path = f'tb/{tb_path}/inputs'
+
+    # Setup log paths
+    tb_file = f'../tb/{tb_path}/{tb_name}.sv'
+    log_file = f'tests/logs/{tb_name}_{simulator}.log'
+    logdir = os.path.dirname(log_file)
+    os.makedirs(logdir,exist_ok=True)
+
+    # Pre-simulation
+    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits)
+    
+    # Apply parameter list
+    parameter_list = [
+    ]   
+
+    # Simulation
+    run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
+
+    return
+
 def test_qracc_ams(
     col_symmetric,
     simulator,
@@ -425,6 +513,10 @@ def get_log_tail(log_file,lines):
     with open(log_file,'r') as f:
         lines = f.readlines()[-lines:]
         return ''.join(lines)
+
+def get_log(log_file):
+    with open(log_file,'r') as f:
+        print(f.read())
 
 def rmse_snr(expected, actual):
     rmse = np.sqrt(np.mean((expected - actual)**2))

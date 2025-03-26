@@ -13,6 +13,7 @@
 // 3. Wait for done to be asserted
 //
 // Note: write_i and read_i should not be asserted simultaneously
+`timescale 1ns/1ps
 
 module wr_controller #(
     parameter int numRows = 128,

@@ -4,6 +4,8 @@ uses n cycles to complete an n-bit input mac
 asdasd
 */
 
+`timescale 1ns/1ps
+
 import qracc_pkg::*;
 
 module qr_acc_top #(
@@ -13,21 +15,20 @@ module qr_acc_top #(
     parameter ctrlInterfaceSize = 32,
 
     //  Parameters: CSRs
-    parameter csrWidth = 32,
-    parameter numCsr = 4,
+    // parameter csrWidth = 32,
+    // parameter numCsr = 4,
 
     //  Parameters: QRAcc
     parameter qrAccInputBits = 4,
     parameter qrAccInputElements = 128,
-    parameter qrAccOutputBits = 8,
+    parameter qrAccOutputBits = 4,
     parameter qrAccOutputElements = 32,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Global Buffer
-    parameter globalBufferDepth = 1024,
+    parameter globalBufferDepth = 2**21,
     parameter globalBufferExtInterfaceWidth = 32,
-    parameter globalBufferReadInterfaceWidth = 32,
     parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
     parameter globalBufferAddrWidth = 32,
     parameter globalBufferDataSize = 8,          // Byte-Addressability
@@ -46,8 +47,13 @@ module qr_acc_top #(
     // Analog passthrough signals
     output to_analog_t to_analog,
     input from_analog_t from_analog,
-    output from_sram_t from_sram,
-    input to_sram_t to_sram
+
+    // CSR signals for testing for now
+    input qracc_config_t cfg,
+    input csr_main_clear,
+    input csr_main_start,
+    input csr_main_busy,
+    input csr_main_inst_write_mode
 );
 
 
@@ -59,18 +65,16 @@ module qr_acc_top #(
 qracc_config_t qracc_cfg;
 qracc_control_t qracc_ctrl;
 
-// Signals : Handshake
-logic periph_handshake_success;
-logic bus_handshake_success;
-
 // Signals : QRAcc
 logic [qrAccInputElements-1:0][qrAccInputBits-1:0] qracc_mac_data;
 logic qracc_output_valid;
 logic [qrAccOutputElements-1:0][qrAccAccumulatorBits-1:0] qracc_mac_output;
 logic qracc_ready;
+to_sram_t to_sram;
+from_sram_t from_sram; // no need to touch this for now, can use it later to read from sram
 
 // Signals : Activation Buffer
-logic [globalBufferReadInterfaceWidth-1:0] activation_buffer_rd_data;
+logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_int_wr_data;
 
 // Signals: Output Scaler
@@ -81,19 +85,28 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 // Modules
 //-----------------------------------
 
-// Assigns
-assign periph_handshake_success = periph_i.valid && periph_i.ready;
-assign bus_handshake_success = bus_i.valid && bus_i.ready;
-
 qracc_controller #(
 
 ) u_qracc_controller (
-    .clk            (clk),
-    .nrst           (nrst),
+    .clk                        (clk),
+    .nrst                       (nrst),
 
-    .periph_i       (periph_i),
-    .bus_i          (bus_i),
-    .ctrl_o         (qracc_ctrl)
+    .periph_i                   (periph_i.slave),
+    .bus_i                      (bus_i.slave),
+
+    .ctrl_o                     (qracc_ctrl),
+    .to_sram                    (to_sram),
+
+    .qracc_output_valid         (qracc_output_valid),
+    .qracc_ready                (qracc_ready),
+
+    .cfg                        (cfg),
+    .csr_main_clear             (csr_main_clear),
+    .csr_main_start             (csr_main_start),
+    .csr_main_busy              (csr_main_busy),
+    .csr_main_inst_write_mode   (csr_main_inst_write_mode),
+
+    .debug_pc_o                 () 
 );
 
 // Main matrix multiplication
@@ -123,6 +136,7 @@ seq_acc #(
 );
 
 // Main feature map buffer
+localparam oscalerExtendBits = globalBufferIntInterfaceWidth - qrAccOutputBits*qrAccOutputElements;
 ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
@@ -142,7 +156,7 @@ ram_2w2r #(
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
     // Internal Interface
-    .wr_data_2_i       (output_scaler_output),
+    .wr_data_2_i       ({oscalerExtendBits'(1'b0),output_scaler_output}),
     .wr_en_2_i         (qracc_ctrl.activation_buffer_int_wr_en),
     .wr_addr_2_i       (qracc_ctrl.activation_buffer_int_wr_addr),
     .rd_data_2_o       (activation_buffer_rd_data),
@@ -152,9 +166,9 @@ ram_2w2r #(
 
 // Feature Loader - stages the input data for qrAcc
 feature_loader #(
-    .inputWidth        (aflAddrWidth),
-    .addrWidth         (qrAccInputBits),
-    .elementWidth      (qrAccInputElements),
+    .inputWidth        (globalBufferIntInterfaceWidth),
+    .addrWidth         (aflAddrWidth),
+    .elementWidth      (qrAccInputBits),
     .numElements       (qrAccInputElements)
 ) u_feature_loader (
     .clk               (clk),
@@ -187,7 +201,7 @@ output_scaler_set #(
     .scale_w_data_i (bus_i.data_in[15:0]),
 
     .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
-    .shift_w_data_i (bus_i.data_in[7:0])
+    .shift_w_data_i (bus_i.data_in[3:0])
 );
 
 

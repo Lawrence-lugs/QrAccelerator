@@ -1,6 +1,8 @@
 // 4 port RAM
 // Single cycle response
 
+`timescale 1ns/1ps
+
 module ram_2w2r #(
     parameter addrWidth = 32,
     parameter dataSize = 8,

@@ -1,6 +1,71 @@
 import numpy as np 
 import os
 import hwacctools.quantization.quant as quant
+import hwacctools.comp_graph.compute as compute
+
+def generate_top_inputs(
+    savepath,
+    stride,
+    ifmap_shape,
+    ifmap_bits,
+    kernel_shape,
+    kernel_bits,
+    seed = 0
+):
+
+    import torch # only import here so we don't affect the other tests
+    import torch.nn.functional as F
+
+    torch.manual_seed(seed)
+
+    # Padding = 1 by default
+
+    # Create a random image of integers
+    t_ifmap = torch.randint(0, 2**(ifmap_bits), ifmap_shape, dtype=torch.int32)
+
+    # Random kernel
+    t_kern = torch.randint(0, 2**(kernel_bits), kernel_shape, dtype=torch.int32)
+
+    # Convolve and add bias
+    t_res = F.conv2d(t_ifmap, t_kern, padding=1, stride=stride).numpy()
+
+    # Flatten the kernel
+    t_matrix = t_kern.permute(0,2,3,1).numpy()
+    t_matrix = t_matrix.reshape(t_kern.shape[0],-1).T
+
+    # Flatten the image
+    t_toeplitz = compute.toeplitzize_input(
+        in_tensor=t_ifmap.squeeze(0).numpy(), 
+        ksize=kernel_shape[-1], 
+        strides=stride,
+        channel_minor=True
+    )
+
+    a = t_toeplitz @ t_matrix
+    output_shape = (
+        ifmap_shape[0],
+        kernel_shape[0],
+        ifmap_shape[2]//stride, 
+        ifmap_shape[3]//stride
+    )
+    out = a.T.reshape(*output_shape).astype(int)
+
+    assert ( out == t_res ).all()
+
+    res_dict = {
+        'result': t_res,
+        'toeplitz': t_toeplitz,
+        'ifmap': t_ifmap,
+        'matrix': t_matrix,
+        'flat_output': out
+    }
+    
+    for key, value in res_dict.items():
+        np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+        np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+
+    return res_dict
+
 
 def generate_qracc_inputs(
     wDimX = 8,

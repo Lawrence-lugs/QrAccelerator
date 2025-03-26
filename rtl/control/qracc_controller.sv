@@ -6,10 +6,6 @@ import qracc_pkg::*;
 module qracc_controller #(
 
     // Instmem
-    parameter instmemSize = 64,
-    parameter instWidth = 16,
-    localparam pcWidth = $clog2(instmemSize),
-
     parameter numScalers = 32,
     parameter numRows = 128,
 
@@ -26,8 +22,6 @@ module qracc_controller #(
     output to_sram_t to_sram,
 
     // Signals from the people
-    input stall_i,
-    input odata_valid,
     input qracc_ready,
     input qracc_output_valid,
 
@@ -54,15 +48,6 @@ parameter CSR_REGISTER_STATUS = 2;
 // Signals
 ///////////////////
 
-// PC Signals
-logic [pcWidth-1:0] pc;
-logic [pcWidth-1:0] jump_addr;
-logic jump;
-
-logic stall;
-logic stall_internal;
-assign stall = stall_i || stall_internal;
-
 // Handshake Signals
 logic periph_handshake;
 logic periph_read;
@@ -77,73 +62,31 @@ assign data_handshake = bus_i.valid && bus_i.ready;
 assign data_read      = data_handshake && !bus_i.wen;
 assign data_write     = data_handshake && bus_i.wen;
 
-// Instmem Signals
-logic [instWidth-1:0] current_inst;
+// Ping pong tracking signals
+logic [31:0] ofmap_start_addr;
+logic [31:0] ifmap_start_addr;
+logic [31:0] act_wr_ptr;
+logic [31:0] act_rd_ptr;
 
-// Local stall counter
-logic [31:0] stall_counter;
-logic [31:0] stall_counter_d;
+// Convolution window tracking signals
+logic [31:0] opix_pos_x;
+logic [31:0] opix_pos_y;
+logic [3:0] fy_ctr; // filter y
+logic [31:0] current_read_addr; // filter x
+logic window_data_valid;
+logic actmem_wr_en;
+
+// Write tracking signals
+logic [31:0] scaler_ptr;
+logic [31:0] weight_ptr;
 
 ///////////////////
 // Modules
 ///////////////////
 
-regfile #(
-    .numReg     (instmemSize),
-    .regWidth   (instWidth),
-    .numWrite   (1),
-    .numRead    (1)
-) u_instmem (
-    .clk        (clk),
-    .nrst       (nrst),
-
-    .wr_data_i  (bus_i.data_in[15:0]),
-    .wr_addr_i  (bus_i.addr[5:0]),
-    .wr_en_i    (data_write && csr_main_inst_write_mode),
-
-    .rd_addr_i  (pc),
-    .rd_data_o  (current_inst)
-);
-
 ///////////////////
 // Logic
 ///////////////////
-
-// PC
-always_ff @( posedge clk or negedge nrst ) begin : pcControl
-    if (!nrst) begin
-        pc <= 0;
-    end else begin
-        if (csr_main_clear) begin
-            pc <= 0;
-        end else
-        if (!stall) begin
-            if(jump) begin
-                pc <= jump_addr;
-            end else begin
-                pc <= pc + 1;
-            end
-        end
-    end    
-end
-
-// Internal Stall Counter
-always_ff @( posedge clk or negedge nrst ) begin : stallControl
-    if (!nrst) begin
-        stall_counter <= 0;
-    end else begin
-        if (csr_main_clear) begin
-            stall_counter <= 0;
-        end else
-
-        if (stall_counter > 0) begin
-            stall_counter <= stall_counter - 1;
-        end else begin
-            stall_counter <= stall_counter_d;
-        end
-    end
-end
-assign stall_internal = stall_counter > 1;
 
 // Control signals decode
 parameter S_IDLE = 4'b0000;
@@ -158,7 +101,10 @@ logic [3:0] state_d;
 
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
-    to_sram = 0;
+    to_sram.rq_wr_i = 0;
+    to_sram.rq_valid_i = 0;
+    to_sram.wr_data_i = 0;
+    to_sram.addr_i = 0;
     bus_i.ready = 0;
     bus_i.rd_data_valid = 0;
     case(state_q)
@@ -253,14 +199,7 @@ always_comb begin : stateDecode
 end
 
 // Convolution output tracking counter
-logic [31:0] opix_pos_x;
-logic [31:0] opix_pos_y;
-logic [3:0] fy_ctr; // filter y
-logic [31:0] current_read_addr; // filter x
-logic window_data_valid;
-logic actmem_wr_en;
 
-// logic [31:0] fx_ctr; // we assume for now that the entire filter X is always covered entirely
 always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
     if (!nrst) begin
         opix_pos_x <= 0;
@@ -313,7 +252,6 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
 end
 
 // Weight control logic
-logic [31:0] weight_ptr;
 always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
     if (!nrst) begin
         weight_ptr <= 0;
@@ -332,11 +270,6 @@ end
 
 // Activation read and write pointers logic (for streamin and streamout of activations)
 // Currently, ifmap_start_addr is always at 0. We assume we have to stream out the activations toward eyeriss.
-
-logic [31:0] ofmap_start_addr;
-logic [31:0] ifmap_start_addr;
-logic [31:0] act_wr_ptr;
-logic [31:0] act_rd_ptr;
 
 always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
     if (!nrst) begin
@@ -382,7 +315,6 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 end
 
 // Scaler logic
-logic [31:0] scaler_ptr;
 always_ff @( posedge clk or negedge nrst ) begin : scalerLogic
     if (!nrst) begin
         scaler_ptr <= 0;
