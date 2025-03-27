@@ -163,7 +163,6 @@ string files[10] = {
 };
 
 int file_descriptors[10];
-
 initial begin
     foreach (files[i]) begin
         file_descriptors[i] = $fopen({files_path,files[i],".txt"},"r");
@@ -174,7 +173,7 @@ initial begin
     end
 end
 
-function int get_index_of_file(string file_name);
+function int get_index_of_file(input string file_name);
     int i;
     for (i=0; i<10; i++) begin
         if (files[i] == file_name) begin
@@ -183,13 +182,88 @@ function int get_index_of_file(string file_name);
     end
 endfunction
 
-function int input_files(string file_name);
+function int input_files(input string file_name);
     return file_descriptors[get_index_of_file(file_name)];
 endfunction 
+
+class NumpyArray;
+
+    int array [];
+    int shape [];
+    int size = 1;
+    string file_name;
+
+    function new (input string file_name);
+        this.file_name = file_name;
+        read_shape(file_name);
+        for (int i=0;i<this.shape.size();i++) begin
+            this.size *= this.shape[i];
+        end
+        this.array = new[this.size];
+        read_array(file_name);
+    endfunction
+
+    function void read_shape(input string file_name);
+        int fd;
+        fd = input_files({file_name,"_shape"});
+        for (int i=0;!$feof(fd);i++) begin
+            this.shape = new[this.shape.size()+1] (this.shape);
+            $fscanf(fd,"%d",this.shape[i]);
+        end
+        this.shape = new[this.shape.size()-1] (this.shape);
+        void'($fseek(fd,0,0));
+    endfunction
+
+    function void read_array(input string file_name);
+        int fd;
+        fd = input_files(file_name);
+        void'($fseek(fd,0,0));
+        for (int i=0;!$feof(fd);i++) begin
+            $fscanf(fd,"%d",this.array[i]);
+        end
+        void'($fseek(fd,0,0));
+    endfunction
+
+    function void print_shape();
+        $display("Shape: ");
+        for (int i=0;i<this.shape.size();i++) begin
+            $display("%d",this.shape[i]);
+        end
+    endfunction
+
+    function void print_array();
+        $display("Array: ");
+        for (int i=0;i<this.size;i++) begin
+            $write("%d\t",this.array[i]);
+        end
+        $write("\n");
+    endfunction
+
+endclass
 
 /////////////
 // TASKS & TEST SCRIPT
 /////////////
+
+NumpyArray ifmap, matrix, result, toeplitz;
+
+task setup_config();
+    cfg.n_input_bits_cfg = 4;
+    cfg.binary_cfg = 0;
+    cfg.adc_ref_range_shifts = 2;
+    
+    cfg.filter_size_y = 3;
+    cfg.filter_size_x = 3;
+    cfg.input_fmap_size = 768;
+    cfg.output_fmap_size = 768;
+    cfg.input_fmap_dimx = 16;
+    cfg.input_fmap_dimy = 16;
+    cfg.output_fmap_dimx = 16;
+    cfg.output_fmap_dimy = 16;
+
+    cfg.num_input_channels = 3;
+    cfg.num_output_channels = 32;
+endtask
 
 int f_ifmap, f_ofmap, f_mapped_matrix;
 
@@ -203,11 +277,10 @@ initial begin
 
     csr_main_start = 1;
 
-    while (!$feof(input_files("ifmap"))) begin
-        $fscanf(input_files("ifmap"),"%h",f_ifmap);
-        $display("ifmap: %h",f_ifmap);
-    end
-    void'($fseek(input_files("ifmap"),0,0));
+    ifmap = new("ifmap");
+    ifmap.print_shape();
+    $display("IFMAP SIZE: %d",ifmap.size);
+    ifmap.print_array();
 
     $display("TEST SUCCESS");
 

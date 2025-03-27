@@ -45,7 +45,6 @@ package qracc_pkg;
         logic binary_cfg; // binary or bipolar mode
         logic [2:0] adc_ref_range_shifts; // for analog IMC
 
-        logic [3:0] activation_read_strides;
         logic [3:0] filter_size_y;
         logic [3:0] filter_size_x;
         logic [31:0] input_fmap_size;  // H * W * C
