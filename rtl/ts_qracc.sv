@@ -58,7 +58,7 @@ always_ff @( posedge CLK ) begin :  sramModel
             for (int i = 0; i < numRows; i++) begin
                 if (WL[i]) begin 
                     mem[i] <= WR_DATA;
-                    $display("WR_DATA: %d, %d", WR_DATA, mem[i]);
+                    // $display("WR_DATA: %d, %d", WR_DATA, mem[i]);
                 end
             end
         end

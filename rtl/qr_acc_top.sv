@@ -96,6 +96,7 @@ qracc_controller #(
 
     .ctrl_o                     (qracc_ctrl),
     .to_sram                    (to_sram),
+    .from_sram                  (from_sram),
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),

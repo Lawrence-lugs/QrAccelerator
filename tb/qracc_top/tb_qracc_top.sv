@@ -28,6 +28,8 @@ module tb_qracc_top #(
     parameter qrAccOutputElements = 32,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter SRAM_ROWS = qrAccInputElements,
+    parameter SRAM_COLS = qrAccOutputElements,
 
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**21,
@@ -63,6 +65,73 @@ logic csr_main_clear;
 logic csr_main_start;
 logic csr_main_busy;
 logic csr_main_inst_write_mode;
+
+int i,j,k,l,x,y;
+
+// ======= BEGIN ANALOG SIGNALS =======
+
+logic [numRows-1:0] PSM_VDR_SEL;
+logic [numRows-1:0] PSM_VDR_SELB;
+logic [numRows-1:0] PSM_VSS_SEL;
+logic [numRows-1:0] PSM_VSS_SELB;
+logic [numRows-1:0] PSM_VRST_SEL;
+logic [numRows-1:0] PSM_VRST_SELB;
+
+logic [numRows-1:0] NSM_VDR_SEL;
+logic [numRows-1:0] NSM_VDR_SELB;
+logic [numRows-1:0] NSM_VSS_SEL;
+logic [numRows-1:0] NSM_VSS_SELB;
+logic [numRows-1:0] NSM_VRST_SEL;
+logic [numRows-1:0] NSM_VRST_SELB;
+
+logic [numCols-1:0] SA_OUT;
+logic [numRows-1:0] WL;
+logic PCH;
+logic [numCols-1:0] WR_DATA;
+logic WRITE;
+logic [numCols-1:0] CSEL;
+logic SAEN;
+logic [compCount*numCols-1:0] ADC_OUT;
+logic NF;
+logic NFB;
+logic M2A;
+logic M2AB;
+logic R2A;
+logic R2AB;
+logic CLK;
+
+// We need to do this because
+// it's illegal to connect VAMS electrical to structs
+assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
+
+assign from_analog.SA_OUT = SA_OUT;
+assign WL = to_analog.WL;
+assign PCH = to_analog.PCH;
+assign WR_DATA = to_analog.WR_DATA;
+assign WRITE = to_analog.WRITE;
+assign CSEL = to_analog.CSEL;
+assign SAEN = to_analog.SAEN;
+assign from_analog.ADC_OUT = ADC_OUT;
+assign NF = to_analog.NF;
+assign NFB = to_analog.NFB;
+assign M2A = to_analog.M2A;
+assign M2AB = to_analog.M2AB;
+assign R2A = to_analog.R2A;
+assign R2AB = to_analog.R2AB;
+assign CLK = to_analog.CLK;
+
+// ======= END ANALOG SIGNALS =======
 
 /////////////
 // MODULES
@@ -109,6 +178,42 @@ qr_acc_top #(
     .csr_main_inst_write_mode       (csr_main_inst_write_mode)
 
 );
+
+// Analog test schematic
+ts_qracc #(
+    .numRows(SRAM_ROWS),
+    .numCols(SRAM_COLS),
+    .numAdcBits(numAdcBits)
+) u_ts_qracc (
+    .PSM_VDR_SEL(PSM_VDR_SEL),
+    .PSM_VDR_SELB(PSM_VDR_SELB),
+    .PSM_VSS_SEL(PSM_VSS_SEL),
+    .PSM_VSS_SELB(PSM_VSS_SELB),
+    .PSM_VRST_SEL(PSM_VRST_SEL),
+    .PSM_VRST_SELB(PSM_VRST_SELB),
+    .NSM_VDR_SEL(NSM_VDR_SEL),
+    .NSM_VDR_SELB(NSM_VDR_SELB),
+    .NSM_VSS_SEL(NSM_VSS_SEL), 
+    .NSM_VSS_SELB(NSM_VSS_SELB),
+    .NSM_VRST_SEL(NSM_VRST_SEL),
+    .NSM_VRST_SELB(NSM_VRST_SELB),
+    .SA_OUT(SA_OUT),
+    .WL(WL),
+    .PCH(PCH),
+    .WR_DATA(WR_DATA),
+    .WRITE(WRITE),
+    .CSEL(CSEL),
+    .SAEN(SAEN),
+    .ADC_OUT(ADC_OUT),
+    .NF(NF),
+    .NFB(NFB),
+    .M2A(M2A),
+    .M2AB(M2AB),
+    .R2A(R2A),
+    .R2AB(R2AB),
+    .CLK(clk)
+);
+
 
 /////////////
 // TESTING BOILERPLATE
@@ -245,7 +350,7 @@ endclass
 // TASKS & TEST SCRIPT
 /////////////
 
-NumpyArray ifmap, matrix, result, toeplitz;
+NumpyArray ifmap, ofmap, weight_matrix, toeplitz;
 
 task setup_config();
     cfg.n_input_bits_cfg = 4;
@@ -265,24 +370,107 @@ task setup_config();
     cfg.num_output_channels = 32;
 endtask
 
-int f_ifmap, f_ofmap, f_mapped_matrix;
+task start_sim();
 
-initial begin
-    
+    cfg = 0;
+    csr_main_busy = 0;
+    csr_main_clear = 0;
+    csr_main_inst_write_mode = 0;
+    csr_main_start = 0;
+
+    bus.wen = 0;
+    bus.valid = 0;
+    bus.addr = 0;
+    bus.data_in = 0;
+    periph.wen = 0;
+    periph.valid = 0;
+    periph.addr = 0;
+    periph.data = 0;
+
+    $display("=============== STARTING SIMULATION ===============");
     nrst = 0;
-
     #(CLK_PERIOD*2);
     nrst = 1;
     #(CLK_PERIOD*2);
+endtask
 
+task load_weights();
+
+    $write("Loading weights");
+    for (i=0;i<qrAccInputElements;i++) begin
+        bus.data_in = weight_matrix.array[i];
+        bus.valid = 1;
+        bus.wen = 1;
+        while (!bus.ready) #(CLK_PERIOD);
+        #(CLK_PERIOD);
+        $write(".");
+        bus.valid = 0;
+    end
+    $write("\n");
+
+endtask
+
+task check_weights();
+
+    for (i=0;i<qrAccInputElements;i++) begin
+        $write("[%d]:\t",i);
+        $display("%b\t",u_ts_qracc.mem[i]);
+        if (u_ts_qracc.mem[i] != weight_matrix.array[i]) begin
+            $display("Weight mismatch at index %d: %d != %d",i,u_ts_qracc.mem[i],weight_matrix.array[i]);
+            $finish;
+        end
+    end
+
+endtask
+
+task load_acts();
+
+    $write("Loading activations");
+    for (i=0;i<ifmap.size;i++) begin
+        bus.data_in = ifmap.array[i];
+        bus.valid = 1;
+        while (!bus.ready) begin
+            #(CLK_PERIOD);
+        end
+        $write(".");
+        bus.valid = 0;
+    end
+    $write("\n");
+
+endtask
+
+task load_scales();
+
+    // TBI
+
+endtask
+
+initial begin
+    ifmap = new("ifmap");
+    ofmap = new("result");
+    weight_matrix = new("matrix");
+    toeplitz = new("toeplitz");
+
+    // Setup monitors
+    $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
+
+    start_sim();
+
+    setup_config();
+
+    #(CLK_PERIOD*2);
     csr_main_start = 1;
 
-    ifmap = new("ifmap");
-    ifmap.print_shape();
-    $display("IFMAP SIZE: %d",ifmap.size);
-    ifmap.print_array();
+    // weight_matrix.print_array();
+
+    load_weights();
+
+    check_weights();
+
+    #(CLK_PERIOD*1000);
 
     $display("TEST SUCCESS");
+    $display("=============== END OF SIMULATION ===============");
 
     $finish;
 end

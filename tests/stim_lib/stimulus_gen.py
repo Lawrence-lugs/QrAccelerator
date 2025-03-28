@@ -10,6 +10,7 @@ def generate_top_inputs(
     ifmap_bits,
     kernel_shape,
     kernel_bits,
+    core_shape,
     seed = 0
 ):
 
@@ -52,17 +53,25 @@ def generate_top_inputs(
 
     assert ( out == t_res ).all()
 
+    # For now, extend the matrix into numRows and numCols
+    weight_array = np.zeros(core_shape, dtype=int)
+    weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
+
+    write_array = quant.array_bin_to_int(weight_array)
+
     res_dict = {
         'result': t_res,
         'toeplitz': t_toeplitz,
         'ifmap': t_ifmap,
-        'matrix': t_matrix,
+        'small_matrix': t_matrix,
+        'matrix': write_array,
         'flat_output': out
     }
     
-    for key, value in res_dict.items():
-        np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
-        np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+    if savepath is not None:
+        for key, value in res_dict.items():
+            np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
 
     return res_dict
 

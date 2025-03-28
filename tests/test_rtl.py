@@ -74,7 +74,8 @@ def test_qr_acc_top(
     ifmap_shape = (1,3,16,16),
     ifmap_bits = 4,
     kernel_shape = (32,3,3,3), # K C H W
-    kernel_bits = 1
+    kernel_bits = 1,
+    core_shape = (128,32)
 ):
     weight_mode = 'binary'
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -104,7 +105,7 @@ def test_qr_acc_top(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
-    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits)
+    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
     
     # Apply parameter list
     parameter_list = [

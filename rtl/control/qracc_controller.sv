@@ -24,6 +24,7 @@ module qracc_controller #(
     // Signals from the people
     input qracc_ready,
     input qracc_output_valid,
+    input from_sram_t from_sram,
 
     // Signals from csr
     input qracc_config_t cfg,
@@ -89,15 +90,32 @@ logic [31:0] weight_ptr;
 ///////////////////
 
 // Control signals decode
-parameter S_IDLE = 4'b0000;
-parameter S_LOADACTS = 4'b0001;
-parameter S_LOADSCALER = 4'b0010;
-parameter S_LOADWEIGHTS = 4'b0011;
-parameter S_COMPUTE = 4'b0100;
-parameter S_READACTS = 4'b0101;
+// parameter S_IDLE = 4'b0000;
+// parameter S_LOADACTS = 4'b0001;
+// parameter S_LOADSCALER = 4'b0010;
+// parameter S_LOADWEIGHTS = 4'b0011;
+// parameter S_COMPUTE = 4'b0100;
+// parameter S_READACTS = 4'b0101;
 
-logic [3:0] state_q;
-logic [3:0] state_d;
+typedef enum logic [3:0] {
+    S_IDLE = 0,
+    S_LOADACTS = 1,
+    S_LOADSCALER = 2,
+    S_LOADWEIGHTS = 3,
+    S_COMPUTE = 4,
+    S_READACTS = 5
+} state_t;
+
+state_t state_q;
+state_t state_d;
+
+always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
+    if (!nrst) begin
+        state_q <= S_IDLE;
+    end else begin
+        state_q <= state_d;
+    end
+end
 
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
@@ -112,7 +130,8 @@ always_comb begin : ctrlDecode
             to_sram.rq_wr_i = data_write;
             to_sram.rq_valid_i = bus_i.valid;
             to_sram.addr_i = weight_ptr[6:0];
-            bus_i.ready = 1;
+            to_sram.wr_data_i = bus_i.data_in;
+            bus_i.ready = from_sram.rq_ready_o;
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
