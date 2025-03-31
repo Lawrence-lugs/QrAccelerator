@@ -22,14 +22,14 @@ module tb_qracc_top #(
     parameter numCsr = 4,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = 4,
-    parameter qrAccInputElements = 128,
-    parameter qrAccOutputBits = 8,
-    parameter qrAccOutputElements = 32,
+    parameter qrAccInputBits = `QRACC_INPUT_BITS,
+    parameter qrAccInputElements = `SRAM_ROWS,
+    parameter qrAccOutputBits = `QRACC_OUTPUT_BITS,
+    parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
-    parameter SRAM_ROWS = qrAccInputElements,
-    parameter SRAM_COLS = qrAccOutputElements,
+    // parameter SRAM_ROWS = qrAccInputElements,
+    // parameter SRAM_COLS = qrAccOutputElements,
 
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**21,
@@ -181,8 +181,8 @@ qr_acc_top #(
 
 // Analog test schematic
 ts_qracc #(
-    .numRows(SRAM_ROWS),
-    .numCols(SRAM_COLS),
+    .numRows(qrAccInputElements),
+    .numCols(qrAccOutputElements),
     .numAdcBits(numAdcBits)
 ) u_ts_qracc (
     .PSM_VDR_SEL(PSM_VDR_SEL),

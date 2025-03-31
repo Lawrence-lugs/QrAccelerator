@@ -1,20 +1,22 @@
 `timescale 1ns/1ps
 
+
+
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
 
 package qracc_pkg;
 
     // QRAcc Parameters
-    parameter numRows = 128;
-    parameter numCols = 32;
+    parameter numRows = `SRAM_ROWS;
+    parameter numCols = `SRAM_COLS;
     parameter numAdcBits = 4; 
     parameter compCount = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
     
     // Output Scaler Parameters
     parameter accumulatorBits = 16;
-    parameter outputBits = 8;
+    parameter outputBits = `QRACC_OUTPUT_BITS;
 
     // Control signals for QRAcc
     typedef struct packed {

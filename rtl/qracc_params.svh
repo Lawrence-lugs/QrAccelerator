@@ -1,0 +1,4 @@
+`define SRAM_ROWS 128
+`define SRAM_COLS 128
+`define QRACC_INPUT_BITS 4
+`define QRACC_OUTPUT_BITS 8

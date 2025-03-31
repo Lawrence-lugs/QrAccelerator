@@ -29,7 +29,7 @@ sim_args = {'vcs':  [
 def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True,top_module=None):
     
     if simulator == 'vcs':
-        parameter_list = [f'-pvalue+{tb_name}.'+p for p in parameter_list]
+        parameter_list = [f'-pvalue+{tb_file}.'+p for p in parameter_list]
     else:
         parameter_list = []
 
@@ -64,6 +64,11 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
         get_log(log_file)
 
+def write_parameter_definition_file(parameter_list,filepath):
+    with open(filepath,'w') as f:
+        for name, value in parameter_list.items():
+            f.write(f'`define {name} {value}\n')
+
 def test_qr_acc_top(
     col_symmetric,
     simulator,
@@ -75,12 +80,13 @@ def test_qr_acc_top(
     ifmap_bits = 4,
     kernel_shape = (32,3,3,3), # K C H W
     kernel_bits = 1,
-    core_shape = (128,32)
-):
+    ofmap_bits = 8,
+    core_shape = (128,128)
+):  
     weight_mode = 'binary'
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = ['../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
@@ -97,6 +103,7 @@ def test_qr_acc_top(
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
+    param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
@@ -106,10 +113,15 @@ def test_qr_acc_top(
 
     # Pre-simulation
     stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
-    
-    # Apply parameter list
-    parameter_list = [
-    ]   
+
+    parameter_list = {
+        "SRAM_ROWS": core_shape[0],
+        "SRAM_COLS": core_shape[1],
+        "QRACC_INPUT_BITS": ifmap_bits,
+        "QRACC_OUTPUT_BITS": ofmap_bits
+    }
+
+    write_parameter_definition_file(parameter_list,param_file_path)
 
     # Simulation
     run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
