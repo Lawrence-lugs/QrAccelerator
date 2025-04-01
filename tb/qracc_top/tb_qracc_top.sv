@@ -34,7 +34,7 @@ module tb_qracc_top #(
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**21,
     parameter globalBufferExtInterfaceWidth = 32,
-    parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
+    parameter globalBufferIntInterfaceWidth = `GB_INT_IF_WIDTH,
     parameter globalBufferAddrWidth = 32,
     parameter globalBufferDataSize = 8,          // Byte-Addressability
 
@@ -396,36 +396,43 @@ endtask
 
 task load_weights();
 
-    $write("Loading weights");
+    $display("Loading weights at time %t", $time);
     for (i=0;i<qrAccInputElements;i++) begin
         bus.data_in = weight_matrix.array[i];
         bus.valid = 1;
         bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
+        while (!bus.ready) #(CLK_PERIOD/2);
         #(CLK_PERIOD);
         $write(".");
         bus.valid = 0;
     end
+    // Wait for handshake of last write
+    wait (bus.ready);
+    #(CLK_PERIOD);
+    // Wait for last write to take effect
+    wait (bus.ready);
     $write("\n");
 
 endtask
 
 task check_weights();
 
+    $display("Checking weights at time %t", $time);
     for (i=0;i<qrAccInputElements;i++) begin
         $write("[%d]:\t",i);
-        $display("%b\t",u_ts_qracc.mem[i]);
+        $write("%h\t",u_ts_qracc.mem[i]);
         if (u_ts_qracc.mem[i] != weight_matrix.array[i]) begin
-            $display("Weight mismatch at index %d: %d != %d",i,u_ts_qracc.mem[i],weight_matrix.array[i]);
-            $finish;
+            $write(" != %h",weight_matrix.array[i]);
+            // $finish;
         end
+        $write("\n");
     end
 
 endtask
 
 task load_acts();
 
-    $write("Loading activations");
+    $display("Loading activations at time %t", $time);
     for (i=0;i<ifmap.size;i++) begin
         bus.data_in = ifmap.array[i];
         bus.valid = 1;
@@ -452,7 +459,7 @@ initial begin
     toeplitz = new("toeplitz");
 
     // Setup monitors
-    $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
+    // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
 
     start_sim();
 

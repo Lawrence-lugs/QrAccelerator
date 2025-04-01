@@ -86,7 +86,9 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 //-----------------------------------
 
 qracc_controller #(
-
+    .numScalers (qrAccOutputElements),
+    .numRows    (qrAccInputElements),
+    .internalInterfaceWidth (globalBufferIntInterfaceWidth)
 ) u_qracc_controller (
     .clk                        (clk),
     .nrst                       (nrst),
@@ -137,7 +139,8 @@ seq_acc #(
 );
 
 // Main feature map buffer
-localparam oscalerExtendBits = globalBufferIntInterfaceWidth - qrAccOutputBits*qrAccOutputElements;
+localparam oscalerOutputSize = qrAccOutputBits*qrAccOutputElements;
+localparam oscalerExtendBits = globalBufferIntInterfaceWidth - oscalerOutputSize;
 ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
@@ -157,7 +160,7 @@ ram_2w2r #(
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
     // Internal Interface
-    .wr_data_2_i       ({oscalerExtendBits'(1'b0),output_scaler_output}),
+    .wr_data_2_i       ({ {oscalerExtendBits{1'b0}} ,output_scaler_output}),
     .wr_en_2_i         (qracc_ctrl.activation_buffer_int_wr_en),
     .wr_addr_2_i       (qracc_ctrl.activation_buffer_int_wr_addr),
     .rd_data_2_o       (activation_buffer_rd_data),

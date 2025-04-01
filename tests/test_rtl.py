@@ -80,8 +80,8 @@ def test_qr_acc_top(
     ifmap_bits = 4,
     kernel_shape = (32,3,3,3), # K C H W
     kernel_bits = 1,
-    ofmap_bits = 8,
-    core_shape = (128,128)
+    ofmap_bits = 4,
+    core_shape = (256,32)
 ):  
     weight_mode = 'binary'
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -118,7 +118,8 @@ def test_qr_acc_top(
         "SRAM_ROWS": core_shape[0],
         "SRAM_COLS": core_shape[1],
         "QRACC_INPUT_BITS": ifmap_bits,
-        "QRACC_OUTPUT_BITS": ofmap_bits
+        "QRACC_OUTPUT_BITS": ofmap_bits,
+        "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
     }
 
     write_parameter_definition_file(parameter_list,param_file_path)

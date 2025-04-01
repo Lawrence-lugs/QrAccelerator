@@ -129,7 +129,8 @@ always_comb begin : ctrlDecode
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;
             to_sram.rq_valid_i = bus_i.valid;
-            to_sram.addr_i = weight_ptr[6:0];
+            // I can't seem to resolve the linting warning without sacrificing parametrizability
+            to_sram.addr_i = weight_ptr;
             to_sram.wr_data_i = bus_i.data_in;
             bus_i.ready = from_sram.rq_ready_o;
         end
@@ -178,25 +179,25 @@ always_comb begin : stateDecode
             end
         end
         S_LOADWEIGHTS: begin
-            if (weight_ptr == numRows - 1) begin
-                state_d = S_LOADACTS;
-            end else begin
+            if (weight_ptr < numRows) begin
                 state_d = S_LOADWEIGHTS;
+            end else begin
+                state_d = S_LOADACTS;
             end
         end
         S_LOADACTS: begin
-            if (act_wr_ptr == cfg.input_fmap_size - 1) begin
-                state_d = S_LOADSCALER;
-            end else begin
+            if (act_wr_ptr < cfg.input_fmap_size) begin
                 state_d = S_LOADACTS;
+            end else begin
+                state_d = S_LOADSCALER;
             end
         end
         S_LOADSCALER: begin
             // Scaler orchestrates its own address
-            if (scaler_ptr == numScalers - 1) begin
-                state_d = S_LOADWEIGHTS;
-            end else begin
+            if (scaler_ptr < numScalers) begin
                 state_d = S_LOADSCALER;
+            end else begin
+                state_d = S_COMPUTE;
             end
         end
         S_COMPUTE: begin
