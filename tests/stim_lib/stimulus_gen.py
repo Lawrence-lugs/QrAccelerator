@@ -67,12 +67,12 @@ def generate_top_inputs(
         'result': t_res,
         'toeplitz': t_toeplitz,
         'ifmap': ifmap_channel_packed_ints,
-        'ifmap_ints': t_ifmap,
+        'ifmap_ints': ifmap_channel_minor,
         'small_matrix': t_matrix,
         'matrix': write_array,
         'flat_output': out
     }
-
+    
     if savepath is not None:
         for key, value in res_dict.items():
             if value.dtype in ['int32','float64']:

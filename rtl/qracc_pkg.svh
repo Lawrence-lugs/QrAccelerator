@@ -43,14 +43,16 @@ package qracc_pkg;
 
     // Config that changes per-layer
     typedef struct packed {        
-        logic [2:0] n_input_bits_cfg;
+        logic [3:0] n_input_bits_cfg;  // config to generalize controller, partly still parametrized 
+        logic [3:0] n_output_bits_cfg; // we don't use this yet (it's a parameter atm)
+
         logic binary_cfg; // binary or bipolar mode
         logic [2:0] adc_ref_range_shifts; // for analog IMC
 
         logic [3:0] filter_size_y;
         logic [3:0] filter_size_x;
         logic [31:0] input_fmap_size;  // H * W * C
-        logic [31:0] output_fmap_size;
+        logic [31:0] output_fmap_size; // in number of elements
         logic [31:0] input_fmap_dimx;  // W
         logic [31:0] input_fmap_dimy;  // H
         logic [31:0] output_fmap_dimx; 

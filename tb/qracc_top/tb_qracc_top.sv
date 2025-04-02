@@ -28,8 +28,6 @@ module tb_qracc_top #(
     parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
-    // parameter SRAM_ROWS = qrAccInputElements,
-    // parameter SRAM_COLS = qrAccOutputElements,
 
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**21,
@@ -306,6 +304,12 @@ class NumpyArray;
         end
         this.array = new[this.size];
         read_array(file_name);
+        $display("==== Array ====");
+        $display("%s: %d",file_name,this.size);
+        $display("Shape: ");
+        for (int i=0;i<this.shape.size();i++) begin
+            $display("%d",this.shape[i]);
+        end
     endfunction
 
     function void read_shape(input string file_name);
@@ -353,7 +357,7 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz;
 
 task setup_config();
-    cfg.n_input_bits_cfg = 4;
+    cfg.n_input_bits_cfg = 8;
     cfg.binary_cfg = 0;
     cfg.adc_ref_range_shifts = 2;
     
@@ -453,7 +457,7 @@ task check_acts();
     ptr = u_qr_acc_top.u_qracc_controller.ifmap_start_addr;
 
     $display("Checking activations at time %t", $time);
-    for (i=0;i<ifmap.size;i=i+4) begin
+    for (i=0;i<ifmap.size*4;i=i+4) begin
         word = {u_qr_acc_top.u_activation_buffer.mem[ptr + i], 
                 u_qr_acc_top.u_activation_buffer.mem[ptr + i + 1],
                 u_qr_acc_top.u_activation_buffer.mem[ptr + i + 2],
@@ -486,9 +490,6 @@ initial begin
 
 
     start_sim();
-    $display("time %t", $time);
-    #5 // Artificial combinational delay problems
-    $display("time %t", $time);
     
     setup_config();
 

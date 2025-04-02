@@ -9,7 +9,8 @@ module qracc_controller #(
     parameter numScalers = 32,
     parameter numRows = 128,
 
-    parameter internalInterfaceWidth = 128
+    parameter internalInterfaceWidth = 128,
+    parameter dataBusWidth = 32
 
 ) (
     input clk, nrst,
@@ -63,6 +64,9 @@ assign data_handshake = bus_i.valid && bus_i.ready;
 assign data_read      = data_handshake && !bus_i.wen;
 assign data_write     = data_handshake && bus_i.wen;
 
+// Configuration Calculation signals
+logic [31:0] n_elements_per_word;
+
 // Ping pong tracking signals
 logic [31:0] ofmap_start_addr;
 logic [31:0] ifmap_start_addr;
@@ -96,6 +100,8 @@ logic [31:0] weight_ptr;
 // parameter S_LOADWEIGHTS = 4'b0011;
 // parameter S_COMPUTE = 4'b0100;
 // parameter S_READACTS = 4'b0101;
+
+assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 
 typedef enum logic [3:0] {
     S_IDLE = 0,
@@ -136,7 +142,7 @@ always_comb begin : ctrlDecode
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
-            ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr << 2;
+            ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr;
             bus_i.ready = 1;
         end
         S_LOADSCALER: begin
@@ -306,8 +312,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (state_q == S_LOADACTS) begin
             
             if (data_write) begin
-                // $display("ACT WR PTR: %0d, data_write: %0d, @ time %d", act_wr_ptr, data_write, $time);
-                act_wr_ptr <= act_wr_ptr + 1;
+                act_wr_ptr <= act_wr_ptr + n_elements_per_word;
             end
             else begin
                 if (state_d != S_LOADACTS) begin 
@@ -315,7 +320,6 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
                     ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + 1;
                 end
             end
-
 
         end
 
