@@ -53,24 +53,32 @@ def generate_top_inputs(
 
     assert ( out == t_res ).all()
 
-    # For now, extend the matrix into numRows and numCols
+    # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
     weight_array = np.zeros(core_shape, dtype=int)
     weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
-
     write_array = quant.array_bin_to_int(weight_array)
+
+    # Press activations into 32b words of 4 elements each
+    ifmap_channel_minor = t_ifmap.permute(0,2,3,1).numpy()
+    ifmap_channel_packed_ints = [int(i,base=16) for i in quant.as_packed_hex(ifmap_channel_minor)]
+    ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints, dtype=np.int32)
 
     res_dict = {
         'result': t_res,
         'toeplitz': t_toeplitz,
-        'ifmap': t_ifmap,
+        'ifmap': ifmap_channel_packed_ints,
+        'ifmap_ints': t_ifmap,
         'small_matrix': t_matrix,
         'matrix': write_array,
         'flat_output': out
     }
-    
+
     if savepath is not None:
         for key, value in res_dict.items():
-            np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            if value.dtype in ['int32','float64']:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            else:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
             np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
 
     return res_dict

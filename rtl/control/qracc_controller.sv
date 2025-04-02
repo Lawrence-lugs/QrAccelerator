@@ -136,7 +136,7 @@ always_comb begin : ctrlDecode
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
-            ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr;
+            ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr << 2;
             bus_i.ready = 1;
         end
         S_LOADSCALER: begin
@@ -305,12 +305,17 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
         if (state_q == S_LOADACTS) begin
             
-            if (data_write) act_wr_ptr <= act_wr_ptr + 1;
-
-            if (state_d != S_LOADACTS) begin 
-                act_wr_ptr <= 0;
-                ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + 1;
+            if (data_write) begin
+                // $display("ACT WR PTR: %0d, data_write: %0d, @ time %d", act_wr_ptr, data_write, $time);
+                act_wr_ptr <= act_wr_ptr + 1;
             end
+            else begin
+                if (state_d != S_LOADACTS) begin 
+                    act_wr_ptr <= 0;
+                    ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + 1;
+                end
+            end
+
 
         end
 

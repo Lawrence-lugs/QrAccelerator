@@ -401,16 +401,16 @@ task load_weights();
         bus.data_in = weight_matrix.array[i];
         bus.valid = 1;
         bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD/2);
+        while (!bus.ready) #(CLK_PERIOD);
         #(CLK_PERIOD);
         $write(".");
         bus.valid = 0;
     end
     // Wait for handshake of last write
-    wait (bus.ready);
+    while (!bus.ready) #(CLK_PERIOD);
     #(CLK_PERIOD);
     // Wait for last write to take effect
-    wait (bus.ready);
+    while (!bus.ready) #(CLK_PERIOD);
     $write("\n");
 
 endtask
@@ -436,13 +436,36 @@ task load_acts();
     for (i=0;i<ifmap.size;i++) begin
         bus.data_in = ifmap.array[i];
         bus.valid = 1;
-        while (!bus.ready) begin
-            #(CLK_PERIOD);
-        end
+        bus.wen = 1;
+        while (!bus.ready) #(CLK_PERIOD);
+        #(CLK_PERIOD);
         $write(".");
         bus.valid = 0;
     end
     $write("\n");
+
+endtask
+
+// Address by 4-byte word
+task check_acts();
+    int ptr;
+    int word;
+    ptr = u_qr_acc_top.u_qracc_controller.ifmap_start_addr;
+
+    $display("Checking activations at time %t", $time);
+    for (i=0;i<ifmap.size;i=i+4) begin
+        word = {u_qr_acc_top.u_activation_buffer.mem[ptr + i], 
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 1],
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 2],
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 3]};
+        $write("[%d]:\t",i);
+        $write("%h\t",word);
+        if (word != ifmap.array[i >> 2]) begin
+            $write(" != %h",ifmap.array[i >> 2]);
+            // $finish;
+        end
+        $write("\n");
+    end
 
 endtask
 
@@ -461,8 +484,12 @@ initial begin
     // Setup monitors
     // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
 
-    start_sim();
 
+    start_sim();
+    $display("time %t", $time);
+    #5 // Artificial combinational delay problems
+    $display("time %t", $time);
+    
     setup_config();
 
     #(CLK_PERIOD*2);
@@ -471,8 +498,9 @@ initial begin
     // weight_matrix.print_array();
 
     load_weights();
-
-    check_weights();
+    // check_weights();
+    load_acts();
+    check_acts();
 
     #(CLK_PERIOD*1000);
 

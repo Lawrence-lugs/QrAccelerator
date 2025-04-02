@@ -77,10 +77,10 @@ def test_qr_acc_top(
     padding = 1,
     stride = 1,
     ifmap_shape = (1,3,16,16),
-    ifmap_bits = 4,
+    ifmap_bits = 8,
     kernel_shape = (32,3,3,3), # K C H W
     kernel_bits = 1,
-    ofmap_bits = 4,
+    ofmap_bits = 8,
     core_shape = (256,32)
 ):  
     weight_mode = 'binary'

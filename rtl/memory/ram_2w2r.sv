@@ -1,5 +1,6 @@
 // 4 port RAM
 // Single cycle response
+// Little Endian
 
 `timescale 1ns/1ps
 
@@ -31,6 +32,9 @@ module ram_2w2r #(
 
 logic [dataSize-1:0] mem [depth];
 
+localparam nDataInInterface1 = interfaceWidth1/dataSize;
+localparam nDataInInterface2 = interfaceWidth2/dataSize;
+
 always_ff @(posedge clk, negedge nrst) begin
     if (!nrst) begin
         for (int i = 0; i < depth; i++) begin
@@ -41,12 +45,12 @@ always_ff @(posedge clk, negedge nrst) begin
     end else begin
         if (wr_en_1_i) begin
             for (int i = 0; i < interfaceWidth1/dataSize; i++) begin
-                mem[wr_addr_1_i + i] <= wr_data_1_i[i*dataSize +: dataSize];
+                mem[wr_addr_1_i + i] <= wr_data_1_i[(interfaceWidth1/dataSize-1-i)*dataSize +: dataSize];
             end
-        end 
+        end
         if (wr_en_2_i) begin
             for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
-                mem[wr_addr_2_i + i] <= wr_data_2_i[i*dataSize +: dataSize];
+                mem[wr_addr_2_i + i] <= wr_data_2_i[(interfaceWidth1/dataSize-1-i)*dataSize +: dataSize];
             end
         end
         if (rd_en_1_i) begin
