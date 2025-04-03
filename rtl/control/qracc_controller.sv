@@ -192,7 +192,7 @@ always_comb begin : stateDecode
             end
         end
         S_LOADACTS: begin
-            if (act_wr_ptr < cfg.input_fmap_size) begin
+            if (act_wr_ptr + n_elements_per_word < cfg.input_fmap_size) begin
                 state_d = S_LOADACTS;
             end else begin
                 state_d = S_LOADSCALER;

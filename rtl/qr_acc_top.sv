@@ -202,7 +202,7 @@ output_scaler_set #(
     .y_o            (output_scaler_output),
 
     .scale_w_en_i   (qracc_ctrl.output_scaler_scale_w_en),
-    .scale_w_data_i (bus_i.data_in[15:0]),
+    .scale_w_data_i (bus_i.data_in[4+:16]),
 
     .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
     .shift_w_data_i (bus_i.data_in[3:0])

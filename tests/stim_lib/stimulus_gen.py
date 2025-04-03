@@ -18,6 +18,7 @@ def generate_top_inputs(
     import torch.nn.functional as F
 
     torch.manual_seed(seed)
+    np.random.seed(seed)
 
     # Padding = 1 by default
 
@@ -63,6 +64,14 @@ def generate_top_inputs(
     ifmap_channel_packed_ints = [int(i,base=16) for i in quant.as_packed_hex(ifmap_channel_minor)]
     ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints, dtype=np.int32)
 
+    # Generate scaler data and shifts
+    scale = np.random.rand(core_shape[1])*0.001
+    m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
+    int_scale = quant.vconvert_to_fixed_point_int(m0,16)
+    scaler_data = int_scale * (2**4) + (-shift)
+    # scaler_data = (int(int_scale) * (2**4)) + (-int(shift))
+    # scaler_data = np.repeat(scaler_word, core_shape[1])
+
     res_dict = {
         'result': t_res,
         'toeplitz': t_toeplitz,
@@ -70,7 +79,8 @@ def generate_top_inputs(
         'ifmap_ints': ifmap_channel_minor,
         'small_matrix': t_matrix,
         'matrix': write_array,
-        'flat_output': out
+        'flat_output': out,
+        'scaler_data': scaler_data
     }
     
     if savepath is not None:

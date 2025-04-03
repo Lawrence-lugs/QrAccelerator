@@ -252,7 +252,8 @@ end
 // FILE THINGS
 /////////////
 
-string files[10] = {
+localparam numFiles = 12;
+string files[numFiles] = {
     "flat_output",
     "flat_output_shape",
     "ifmap",
@@ -262,12 +263,16 @@ string files[10] = {
     "result_shape",
     "result",
     "toeplitz_shape",
-    "toeplitz"
+    "toeplitz",
+    "scaler_data_shape",
+    "scaler_data"
 };
+int file_descriptors[numFiles];
 
-int file_descriptors[10];
 initial begin
+    $display("=== FILE LIST ===");
     foreach (files[i]) begin
+        $display("%d: %s",i,files[i]);
         file_descriptors[i] = $fopen({files_path,files[i],".txt"},"r");
         if (file_descriptors[i] == 0) begin
             $display("Error opening file %s",files[i]);
@@ -278,7 +283,7 @@ end
 
 function int get_index_of_file(input string file_name);
     int i;
-    for (i=0; i<10; i++) begin
+    foreach (files[i]) begin
         if (files[i] == file_name) begin
             return i;
         end
@@ -286,6 +291,7 @@ function int get_index_of_file(input string file_name);
 endfunction
 
 function int input_files(input string file_name);
+    // $display("Opening file %s at %d",file_name,get_index_of_file(file_name));
     return file_descriptors[get_index_of_file(file_name)];
 endfunction 
 
@@ -354,7 +360,8 @@ endclass
 // TASKS & TEST SCRIPT
 /////////////
 
-NumpyArray ifmap, ofmap, weight_matrix, toeplitz;
+NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data;
+int errcnt = 0;
 
 task setup_config();
     cfg.n_input_bits_cfg = 8;
@@ -375,6 +382,8 @@ task setup_config();
 endtask
 
 task start_sim();
+
+    // errcnt = 0;
 
     cfg = 0;
     csr_main_busy = 0;
@@ -411,10 +420,10 @@ task load_weights();
         bus.valid = 0;
     end
     // Wait for handshake of last write
-    while (!bus.ready) #(CLK_PERIOD);
-    #(CLK_PERIOD);
+    // while (!bus.ready) #(CLK_PERIOD);
+    // #(CLK_PERIOD);
     // Wait for last write to take effect
-    while (!bus.ready) #(CLK_PERIOD);
+    // while (!bus.ready) #(CLK_PERIOD);
     $write("\n");
 
 endtask
@@ -427,7 +436,7 @@ task check_weights();
         $write("%h\t",u_ts_qracc.mem[i]);
         if (u_ts_qracc.mem[i] != weight_matrix.array[i]) begin
             $write(" != %h",weight_matrix.array[i]);
-            // $finish;
+            errcnt++;
         end
         $write("\n");
     end
@@ -466,17 +475,68 @@ task check_acts();
         $write("%h\t",word);
         if (word != ifmap.array[i >> 2]) begin
             $write(" != %h",ifmap.array[i >> 2]);
-            // $finish;
+            errcnt++;
         end
         $write("\n");
     end
 
 endtask
 
+task check_ofmap();
+
+endtask
+
 task load_scales();
 
-    // TBI
+    $display("Loading scales at time %t", $time);
+    for (i=0;i<scaler_data.size;i++) begin
+        // $display("[%d]:\t",i);
+        bus.data_in = scaler_data.array[i];
+        bus.valid = 1;
+        bus.wen = 1;
+        while (!bus.ready) #(CLK_PERIOD);
+        #(CLK_PERIOD);
+        $write(".");
+        bus.valid = 0;
+    end
+    $write("\n");
 
+endtask
+
+task check_scales();
+    logic [15:0] scale;
+    logic [3:0] shift;
+    logic [15:0] scaleref;
+    logic [3:0] shiftref;
+    $display("Checking scales at time %t", $time);
+
+    for (i=0;i<scaler_data.size;i++) begin
+        scale = u_qr_acc_top.u_output_scaler_set.output_scale[i];
+        shift = u_qr_acc_top.u_output_scaler_set.output_shift[i];
+        
+        scaleref = scaler_data.array[i][4+:16];
+        shiftref = scaler_data.array[i][0+:4];
+        $write("[%d]:\t",i);
+        $write("%d\t, %d\t",scale,shift);
+        if (scale != scaleref | shift != shiftref ) begin
+            $write(" != %d, %d",scaleref, shiftref);
+            errcnt++;
+        end
+
+        $write("\n");
+    end
+
+endtask
+
+task end_sim();
+    if (errcnt == 0) begin
+        $display("TEST SUCCESS");
+    end else begin
+        $display("TEST FAILED - ERRORS: %d",errcnt);
+    end
+    $display("=============== END OF SIMULATION ===============");
+
+    $finish;
 endtask
 
 initial begin
@@ -484,6 +544,7 @@ initial begin
     ofmap = new("result");
     weight_matrix = new("matrix");
     toeplitz = new("toeplitz");
+    scaler_data = new("scaler_data");
 
     // Setup monitors
     // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
@@ -499,14 +560,14 @@ initial begin
     // weight_matrix.print_array();
 
     load_weights();
-    // check_weights();
     load_acts();
+    load_scales();
+    check_weights();
     check_acts();
+    check_scales();
 
     #(CLK_PERIOD*1000);
-
-    $display("TEST SUCCESS");
-    $display("=============== END OF SIMULATION ===============");
+    end_sim();
 
     $finish;
 end
