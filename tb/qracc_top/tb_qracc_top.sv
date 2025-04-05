@@ -531,8 +531,11 @@ task track_toeplitz();
     trow = 0;
     tplitz_offset = cfg.mapped_matrix_offset_y;
     tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
+
+    // Track only during compute state
     while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE) begin
 
+        // Track only when the MAC input is accepted by the seq_acc
         if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
             $write("Window [%d]: \n", trow);
             

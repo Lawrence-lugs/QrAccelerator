@@ -154,7 +154,7 @@ always_comb begin : ctrlDecode
             bus_i.ready = 1;
         end
         S_COMPUTE: begin
-            ctrl_o.qracc_mac_data_valid = window_data_valid;
+            ctrl_o.qracc_mac_data_valid = window_data_valid_qq;
             
             // IFMAP READ
             ctrl_o.activation_buffer_int_rd_addr = cfg.num_input_channels * ( opix_pos_x + 
