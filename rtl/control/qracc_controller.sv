@@ -7,7 +7,7 @@ module qracc_controller #(
 
     // Instmem
     parameter numScalers = 32,
-    parameter numRows = 128,
+    parameter numRows = 256,
 
     parameter internalInterfaceWidth = 128,
     parameter dataBusWidth = 32
@@ -45,6 +45,8 @@ module qracc_controller #(
 parameter CSR_REGISTER_MAIN = 0;
 parameter CSR_REGISTER_CONFIG = 1;
 parameter CSR_REGISTER_STATUS = 2;
+
+localparam addrBits = $clog2(numRows);
 
 ///////////////////
 // Signals
@@ -140,7 +142,7 @@ always_comb begin : ctrlDecode
             to_sram.rq_wr_i = data_write;
             to_sram.rq_valid_i = bus_i.valid;
             // I can't seem to resolve the linting warning without sacrificing parametrizability
-            to_sram.addr_i = weight_ptr;
+            to_sram.addr_i = weight_ptr[addrBits-1:0];
             to_sram.wr_data_i = bus_i.data_in;
             bus_i.ready = from_sram.rq_ready_o;
         end

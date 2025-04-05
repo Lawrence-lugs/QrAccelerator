@@ -184,7 +184,10 @@ feature_loader #(
     .wr_en             (qracc_ctrl.feature_loader_wr_en),  
     
     // Interface with QR accelerator
-    .data_o            (qracc_mac_data)
+    .data_o            (qracc_mac_data),
+
+    .mask_start        (cfg.mapped_matrix_offset_x),
+    .mask_end          (cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels)
 );
 
 // Fixed point scaling from quantization methods in TFLite

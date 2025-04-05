@@ -14,7 +14,10 @@ module feature_loader #(
     input logic [addrWidth-1:0]     addr_i  ,
     input logic wr_en,
 
-    output logic [numElements-1:0][elementWidth-1:0] data_o
+    output logic [numElements-1:0][elementWidth-1:0] data_o,
+
+    input logic [addrWidth-1:0] mask_start,
+    input logic [addrWidth-1:0] mask_end
 );
 
 logic [elementWidth-1:0] staging_register [numElements];
@@ -35,7 +38,11 @@ end
 
 always_comb begin : outDecode
     for (int i = 0; i < numElements; i++) begin
-        data_o[i] = staging_register[i];
+        if (i >= mask_start && i < mask_end) begin
+            data_o[i] = staging_register[i];
+        end else begin
+            data_o[i] = 0;
+        end
     end
 end
 
