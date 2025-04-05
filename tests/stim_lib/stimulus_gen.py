@@ -3,6 +3,11 @@ import os
 import hwacctools.quantization.quant as quant
 import hwacctools.comp_graph.compute as compute
 
+def _hex_but_no_0x(x):
+    return hex(x)[2:]
+
+hex_but_no_0x = np.vectorize(_hex_but_no_0x)
+
 def generate_top_inputs(
     savepath,
     stride,
@@ -59,10 +64,14 @@ def generate_top_inputs(
     weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
     write_array = quant.array_bin_to_int(weight_array)
 
+    # Software padding and channel minor
+    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=0) # F.pad is weird asf
+    ifmap_channel_minor = ifmap_channel_minor.permute(0,2,3,1) # N C H W -> N H W C
+    ifmap_channel_minor = ifmap_channel_minor.numpy()
+
     # Press activations into 32b words of 4 elements each
-    ifmap_channel_minor = t_ifmap.permute(0,2,3,1).numpy()
     ifmap_channel_packed_ints = [int(i,base=16) for i in quant.as_packed_hex(ifmap_channel_minor)]
-    ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints, dtype=np.int32)
+    ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
 
     # Generate scaler data and shifts
     scale = np.random.rand(core_shape[1])*0.001

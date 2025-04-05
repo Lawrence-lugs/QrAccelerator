@@ -58,6 +58,9 @@ package qracc_pkg;
         logic [31:0] output_fmap_dimx; 
         logic [31:0] output_fmap_dimy;
 
+        logic [9:0] mapped_matrix_offset_x;
+        logic [9:0] mapped_matrix_offset_y;
+
         logic [9:0] num_input_channels;
         logic [9:0] num_output_channels;
     } qracc_config_t;

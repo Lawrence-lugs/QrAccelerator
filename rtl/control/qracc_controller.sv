@@ -80,6 +80,9 @@ logic [3:0] fy_ctr; // filter y
 logic [31:0] current_read_addr; // filter x
 logic window_data_valid;
 logic actmem_wr_en;
+logic window_data_valid_qq;
+logic [31:0] feature_loader_addr_qq;
+logic compute_stall;
 
 // Write tracking signals
 logic [31:0] scaler_ptr;
@@ -153,16 +156,19 @@ always_comb begin : ctrlDecode
         S_COMPUTE: begin
             ctrl_o.qracc_mac_data_valid = window_data_valid;
             
-            // ifmap_addr = c + x*C + (y + fy)*C*OX, but c is always 0.
+            // IFMAP READ
             ctrl_o.activation_buffer_int_rd_addr = cfg.num_input_channels * ( opix_pos_x + 
-                cfg.output_fmap_size * (opix_pos_y + {28'b0, fy_ctr}) );
-
+                cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}) ); // ifmap_addr = c + x*C + (y + fy)*C*OX, but c is always 0.
             ctrl_o.activation_buffer_int_rd_en = 1;
-            ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
 
-            // ofmap_addr = c + x*C + y*C*OX, but c is always 0.
+            // WINDOW LOAD
+            ctrl_o.feature_loader_wr_en = !window_data_valid_qq;
+            ctrl_o.feature_loader_addr = feature_loader_addr_qq; // FX*C*fy
+
+            // OFMAP WRITEBACK
+            ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
             ctrl_o.activation_buffer_int_wr_addr = opix_pos_x + 
-                cfg.output_fmap_size * (opix_pos_y + {28'b0, fy_ctr});
+                cfg.output_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}); // ofmap_addr = c + x*C + y*C*OX, but c is always 0.
         end
         S_READACTS: begin
             ctrl_o.activation_buffer_ext_rd_en = 1;
@@ -226,6 +232,18 @@ end
 
 // Convolution output tracking counter
 
+assign compute_stall = (state_q == S_COMPUTE) && (window_data_valid && !qracc_ready);
+
+always_ff @( posedge clk or negedge nrst ) begin
+    if (!nrst) begin
+        window_data_valid_qq <= 0;
+        feature_loader_addr_qq <= 0;
+    end else begin
+        window_data_valid_qq <= window_data_valid;
+        feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x;
+    end
+end
+
 always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
     if (!nrst) begin
         opix_pos_x <= 0;
@@ -247,33 +265,25 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                 // stall 
             end else
 
-            if (opix_pos_y < cfg.output_fmap_dimy) begin
-                if (opix_pos_x < cfg.output_fmap_dimx) begin
-                    if (fy_ctr < cfg.filter_size_y) begin
-                        // loading windows
-                        fy_ctr <= fy_ctr + 1;
-                        window_data_valid <= 0;
-                    end else begin
-                        // window is complete
-                        fy_ctr <= 0;
-                        opix_pos_x <= opix_pos_x + 1;
-                        window_data_valid <= 1;
-                    end
-                end 
-                else begin
-                    opix_pos_x <= 0;
-                    opix_pos_y <= opix_pos_y + 1;
-                end
-            end else 
-            
-            begin
-                opix_pos_x <= 0;
-                opix_pos_y <= 0;
+            if (fy_ctr < cfg.filter_size_y - 1) begin
+                fy_ctr <= fy_ctr + 1;
+                window_data_valid <= 0;
+            end else begin
                 fy_ctr <= 0;
-            end
-        
-        end
+                window_data_valid <= 1;
 
+                if (opix_pos_x < cfg.output_fmap_dimx - 1) begin
+                    opix_pos_x <= opix_pos_x + 1;
+                end else begin
+                    opix_pos_x <= 0;
+                    if (opix_pos_y < cfg.output_fmap_dimy - 1) begin
+                        opix_pos_y <= opix_pos_y + 1;
+                    end else begin
+                        opix_pos_y <= 0;
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -311,13 +321,12 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
         if (state_q == S_LOADACTS) begin
             
-            if (data_write) begin
-                act_wr_ptr <= act_wr_ptr + n_elements_per_word;
-            end
-            else begin
-                if (state_d != S_LOADACTS) begin 
+            if (state_d != S_LOADACTS) begin 
                     act_wr_ptr <= 0;
                     ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + 1;
+            end else begin
+                if (data_write) begin
+                    act_wr_ptr <= act_wr_ptr + n_elements_per_word;
                 end
             end
 

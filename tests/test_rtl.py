@@ -114,12 +114,29 @@ def test_qr_acc_top(
     # Pre-simulation
     stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
 
+    ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
+
+    ofmap_size = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
     parameter_list = {
         "SRAM_ROWS": core_shape[0],
         "SRAM_COLS": core_shape[1],
         "QRACC_INPUT_BITS": ifmap_bits,
         "QRACC_OUTPUT_BITS": ofmap_bits,
         "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        
+        "FILTER_SIZE_X": kernel_shape[2],
+        "FILTER_SIZE_Y": kernel_shape[3],
+        "OFMAP_SIZE": np.product(ofmap_size),
+        "IFMAP_SIZE": np.product(ifmap_shape_with_padding),
+        "IFMAP_DIMX": ifmap_shape_with_padding[2],
+        "IFMAP_DIMY": ifmap_shape_with_padding[3],
+        "OFMAP_DIMX": ifmap_shape[2],
+        "OFMAP_DIMY": ifmap_shape[3],
+        "IN_CHANNELS": kernel_shape[1],
+        "OUT_CHANNELS": kernel_shape[0],
+
+        "MAPPED_MATRIX_OFFSET_X": 0,
+        "MAPPED_MATRIX_OFFSET_Y": 0
     }
 
     write_parameter_definition_file(parameter_list,param_file_path)

@@ -364,21 +364,24 @@ NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data;
 int errcnt = 0;
 
 task setup_config();
-    cfg.n_input_bits_cfg = 8;
+    cfg.n_input_bits_cfg = `QRACC_INPUT_BITS;
     cfg.binary_cfg = 0;
     cfg.adc_ref_range_shifts = 2;
     
-    cfg.filter_size_y = 3;
-    cfg.filter_size_x = 3;
-    cfg.input_fmap_size = 768;
-    cfg.output_fmap_size = 768;
-    cfg.input_fmap_dimx = 16;
-    cfg.input_fmap_dimy = 16;
-    cfg.output_fmap_dimx = 16;
-    cfg.output_fmap_dimy = 16;
+    cfg.filter_size_y = `FILTER_SIZE_Y;
+    cfg.filter_size_x = `FILTER_SIZE_X;
+    cfg.input_fmap_size = `IFMAP_SIZE;
+    cfg.output_fmap_size = `OFMAP_SIZE;
+    cfg.input_fmap_dimx = `IFMAP_DIMX;
+    cfg.input_fmap_dimy = `IFMAP_DIMY;
+    cfg.output_fmap_dimx = `OFMAP_DIMX;
+    cfg.output_fmap_dimy = `OFMAP_DIMY;
 
-    cfg.num_input_channels = 3;
-    cfg.num_output_channels = 32;
+    cfg.num_input_channels = `IN_CHANNELS;
+    cfg.num_output_channels = `OUT_CHANNELS;
+
+    cfg.mapped_matrix_offset_x = `MAPPED_MATRIX_OFFSET_X;
+    cfg.mapped_matrix_offset_y = `MAPPED_MATRIX_OFFSET_Y;
 endtask
 
 task start_sim();
@@ -432,14 +435,20 @@ task check_weights();
 
     $display("Checking weights at time %t", $time);
     for (i=0;i<qrAccInputElements;i++) begin
-        $write("[%d]:\t",i);
+        if (i%4 == 0) begin
+            $write("\n");
+            $write("[%d]:\t",i);
+        end else begin
+            $write("\t");
+        end
+
         $write("%h\t",u_ts_qracc.mem[i]);
         if (u_ts_qracc.mem[i] != weight_matrix.array[i]) begin
             $write(" != %h",weight_matrix.array[i]);
             errcnt++;
         end
-        $write("\n");
     end
+    $write("\n");
 
 endtask
 
@@ -467,22 +476,74 @@ task check_acts();
 
     $display("Checking activations at time %t", $time);
     for (i=0;i<ifmap.size*4;i=i+4) begin
+        if (i%16 == 0) begin
+            $write("\n");
+            $write("[%d]:\t",i);
+        end else begin
+            $write("\t");
+        end
+        
         word = {u_qr_acc_top.u_activation_buffer.mem[ptr + i], 
                 u_qr_acc_top.u_activation_buffer.mem[ptr + i + 1],
                 u_qr_acc_top.u_activation_buffer.mem[ptr + i + 2],
                 u_qr_acc_top.u_activation_buffer.mem[ptr + i + 3]};
-        $write("[%d]:\t",i);
+        
         $write("%h\t",word);
         if (word != ifmap.array[i >> 2]) begin
             $write(" != %h",ifmap.array[i >> 2]);
             errcnt++;
         end
-        $write("\n");
     end
+    $write("\n");
+
 
 endtask
 
-task check_ofmap();
+task track_toeplitz();
+
+    int trow, tplitz_offset, tplitz_height;
+    logic errflag;
+    errflag = 0;
+    trow = 0;
+    tplitz_offset = cfg.mapped_matrix_offset_y;
+    tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
+    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE) begin
+
+        if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
+            $write("Window [%d]: \n", trow);
+            // Produces a ---- pattern for irrelevant activations
+            for (j=0;j<qrAccInputElements;j++) begin
+                if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
+                    $write("%h",u_qr_acc_top.qracc_mac_data[j]);
+                    if (u_qr_acc_top.qracc_mac_data[j] != toeplitz.array[j-tplitz_offset]) begin
+                        $write("!");
+                        errflag = 1;
+                        errcnt++;
+                    end else begin
+                        $write(" ");
+                    end
+                end else begin
+                    $write("-- ");
+                end
+            end
+            $write("\n");
+            if (errflag) begin
+                $write("Correct:\n");
+                for (j=0;j<qrAccInputElements;j++) begin
+                    if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
+                        $write("%h ",toeplitz.array[j-tplitz_offset][7:0]);
+                    end else begin
+                        $write("-- ");
+                    end
+                end
+                $write("\n");
+                errflag=0;
+            end
+            trow++;
+        end
+
+        #(CLK_PERIOD);
+    end
 
 endtask
 
@@ -511,20 +572,26 @@ task check_scales();
     $display("Checking scales at time %t", $time);
 
     for (i=0;i<scaler_data.size;i++) begin
+        // if (i%4 == 0) begin
+        //     $write("\n");
+        //     $write("[%d]:\t",i);
+        // end else begin
+        //     $write("\t");
+        // end
+        $write("[%d]:\t",i);
         scale = u_qr_acc_top.u_output_scaler_set.output_scale[i];
         shift = u_qr_acc_top.u_output_scaler_set.output_shift[i];
         
         scaleref = scaler_data.array[i][4+:16];
         shiftref = scaler_data.array[i][0+:4];
-        $write("[%d]:\t",i);
         $write("%d\t, %d\t",scale,shift);
         if (scale != scaleref | shift != shiftref ) begin
             $write(" != %d, %d",scaleref, shiftref);
             errcnt++;
         end
-
         $write("\n");
     end
+    $write("\n");
 
 endtask
 
@@ -566,7 +633,11 @@ initial begin
     check_acts();
     check_scales();
 
-    #(CLK_PERIOD*1000);
+    #(CLK_PERIOD*2);
+
+    track_toeplitz();
+
+    // #(CLK_PERIOD*1000);
     end_sim();
 
     $finish;
