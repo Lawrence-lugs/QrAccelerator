@@ -157,17 +157,25 @@ always_comb begin : ctrlDecode
             ctrl_o.qracc_mac_data_valid = window_data_valid_qq;
             
             // IFMAP READ
-            ctrl_o.activation_buffer_int_rd_addr = cfg.num_input_channels * ( opix_pos_x + 
-                cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}) ); // ifmap_addr = c + x*C + (y + fy)*C*OX, but c is always 0.
+            // ctrl_o.activation_buffer_int_rd_addr = 
+            //     cfg.num_input_channels * ( opix_pos_x + 
+            //     cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}) ); // ifmap_addr = c + x*C + (y + fy)*C*OX, but c is always 0.
+                
+            ctrl_o.activation_buffer_int_rd_addr = 
+                    cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr})
+                +   cfg.num_input_channels * opix_pos_x
+                ; // h*W*C + w*C + c
+
             ctrl_o.activation_buffer_int_rd_en = 1;
 
             // WINDOW LOAD
-            ctrl_o.feature_loader_wr_en = !window_data_valid_qq;
+            // window_data_valid_qq && window_data_valid indicates an active stall
+            ctrl_o.feature_loader_wr_en = ! (window_data_valid_qq && window_data_valid);
             ctrl_o.feature_loader_addr = feature_loader_addr_qq; // FX*C*fy
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
-            ctrl_o.activation_buffer_int_wr_addr = opix_pos_x + 
+            ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + opix_pos_x + 
                 cfg.output_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}); // ofmap_addr = c + x*C + y*C*OX, but c is always 0.
         end
         S_READACTS: begin

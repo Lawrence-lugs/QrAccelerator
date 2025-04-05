@@ -354,7 +354,6 @@ class NumpyArray;
         $write("\n");
     endfunction
 
-    // Max 8 dimensional array
     function int index (
         input int idx[]
     );
@@ -371,8 +370,13 @@ class NumpyArray;
                 flat_index = flat_index * this.shape[i] + idx[i];
         end
         // $write("\t Flat index of %d\n", flat_index);
-        if (flat_index < 0 || flat_index >= this.size) begin
-            $display("Index out of bounds");
+        if (flat_index < 0) begin
+            $display("[ARRAY] Negative index: %d", flat_index);
+            return -1;
+        end
+        
+        if (flat_index >= this.size) begin
+            $display("[ARRAY] Index out of bounds: %d", flat_index);
             return -1;
         end
         return this.array[flat_index];
@@ -541,8 +545,8 @@ task track_toeplitz();
             
             // Produces a -- pattern for irrelevant activations
             for (j=0;j<qrAccInputElements;j++) begin
-                reference  = toeplitz.index( {trow,j-tplitz_offset} );
                 if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
+                    reference  = toeplitz.index( {trow,j-tplitz_offset} );
                     $write("%h",u_qr_acc_top.qracc_mac_data[j]);
                     if (u_qr_acc_top.qracc_mac_data[j] != reference[7:0]) begin
                         $write("!");
@@ -559,10 +563,10 @@ task track_toeplitz();
 
             // If error, print the reference 
             if (errflag) begin
-                $write("Correct:\n");
+                $write("===================== WRONG ====================: at time %d\n",$time);
                 for (j=0;j<qrAccInputElements;j++) begin
-                    reference  = toeplitz.index( {trow,j-tplitz_offset} );
                     if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
+                        reference  = toeplitz.index( {trow,j-tplitz_offset} );
                         $write("%h ",reference[7:0]);
                     end else begin
                         $write("-- ");
