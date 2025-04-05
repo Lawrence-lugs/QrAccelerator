@@ -354,6 +354,30 @@ class NumpyArray;
         $write("\n");
     endfunction
 
+    // Max 8 dimensional array
+    function int index (
+        input int idx[]
+    );
+        // Accesses array indices like array.index( {3,2,1 } ) similar to numpy array[3][2][1]
+
+        int flat_index;
+        flat_index = 0;
+        // $write("[ARRAY %s] Accessing indices ", this.file_name);
+        for (int i=0;i<this.shape.size();i++) begin
+            // $write("%d ",idx[i]);
+            if (i == 0)
+                flat_index = idx[i];
+            else
+                flat_index = flat_index * this.shape[i] + idx[i];
+        end
+        // $write("\t Flat index of %d\n", flat_index);
+        if (flat_index < 0 || flat_index >= this.size) begin
+            $display("Index out of bounds");
+            return -1;
+        end
+        return this.array[flat_index];
+    endfunction
+
 endclass
 
 /////////////
@@ -501,7 +525,7 @@ endtask
 
 task track_toeplitz();
 
-    int trow, tplitz_offset, tplitz_height;
+    int trow, tplitz_offset, tplitz_height, reference;
     logic errflag;
     errflag = 0;
     trow = 0;
@@ -511,11 +535,13 @@ task track_toeplitz();
 
         if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
             $write("Window [%d]: \n", trow);
-            // Produces a ---- pattern for irrelevant activations
+            
+            // Produces a -- pattern for irrelevant activations
             for (j=0;j<qrAccInputElements;j++) begin
+                reference  = toeplitz.index( {trow,j-tplitz_offset} );
                 if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
                     $write("%h",u_qr_acc_top.qracc_mac_data[j]);
-                    if (u_qr_acc_top.qracc_mac_data[j] != toeplitz.array[j-tplitz_offset]) begin
+                    if (u_qr_acc_top.qracc_mac_data[j] != reference[7:0]) begin
                         $write("!");
                         errflag = 1;
                         errcnt++;
@@ -527,11 +553,14 @@ task track_toeplitz();
                 end
             end
             $write("\n");
+
+            // If error, print the reference 
             if (errflag) begin
                 $write("Correct:\n");
                 for (j=0;j<qrAccInputElements;j++) begin
+                    reference  = toeplitz.index( {trow,j-tplitz_offset} );
                     if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
-                        $write("%h ",toeplitz.array[j-tplitz_offset][7:0]);
+                        $write("%h ",reference[7:0]);
                     end else begin
                         $write("-- ");
                     end
