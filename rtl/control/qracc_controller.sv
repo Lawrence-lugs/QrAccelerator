@@ -83,6 +83,7 @@ logic actmem_wr_en;
 logic window_data_valid_qq;
 logic [31:0] feature_loader_addr_qq;
 logic compute_stall;
+logic compute_last_opix;
 
 // Write tracking signals
 logic [31:0] scaler_ptr;
@@ -221,7 +222,7 @@ always_comb begin : stateDecode
             end
         end
         S_COMPUTE: begin
-            if (opix_pos_x == cfg.output_fmap_dimx - 1 && opix_pos_y == cfg.output_fmap_dimy - 1) begin
+            if (compute_last_opix && window_data_valid && qracc_ready) begin
                 state_d = S_READACTS;
             end else begin
                 state_d = S_COMPUTE;
@@ -258,6 +259,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         opix_pos_y <= 0;
         fy_ctr <= 0;
         window_data_valid <= 0;
+        compute_last_opix <= 0;
     end else begin
 
         if (csr_main_clear) begin
@@ -265,9 +267,15 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             opix_pos_y <= 0;
             fy_ctr <= 0;
             window_data_valid <= 0;
+            compute_last_opix <= 0;
         end else
         
         if (state_q == S_COMPUTE) begin
+
+            if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
+                opix_pos_y == cfg.output_fmap_dimy - 1 &&
+                fy_ctr == cfg.filter_size_y - 1)
+                compute_last_opix <= 1;
 
             if (window_data_valid && !qracc_ready) begin 
                 // stall 
@@ -291,6 +299,12 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                     end
                 end
             end
+        end else begin
+            opix_pos_x <= 0;
+            opix_pos_y <= 0;
+            fy_ctr <= 0;
+            window_data_valid <= 0;
+            compute_last_opix <= 0;
         end
     end
 end
