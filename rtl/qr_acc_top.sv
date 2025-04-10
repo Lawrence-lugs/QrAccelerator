@@ -160,7 +160,7 @@ ram_2w2r #(
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
     // Internal Interface
-    .wr_data_2_i       ({ {oscalerExtendBits{1'b0}} ,output_scaler_output}),
+    .wr_data_2_i       ({output_scaler_output,{oscalerExtendBits{1'b0}} }),
     .wr_en_2_i         (qracc_ctrl.activation_buffer_int_wr_en),
     .wr_addr_2_i       (qracc_ctrl.activation_buffer_int_wr_addr),
     .rd_data_2_o       (activation_buffer_rd_data),

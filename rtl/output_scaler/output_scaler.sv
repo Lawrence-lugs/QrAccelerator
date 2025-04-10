@@ -58,11 +58,11 @@ always_comb begin : fpMultComb
     
     // Arithmetic shift divide by 2**n rounds down towards -infty
     // This turns negatives wrong vs python, so we have to explicitly state things
-    if (scaled_wx_fpshift[inputWidth-1] == 1) begin
-        scaled_wx_shifted = ($signed(scaled_wx_fpshift) >>> output_shift) + 1;
-    end else begin
-        scaled_wx_shifted = $signed(scaled_wx_fpshift) >>> output_shift;
-    end
+    // if (scaled_wx_fpshift[inputWidth-1] == 1) begin
+    //     scaled_wx_shifted = ($signed(scaled_wx_fpshift) >>> output_shift) + 1;
+    // end else begin
+    scaled_wx_shifted = $signed(scaled_wx_fpshift) >>> output_shift;
+    // end
 
     // Saturating clipping
     if ($signed(scaled_wx_shifted) > compareHigh) begin // Does this auto sign-extend for the comparison?

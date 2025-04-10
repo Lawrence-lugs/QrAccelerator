@@ -74,10 +74,11 @@ def generate_top_inputs(
     ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
 
     # Generate scaler data and shifts
-    scale = np.random.rand(core_shape[1])*0.001
+    # 0.06 heuristically gained for final values that are appreciable
+    scale = np.random.rand(core_shape[1])*0.06 
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
-    scaler_data = int_scale * (2**4) + (-shift)
+    scaler_data = int_scale * (2**4) + (-shift) # Pack into a single word
     # scaler_data = (int(int_scale) * (2**4)) + (-int(shift))
     # scaler_data = np.repeat(scaler_word, core_shape[1])
 
@@ -88,6 +89,7 @@ def generate_top_inputs(
         'ifmap_ints': ifmap_channel_minor,
         'small_matrix': t_matrix,
         'matrix': write_array,
+        'weights_np': weight_array, 
         'flat_output': out,
         'scaler_data': scaler_data
     }

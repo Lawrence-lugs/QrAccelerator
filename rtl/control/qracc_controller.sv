@@ -224,7 +224,7 @@ always_comb begin : stateDecode
             end
         end
         S_COMPUTE: begin
-            if (compute_last_opix && window_data_valid && qracc_ready) begin
+            if (compute_last_opix && qracc_output_valid) begin
                 state_d = S_READACTS;
             end else begin
                 state_d = S_COMPUTE;
