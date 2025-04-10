@@ -673,7 +673,7 @@ initial begin
 
     track_toeplitz();
 
-    #(CLK_PERIOD*10);
+    #(CLK_PERIOD*1000);
     end_sim();
 
     $finish;

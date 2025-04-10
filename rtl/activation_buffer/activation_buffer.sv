@@ -4,67 +4,68 @@ Activations only need a fifo
 `timescale 1ns/1ps
 
 module activation_buffer #(
-    parameter dataSize = 8,      
-    parameter depth = 1024,
-    parameter addrWidth = 32,    
-    parameter extInterfaceWidth = 32,
-    parameter intInterfaceWidth = 256,
-    localparam totalSize = depth*dataSize,
-    localparam maxAddr = $clog2(depth)
+    parameter addrWidth = 32,
+    parameter dataSize = 8,
+
+    parameter interfaceWidth1 = 32,
+    parameter interfaceWidth2 = 256,
+    
+    parameter depth = 1024
 ) (
-    input clk,
-    input nrst,
-    
-    // External Port
-    input        [extInterfaceWidth-1:0]   ext_wr_data_i,
-    input ext_wr_en,
-    output logic [extInterfaceWidth-1:0]   ext_rd_data_o,
-    input [addrWidth-1:0] ext_addr_i,
+    input logic clk, nrst,
 
-    // Internal Port
-    input        [intInterfaceWidth-1:0]   int_wr_data_i,
-    input int_wr_en,
-    output logic [intInterfaceWidth-1:0]   int_rd_data_o,
-    input [addrWidth-1:0] int_addr_i
+    input logic wr_en_1_i,
+    input logic [addrWidth-1:0] wr_addr_1_i,
+    input logic [interfaceWidth1-1:0] wr_data_1_i,
+    input logic rd_en_1_i,
+    input logic [addrWidth-1:0] rd_addr_1_i,
+    output logic [interfaceWidth1-1:0] rd_data_1_o,
+
+    input logic wr_en_2_i,
+    input logic [addrWidth-1:0] wr_addr_2_i,
+    input logic [interfaceWidth2-1:0] wr_data_2_i,
+    input logic rd_en_2_i,
+    input logic [addrWidth-1:0] rd_addr_2_i,
+    output logic [interfaceWidth2-1:0] rd_data_2_o
+
+    
 );
 
-//-----------------------------------
-// Signals
-//-----------------------------------
 
-logic [addrWidth-1:0] fmap_ptr_1;
-logic [addrWidth-1:0] fmap_ptr_2;
+logic [dataSize-1:0] mem [depth];
 
-//-----------------------------------
-// Modules
-//-----------------------------------
-ram_2wr #(
-    .addrWidth      (addrWidth),
-    .dataSize       (dataSize),
-    
-    .interfaceWidth1(extInterfaceWidth), // 32b
-    .interfaceWidth2(intInterfaceWidth), // 256b
-    
-    .depth          (depth)
-) u_act_memory (
-    .clk            (clk),
-    .nrst           (nrst),
+localparam nDataInInterface1 = interfaceWidth1/dataSize;
+localparam nDataInInterface2 = interfaceWidth2/dataSize;
 
-    .wr_en_1_i      (ext_wr_en),
-    .addr_1_i       (ext_addr_i),
-    .wr_data_1_i    (ext_wr_data_i),
-    .rd_data_1_o    (ext_rd_data_o),
-
-    .wr_en_2_i      (int_wr_en),
-    .addr_2_i       (int_addr_i),
-    .wr_data_2_i    (int_wr_data_i),
-    .rd_data_2_o    (int_rd_data_o)
-);
-
-//-----------------------------------
-// Logic
-//-----------------------------------
-
-
+always_ff @(posedge clk, negedge nrst) begin
+    if (!nrst) begin
+        for (int i = 0; i < depth; i++) begin
+            // mem[i] <= 0; // Comment when we want to see exactly which parts are written
+        end
+        rd_data_1_o <= 0;
+        rd_data_2_o <= 0;
+    end else begin
+        if (wr_en_1_i) begin
+            for (int i = 0; i < interfaceWidth1/dataSize; i++) begin
+                mem[wr_addr_1_i + i] <= wr_data_1_i[(interfaceWidth1/dataSize-1-i)*dataSize +: dataSize];
+            end
+        end
+        if (wr_en_2_i) begin
+            for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
+                mem[wr_addr_2_i + i] <= wr_data_2_i[(interfaceWidth1/dataSize-1-i)*dataSize +: dataSize];
+            end
+        end
+        if (rd_en_1_i) begin
+            for (int i = 0; i < interfaceWidth1/dataSize; i++) begin
+                rd_data_1_o[i*dataSize +: dataSize] <= mem[rd_addr_1_i + (interfaceWidth1/dataSize-1-i)];
+            end
+        end
+        if (rd_en_2_i) begin
+            for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
+                rd_data_2_o[i*dataSize +: dataSize] <= mem[rd_addr_2_i + (interfaceWidth2/dataSize-1-i)];
+            end
+        end
+    end
+end
 
 endmodule

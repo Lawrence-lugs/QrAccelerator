@@ -123,7 +123,7 @@ seq_acc #(
     .clk            (clk),
     .nrst           (nrst),
     
-    .cfg            (qracc_cfg),
+    .cfg            (cfg),
     
     .mac_data_i     (qracc_mac_data),
     .mac_valid_i    (qracc_ctrl.qracc_mac_data_valid),

@@ -80,6 +80,7 @@ logic [31:0] opix_pos_x;
 logic [31:0] opix_pos_y;
 logic [3:0] fy_ctr; // filter y
 logic [31:0] current_read_addr; // filter x
+logic [31:0] ofmap_offset_ptr;
 logic window_data_valid;
 logic actmem_wr_en;
 logic window_data_valid_qq;
@@ -178,8 +179,7 @@ always_comb begin : ctrlDecode
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
-            ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + opix_pos_x + 
-                cfg.output_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}); // ofmap_addr = c + x*C + y*C*OX, but c is always 0.
+            ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
         end
         S_READACTS: begin
             ctrl_o.activation_buffer_ext_rd_en = 1;
@@ -262,6 +262,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         fy_ctr <= 0;
         window_data_valid <= 0;
         compute_last_opix <= 0;
+        ofmap_offset_ptr <= 0;
     end else begin
 
         if (csr_main_clear) begin
@@ -270,6 +271,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             fy_ctr <= 0;
             window_data_valid <= 0;
             compute_last_opix <= 0;
+            ofmap_offset_ptr <= 0;
         end else
         
         if (state_q == S_COMPUTE) begin
@@ -278,6 +280,11 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                 opix_pos_y == cfg.output_fmap_dimy - 1 &&
                 fy_ctr == cfg.filter_size_y - 1)
                 compute_last_opix <= 1;
+
+            // Ofmap writes strided by C
+            if (qracc_output_valid) begin
+                ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
+            end
 
             if (window_data_valid && !qracc_ready) begin 
                 // stall 
@@ -307,6 +314,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             fy_ctr <= 0;
             window_data_valid <= 0;
             compute_last_opix <= 0;
+            ofmap_offset_ptr <= 0;
         end
     end
 end
@@ -347,7 +355,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             
             if (state_d != S_LOADACTS) begin 
                     act_wr_ptr <= 0;
-                    ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + 1;
+                    ofmap_start_addr <= ifmap_start_addr + act_wr_ptr + n_elements_per_word;
             end else begin
                 if (data_write) begin
                     act_wr_ptr <= act_wr_ptr + n_elements_per_word;
@@ -368,10 +376,9 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (state_q == S_COMPUTE) begin
 
             if (state_d != S_COMPUTE) begin
-                ifmap_start_addr <= act_wr_ptr + numCols + 1;
+                ifmap_start_addr <= 0;
             end
         end
-
 
     end
 end
