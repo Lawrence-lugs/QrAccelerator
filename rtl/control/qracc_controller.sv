@@ -337,7 +337,6 @@ always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
 end
 
 // Activation read and write pointers logic (for streamin and streamout of activations)
-// Currently, ifmap_start_addr is always at 0. We assume we have to stream out the activations toward eyeriss.
 
 always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
     if (!nrst) begin
@@ -376,7 +375,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (state_q == S_COMPUTE) begin
 
             if (state_d != S_COMPUTE) begin
-                ifmap_start_addr <= 0;
+                ifmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr; // TODO: Check. Depends on the incremental behavior
             end
         end
 

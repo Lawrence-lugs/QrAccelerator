@@ -73,7 +73,6 @@ def test_qr_acc_top(
     col_symmetric,
     simulator,
     seed,
-    # weight_mode,
     padding = 1,
     stride = 1,
     ifmap_shape = (1,3,16,16),
@@ -113,7 +112,7 @@ def test_qr_acc_top(
 
     # Pre-simulation
     stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
-
+    
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
 
     ofmap_size = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
@@ -239,7 +238,7 @@ def test_seq_acc(
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = ['../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
@@ -365,7 +364,7 @@ def test_tb_qracc(
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = ['../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/ts_qracc.sv',
@@ -473,7 +472,7 @@ def test_tb_qracc(
     return
 
 def test_tb_column(simulator,run=True):
-    package_list = ['../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         "../rtl/column_wrapper.sv", 
         "../rtl/wr_controller.sv", 
