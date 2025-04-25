@@ -218,6 +218,7 @@ ts_qracc #(
 /////////////
 
 static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
+static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/outputs/";
 
 static string tb_name = "tb_qracc_top";
 
@@ -642,6 +643,20 @@ task end_sim();
     $finish;
 endtask
 
+task export_ofmap();
+
+    int a;
+    int fd;
+    $display("Exporting ofmap at time %t", $time);
+
+    fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
+    for(i=0;i<cfg.output_fmap_size;i++) begin
+        a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i]);
+        $fwrite(fd,"%d\n",a);
+    end
+
+endtask
+
 initial begin
     ifmap = new("ifmap");
     ofmap = new("result");
@@ -672,6 +687,7 @@ initial begin
     #(CLK_PERIOD*2);
 
     track_toeplitz();
+    export_ofmap();
 
     #(CLK_PERIOD*1000);
     end_sim();

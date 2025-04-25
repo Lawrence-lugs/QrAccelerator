@@ -6,7 +6,7 @@
 `define GB_INT_IF_WIDTH 2048
 `define FILTER_SIZE_X 3
 `define FILTER_SIZE_Y 3
-`define OFMAP_SIZE 16
+`define OFMAP_SIZE 8192
 `define IFMAP_SIZE 972
 `define IFMAP_DIMX 18
 `define IFMAP_DIMY 18
