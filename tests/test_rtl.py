@@ -66,6 +66,7 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
 
 def write_parameter_definition_file(parameter_list,filepath):
     with open(filepath,'w') as f:
+        f.write(f'`define PYTEST_GENERATED_PARAMS\n')
         for name, value in parameter_list.items():
             f.write(f'`define {name} {value}\n')
 
@@ -238,7 +239,7 @@ def test_seq_acc(
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
@@ -364,7 +365,7 @@ def test_tb_qracc(
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
   
-    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/ts_qracc.sv',
@@ -472,7 +473,7 @@ def test_tb_qracc(
     return
 
 def test_tb_column(simulator,run=True):
-    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         "../rtl/column_wrapper.sv", 
         "../rtl/wr_controller.sv", 

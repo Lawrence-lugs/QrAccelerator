@@ -1,6 +1,10 @@
 `timescale 1ns/1ps
 
-
+`ifndef PYTEST_GENERATED_PARAMS
+`define SRAM_ROWS 128
+`define SRAM_COLS 32
+`define QRACC_OUTPUT_BITS 16
+`endif
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG

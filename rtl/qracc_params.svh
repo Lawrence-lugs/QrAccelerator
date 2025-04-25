@@ -1,3 +1,4 @@
+`define PYTEST_GENERATED_PARAMS
 `define SRAM_ROWS 256
 `define SRAM_COLS 32
 `define QRACC_INPUT_BITS 8
