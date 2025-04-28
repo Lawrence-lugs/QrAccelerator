@@ -140,7 +140,6 @@ always_ff @( posedge clk ) begin : seqAccRegs
 end
 
 // Datapaths
-
 logic [pipelineStages-1:0] ready_mask;
 logic [pipelineStages-1:0] valid_mask;
 logic [pipelineStages-1:0] mac_en_mask;

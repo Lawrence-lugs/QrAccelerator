@@ -146,9 +146,9 @@ assign to_sram.addr_i = addr;
 
 // Instantiate both modules and connect their interfaces
 seq_acc #(
-    .inputBits(xBits),
+    .maxInputBits(xBits),
     .inputElements(numRows),
-    .outputBits(outBits),
+    // .outputBits(outBits),
     .outputElements(numCols),
     .adcBits(numAdcBits)
 ) u_seq_acc (
@@ -255,6 +255,7 @@ task set_config();
     cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
     cfg.binary_cfg = macMode;
     cfg.unsigned_acts = unsignedActs;
+    cfg.n_input_bits_cfg = xBits;
 endtask
 
 //////////////////////
@@ -284,14 +285,14 @@ initial begin
 end
 
 // Waveform dumping
-// `ifdef SYNOPSYS
-// initial begin
-//     $vcdplusfile("tb_seq_acc.vpd");
-//     $vcdpluson();
-//     $vcdplusmemon();
-//     $dumpvars(0);
-// end
-// `endif
+`ifdef SYNOPSYS
+initial begin
+    $vcdplusfile("tb_seq_acc.vpd");
+    $vcdpluson();
+    $vcdplusmemon();
+    $dumpvars(0);
+end
+`endif
 initial begin
     $dumpfile("tb_seq_acc.vcd");
     $vcdplusmemon();

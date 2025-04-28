@@ -226,13 +226,14 @@ def test_seq_acc_ams(
     assert snr > snr_limit, f'SNR: {snr}'
 
 @pytest.mark.parametrize("unsigned_acts", [True, False])
+@pytest.mark.parametrize("xTrits", [1, 3, 7])
 def test_seq_acc(
     col_symmetric,
     simulator,
     seed,
     weight_mode,
     unsigned_acts,
-    xTrits = 3,
+    xTrits,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
