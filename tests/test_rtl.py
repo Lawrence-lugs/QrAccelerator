@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pytest
 sns.set_theme()
 from tests.stim_lib.stimulus_gen import *
 
@@ -224,12 +225,13 @@ def test_seq_acc_ams(
 
     assert snr > snr_limit, f'SNR: {snr}'
 
-
+@pytest.mark.parametrize("unsigned_acts", [True, False])
 def test_seq_acc(
     col_symmetric,
     simulator,
     seed,
     weight_mode,
+    unsigned_acts,
     xTrits = 3,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
@@ -256,20 +258,25 @@ def test_seq_acc(
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
+    xBits = xTrits if unsigned_acts else xTrits + 1
+
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
         f'SRAM_COLS={wDimX}',
-        f'xBits={xTrits+1}',
+        f'xBits={xBits}',
         f'xBatches={xBatches}',
         f'numAdcBits=4',
         f'macMode={mac_mode}',
-        f'outBits={outBits}'
+        f'outBits={outBits}',
+        f'unsignedActs={int(unsigned_acts)}',
     ]
 
     print(f'col_symmetric:{col_symmetric}')
     print(f'seed:{seed}')
     print(f'weight_mode:{weight_mode,mac_mode}')
     seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
+
+    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = {weight_mode}, col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -282,7 +289,8 @@ def test_seq_acc(
         col_symmetric = col_symmetric,
         rangeBits = 5,
         x_repeat = x_repeat,
-        clip_output = False
+        clip_output = False,
+        unsigned_acts = unsigned_acts
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware

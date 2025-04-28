@@ -240,7 +240,8 @@ def generate_qracc_inputs(
     col_symmetric = False,
     rangeBits = None,
     x_repeat = False,
-    clip_output = True
+    clip_output = True,
+    unsigned_acts = False,
 ):
     '''
     Generates integer weights and inputs, including clipped integer reference outputs.
@@ -279,11 +280,18 @@ def generate_qracc_inputs(
         else:
             raise ValueError('Invalid weight_mode')
 
+    if not unsigned_acts:
+        low_lim = -(2**(xTrits)-1)
+        high_lim = 2**(xTrits)
+    else:
+        low_lim = 0
+        high_lim = 2**(xTrits)
+
     if x_repeat:
-        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),wDimY)
+        x = np.random.randint(low_lim, high_lim,wDimY)
         x = x.repeat(xBatches).reshape(wDimY, xBatches).T
     else:
-        x = np.random.randint(-(2**(xTrits)-1), 2**(xTrits),xShape)
+        x = np.random.randint(low_lim, high_lim,xShape)
     wx = w @ x.T
 
     # Get_array_bits is incorrect. The real bit count depends on the range of the input data

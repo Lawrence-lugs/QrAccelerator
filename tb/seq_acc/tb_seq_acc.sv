@@ -15,7 +15,8 @@ module tb_seq_acc #(
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
     parameter macMode = 0,
-    parameter outBits = 8
+    parameter outBits = 8,
+    parameter unsignedActs = 0
 ) ( 
 );
 
@@ -249,6 +250,13 @@ task send_mac_request();
     mac_data_valid = 0;
 endtask
 
+task set_config();
+    // Set config
+    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
+    cfg.binary_cfg = macMode;
+    cfg.unsigned_acts = unsignedActs;
+endtask
+
 //////////////////////
 // TESTBENCH THINGS
 //////////////////////
@@ -296,8 +304,10 @@ static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2
 initial begin
 
     test_phase = P_INIT;
-    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
-    cfg.binary_cfg = macMode;
+    
+    // Set config
+    set_config();
+
     if (cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
     else $display("MAC MODE: BIPOLAR");
 

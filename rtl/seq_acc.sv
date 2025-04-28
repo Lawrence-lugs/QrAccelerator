@@ -84,7 +84,8 @@ twos_to_bipolar #(
 ) u_twos_to_bipolar (
     .twos(mac_data_i),
     .bipolar_p(piso_buffer_p_d),
-    .bipolar_n(piso_buffer_n_d)
+    .bipolar_n(piso_buffer_n_d),
+    .unsigned_inputs(cfg.unsigned_acts)
 );
 
 // Registers
