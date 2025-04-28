@@ -180,6 +180,7 @@ def generate_top_inputs(
 
     # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
     weight_array = np.zeros(core_shape, dtype=int)
+    t_matrix = t_matrix[:,::-1] # Reverse the matrix to match hardware [31:0]
     weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
     write_array = quant.array_bin_to_int(weight_array)
 
