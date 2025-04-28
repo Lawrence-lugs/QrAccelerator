@@ -225,21 +225,31 @@ def test_seq_acc_ams(
 
     assert snr > snr_limit, f'SNR: {snr}'
 
-@pytest.mark.parametrize("unsigned_acts", [True, False])
-@pytest.mark.parametrize("xTrits", [1, 3, 7])
+# @pytest.mark.parametrize("unsigned_acts", [True, False])
+# @pytest.mark.parametrize("xTrits", [1, 3, 7])
+
+@pytest.mark.parametrize(
+     "unsigned_acts,xTrits,wDimX,wDimY,outBits", [
+    (         False,     1,   32,  128,       8,),
+    (         False,     3,   32,  128,       8,),
+    (         False,     7,   32,  128,       8,),
+    (          True,     2,   32,  128,       8,),
+    (          True,     4,   32,  128,       8,),
+    (          True,     8,   32,  128,       8,),
+])
 def test_seq_acc(
-    col_symmetric,
     simulator,
     seed,
     weight_mode,
     unsigned_acts,
     xTrits,
-    wDimX = 32, #nColumns
-    wDimY = 128, #nRows
+    wDimX, #nColumns
+    wDimY, #nRows
+    outBits,
     xBatches = 10,
-    outBits = 8,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
+    col_symmetric = False,
     x_repeat = False
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
