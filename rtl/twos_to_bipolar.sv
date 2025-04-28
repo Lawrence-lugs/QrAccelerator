@@ -1,6 +1,10 @@
+// Twos complement to bipolar converter
+// 
+// Output bits require inBits if unsigned, or inBits-1 if signed
+// 
+
 module twos_to_bipolar #(
     parameter inBits = 4,
-    localparam outBits = inBits - 1,
     parameter numLanes = 1
 ) (
     input signed [numLanes-1:0][inBits-1:0] twos,
