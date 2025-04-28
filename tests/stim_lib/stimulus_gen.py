@@ -65,6 +65,8 @@ def sample_onnx_qlinearconv(
     only uint8 ifmap
     '''
 
+    np.random.seed(seed)
+
     qa = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
 
     # 1-bit qb scales and zero point heuristically guessed from
@@ -75,8 +77,15 @@ def sample_onnx_qlinearconv(
     else:
         qa = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
+    ofmap_shape = (
+        ifmap_shape[0],
+        kernel_shape[0],
+        (ifmap_shape[2] - kernel_shape[2] + 2 * pads[0]) // stride + 1,
+        (ifmap_shape[3] - kernel_shape[3] + 2 * pads[2]) // stride + 1
+    )
+
     # infer doesn't actually need this
-    sample_outs = quant.QuantizedTensor(shape = ifmap_shape, precision = 8, mode='3sigma')
+    sample_outs = quant.QuantizedTensor(shape = ofmap_shape, precision = 8, mode='3sigma')
 
     qa.quantized_values = qa.quantized_values.astype(np.uint8)
     qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
@@ -152,6 +161,10 @@ def generate_top_inputs(
     #     seed=seed
     # )
 
+    
+    print("[STIM_GEN] Generating Sample QLinearConv")
+    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed})")
+
     t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
         ifmap_bits=ifmap_bits,
@@ -163,6 +176,7 @@ def generate_top_inputs(
         seed = seed
     )
     out = t_res
+
 
     # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
     weight_array = np.zeros(core_shape, dtype=int)

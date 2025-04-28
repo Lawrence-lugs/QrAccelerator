@@ -62,7 +62,7 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
         f.seek(0)
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
-        get_log(log_file)
+        # get_log(log_file)
 
 def write_parameter_definition_file(parameter_list,filepath):
     with open(filepath,'w') as f:
