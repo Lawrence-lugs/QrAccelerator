@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pytest
 sns.set_theme()
 from tests.stim_lib.stimulus_gen import *
 
@@ -62,7 +63,7 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
         f.seek(0)
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
-        get_log(log_file)
+        # get_log(log_file)
 
 def write_parameter_definition_file(parameter_list,filepath):
     with open(filepath,'w') as f:
@@ -224,19 +225,31 @@ def test_seq_acc_ams(
 
     assert snr > snr_limit, f'SNR: {snr}'
 
+# @pytest.mark.parametrize("unsigned_acts", [True, False])
+# @pytest.mark.parametrize("xTrits", [1, 3, 7])
 
+@pytest.mark.parametrize(
+     "unsigned_acts,xTrits,wDimX,wDimY,outBits", [
+    (         False,     1,   32,  128,       8,),
+    (         False,     3,   32,  128,       8,),
+    (         False,     7,   32,  128,       8,),
+    (          True,     2,   32,  128,       8,),
+    (          True,     4,   32,  128,       8,),
+    (          True,     8,   32,  128,       8,),
+])
 def test_seq_acc(
-    col_symmetric,
     simulator,
     seed,
     weight_mode,
-    xTrits = 3,
-    wDimX = 32, #nColumns
-    wDimY = 128, #nRows
+    unsigned_acts,
+    xTrits,
+    wDimX, #nColumns
+    wDimY, #nRows
+    outBits,
     xBatches = 10,
-    outBits = 8,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
+    col_symmetric = False,
     x_repeat = False
 ):
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -256,20 +269,25 @@ def test_seq_acc(
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
+    xBits = xTrits if unsigned_acts else xTrits + 1
+
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
         f'SRAM_COLS={wDimX}',
-        f'xBits={xTrits+1}',
+        f'xBits={xBits}',
         f'xBatches={xBatches}',
         f'numAdcBits=4',
         f'macMode={mac_mode}',
-        f'outBits={outBits}'
+        f'outBits={outBits}',
+        f'unsignedActs={int(unsigned_acts)}',
     ]
 
     print(f'col_symmetric:{col_symmetric}')
     print(f'seed:{seed}')
     print(f'weight_mode:{weight_mode,mac_mode}')
     seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
+
+    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = {weight_mode}, col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -282,7 +300,8 @@ def test_seq_acc(
         col_symmetric = col_symmetric,
         rangeBits = 5,
         x_repeat = x_repeat,
-        clip_output = False
+        clip_output = False,
+        unsigned_acts = unsigned_acts
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware

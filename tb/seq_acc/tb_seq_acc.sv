@@ -15,7 +15,8 @@ module tb_seq_acc #(
     parameter numAdcBits = 4,
     parameter numCfgBits = 8,
     parameter macMode = 0,
-    parameter outBits = 8
+    parameter outBits = 8,
+    parameter unsignedActs = 0
 ) ( 
 );
 
@@ -25,6 +26,7 @@ module tb_seq_acc #(
 
 parameter numRows = SRAM_ROWS;
 parameter numCols = SRAM_COLS;
+parameter maxInputBits = 8;
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
@@ -41,7 +43,7 @@ from_analog_t from_analog;
 
 logic clk;
 logic nrst;
-logic signed [numRows-1:0][xBits-1:0] mac_data;
+logic signed [numRows-1:0][maxInputBits-1:0] mac_data;
 // logic signed [numRows-1:0][15:0] mac_data;
 logic signed mac_data_valid;
 logic signed [numCols-1:0][accumulatorBits-1:0] mac_result;
@@ -145,9 +147,9 @@ assign to_sram.addr_i = addr;
 
 // Instantiate both modules and connect their interfaces
 seq_acc #(
-    .inputBits(xBits),
+    .maxInputBits(maxInputBits),
     .inputElements(numRows),
-    .outputBits(outBits),
+    // .outputBits(outBits),
     .outputElements(numCols),
     .adcBits(numAdcBits)
 ) u_seq_acc (
@@ -249,6 +251,14 @@ task send_mac_request();
     mac_data_valid = 0;
 endtask
 
+task set_config();
+    // Set config
+    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
+    cfg.binary_cfg = macMode;
+    cfg.unsigned_acts = unsignedActs;
+    cfg.n_input_bits_cfg = xBits;
+endtask
+
 //////////////////////
 // TESTBENCH THINGS
 //////////////////////
@@ -276,14 +286,14 @@ initial begin
 end
 
 // Waveform dumping
-// `ifdef SYNOPSYS
-// initial begin
-//     $vcdplusfile("tb_seq_acc.vpd");
-//     $vcdpluson();
-//     $vcdplusmemon();
-//     $dumpvars(0);
-// end
-// `endif
+`ifdef SYNOPSYS
+initial begin
+    $vcdplusfile("tb_seq_acc.vpd");
+    $vcdpluson();
+    $vcdplusmemon();
+    $dumpvars(0);
+end
+`endif
 initial begin
     $dumpfile("tb_seq_acc.vcd");
     $vcdplusmemon();
@@ -296,8 +306,10 @@ static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2
 initial begin
 
     test_phase = P_INIT;
-    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
-    cfg.binary_cfg = macMode;
+    
+    // Set config
+    set_config();
+
     if (cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
     else $display("MAC MODE: BIPOLAR");
 

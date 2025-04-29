@@ -8,20 +8,19 @@ asdasd
 import qracc_pkg::*;
 
 module seq_acc #(
-    parameter inputBits = 5,
+    parameter maxInputBits = 8,
     parameter inputElements = 128,
     parameter outputElements = 32,
     parameter adcBits = 4,
-    parameter accumulatorBits = 16,
-    localparam inputTrits = inputBits - 1
-    // localparam accumulatorBits = inputTrits  + adcBits + 1 // +1 from addition bit growth
+    parameter accumulatorBits = 16
+    // localparam accumulatorBits = maxInputTrits  + adcBits + 1 // +1 from addition bit growth
 ) (
     input clk, nrst,
 
     input qracc_config_t cfg,
 
     // Data
-    input [inputElements-1:0][inputBits-1:0] mac_data_i,
+    input [inputElements-1:0][maxInputBits-1:0] mac_data_i,
     input mac_valid_i,
     output logic ready_o,
 
@@ -38,19 +37,24 @@ module seq_acc #(
 );
 
 // Parameters
-localparam pipelineStages = inputTrits + 2;
+localparam pipelineStages = maxInputBits + 2;
 
 // Signals
 logic [pipelineStages-1:0] pipeline_tracker;
-logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_n_q;
-logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_q;
-logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_n_d;
-logic signed [inputElements-1:0][inputTrits-1:0] piso_buffer_p_d;
+logic signed [inputElements-1:0][maxInputBits-1:0] piso_buffer_n_q;
+logic signed [inputElements-1:0][maxInputBits-1:0] piso_buffer_p_q;
+logic signed [inputElements-1:0][maxInputBits-1:0] piso_buffer_n_d;
+logic signed [inputElements-1:0][maxInputBits-1:0] piso_buffer_p_d;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic [inputElements-1:0] data_p_i;
 logic [inputElements-1:0] data_n_i;
 logic [outputElements-1:0][adcBits-1:0] adc_out;
 logic mac_en;
+logic [3:0] input_bits;
+logic [3:0] input_trits;
+
+assign input_bits = cfg.n_input_bits_cfg;
+assign input_trits = input_bits - 1;
 
 // Modules
 qr_acc_wrapper #(
@@ -79,12 +83,14 @@ qr_acc_wrapper #(
 );
 
 twos_to_bipolar #(
-    .inBits(inputBits),
+    .inBits(maxInputBits),
     .numLanes(inputElements)
 ) u_twos_to_bipolar (
     .twos(mac_data_i),
     .bipolar_p(piso_buffer_p_d),
-    .bipolar_n(piso_buffer_n_d)
+    .bipolar_n(piso_buffer_n_d),
+    .unsigned_inputs(cfg.unsigned_acts),
+    .input_bits(input_bits)
 );
 
 // Registers
@@ -115,7 +121,6 @@ always_ff @( posedge clk ) begin : seqAccRegs
         end else begin
             pipeline_tracker[0] <= '0;
         end
-        // I wonder if there's a more readable way to shift this
         // Left shift
         pipeline_tracker[pipelineStages-1:1] <= pipeline_tracker[pipelineStages-2:0];
     end
@@ -126,22 +131,33 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         for (int i = 0; i < outputElements; i++) begin
             if (pipeline_tracker[1]) begin // == 'h02
-                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (inputTrits - 1); 
+                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (input_trits - 1); // bit 0 result
             end else begin
-                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (inputTrits - 1) );
+                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (input_trits - 1) );
             end
         end
     end
 end
 
 // Datapaths
+logic [pipelineStages-1:0] ready_mask;
+logic [pipelineStages-1:0] valid_mask;
+logic [pipelineStages-1:0] mac_en_mask;
 
 always_comb begin : seqAccDpath
-    // If something is in the first inputTrits-1 stages of the pipeline we cannot take new data (ready_o asserted in the last cycle that PISOs are needed)
-    ready_o = (pipeline_tracker[inputTrits-2:0] == {(inputTrits-1){1'b0}});
-    valid_o = pipeline_tracker[pipelineStages-1];
-    // If something is in the first inputTrits stages of the pipeline, we need to enable the MAC
-    mac_en = (pipeline_tracker[inputTrits-1:0] != {(inputTrits){1'b0}}); 
+
+    // Ready mask looks for workload in the first input_trits-1 stages
+    ready_mask = 2**(input_trits-1) - 1;
+    // MAC enable looks for workload in the first input_trits stages
+    mac_en_mask = 2**input_trits - 1;
+    // Valid mask looks for workload in the last stage
+    valid_mask = 2**(input_trits+1);
+
+    // If something is in the first input_trits-1 stages of the pipeline we cannot take new data (ready_o asserted in the last cycle that PISOs are needed)
+    ready_o = (pipeline_tracker & ready_mask) == '0;
+    valid_o = (pipeline_tracker & valid_mask) != '0;
+    // If something is in the first input_trits stages of the pipeline, we need to enable the MAC
+    mac_en = (pipeline_tracker & mac_en_mask) != '0; 
 
     for (int i = 0; i < outputElements; i++) begin
         mac_data_o[i] = accumulator[i] << cfg.adc_ref_range_shifts;
