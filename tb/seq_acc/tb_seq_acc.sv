@@ -26,7 +26,7 @@ module tb_seq_acc #(
 
 parameter numRows = SRAM_ROWS;
 parameter numCols = SRAM_COLS;
-parameter maxInputBits = 8;
+parameter maxInputBits = 9; // For max 8 trits
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;

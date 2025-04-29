@@ -229,20 +229,20 @@ def test_seq_acc_ams(
 # @pytest.mark.parametrize("xTrits", [1, 3, 7])
 
 @pytest.mark.parametrize(
-     "unsigned_acts,xTrits,wDimX,wDimY,outBits", [
-    (         False,     1,   32,  128,       8,),
-    (         False,     3,   32,  128,       8,),
-    (         False,     7,   32,  128,       8,),
-    (          True,     2,   32,  128,       8,),
-    (          True,     4,   32,  128,       8,),
-    (          True,     8,   32,  128,       8,),
+     "unsigned_acts,xBits,wDimX,wDimY,outBits", [
+    (         False,    2,   32,  128,       8,),
+    (         False,    4,   32,  128,       8,),
+    (         False,    8,   32,  128,       8,),
+    (          True,    2,   32,  128,       8,),
+    (          True,    4,   32,  128,       8,),
+    (          True,    8,   32,  128,       8,),
 ])
 def test_seq_acc(
     simulator,
     seed,
     weight_mode,
     unsigned_acts,
-    xTrits,
+    xBits,
     wDimX, #nColumns
     wDimY, #nRows
     outBits,
@@ -269,7 +269,7 @@ def test_seq_acc(
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
-    xBits = xTrits if unsigned_acts else xTrits + 1
+    xTrits = xBits if unsigned_acts else xBits - 1
 
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
