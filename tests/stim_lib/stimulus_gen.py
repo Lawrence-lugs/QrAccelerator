@@ -242,6 +242,7 @@ def generate_qracc_inputs(
     x_repeat = False,
     clip_output = True,
     unsigned_acts = False,
+    bitRange = None
 ):
     '''
     Generates integer weights and inputs, including clipped integer reference outputs.
@@ -280,12 +281,14 @@ def generate_qracc_inputs(
         else:
             raise ValueError('Invalid weight_mode')
 
+    if bitRange is None:
+        bitRange = xTrits
     if not unsigned_acts:
-        low_lim = -(2**(xTrits)-1)
-        high_lim = 2**(xTrits)
+        low_lim = -(2**(bitRange)-1)
+        high_lim = 2**(bitRange)
     else:
         low_lim = 0
-        high_lim = 2**(xTrits)
+        high_lim = 2**(bitRange)
 
     if x_repeat:
         x = np.random.randint(low_lim, high_lim,wDimY)

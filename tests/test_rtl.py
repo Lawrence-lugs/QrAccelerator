@@ -287,7 +287,7 @@ def test_seq_acc(
     print(f'weight_mode:{weight_mode,mac_mode}')
     seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
 
-    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = {weight_mode}, col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
+    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = '{weight_mode}', col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -301,7 +301,8 @@ def test_seq_acc(
         rangeBits = 5,
         x_repeat = x_repeat,
         clip_output = False,
-        unsigned_acts = unsigned_acts
+        unsigned_acts = unsigned_acts,
+        bitRange = 1 if unsigned_acts else None
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware
