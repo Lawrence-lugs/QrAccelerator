@@ -4,11 +4,12 @@
 // 
 
 module twos_to_bipolar #(
-    parameter inBits = 4,
+    parameter inBits = 8,
     parameter numLanes = 1
 ) (
     input signed [numLanes-1:0][inBits-1:0] twos,
     input unsigned_inputs,
+    input [3:0] input_bits,
     output logic [numLanes-1:0][inBits-1:0] bipolar_p,
     output logic [numLanes-1:0][inBits-1:0] bipolar_n
 );
@@ -26,7 +27,7 @@ always_comb begin : dataPath
                 bipolar_n[i] = 0;
             end
             else begin
-                if (twos[i][inBits-1]) begin
+                if (twos[i][input_bits-1]) begin
                     bipolar_p[i] = '0;
                     bipolar_n[i] = ntwos[i];
                 end else begin

@@ -26,6 +26,7 @@ module tb_seq_acc #(
 
 parameter numRows = SRAM_ROWS;
 parameter numCols = SRAM_COLS;
+parameter maxInputBits = 8;
 localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
@@ -42,7 +43,7 @@ from_analog_t from_analog;
 
 logic clk;
 logic nrst;
-logic signed [numRows-1:0][xBits-1:0] mac_data;
+logic signed [numRows-1:0][maxInputBits-1:0] mac_data;
 // logic signed [numRows-1:0][15:0] mac_data;
 logic signed mac_data_valid;
 logic signed [numCols-1:0][accumulatorBits-1:0] mac_result;
@@ -146,7 +147,7 @@ assign to_sram.addr_i = addr;
 
 // Instantiate both modules and connect their interfaces
 seq_acc #(
-    .maxInputBits(xBits),
+    .maxInputBits(maxInputBits),
     .inputElements(numRows),
     // .outputBits(outBits),
     .outputElements(numCols),

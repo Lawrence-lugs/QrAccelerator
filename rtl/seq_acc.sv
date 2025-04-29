@@ -12,8 +12,7 @@ module seq_acc #(
     parameter inputElements = 128,
     parameter outputElements = 32,
     parameter adcBits = 4,
-    parameter accumulatorBits = 16,
-    localparam maxInputTrits = maxInputBits - 1
+    parameter accumulatorBits = 16
     // localparam accumulatorBits = maxInputTrits  + adcBits + 1 // +1 from addition bit growth
 ) (
     input clk, nrst,
@@ -38,7 +37,7 @@ module seq_acc #(
 );
 
 // Parameters
-localparam pipelineStages = maxInputTrits + 2;
+localparam pipelineStages = maxInputBits + 2;
 
 // Signals
 logic [pipelineStages-1:0] pipeline_tracker;
@@ -90,7 +89,8 @@ twos_to_bipolar #(
     .twos(mac_data_i),
     .bipolar_p(piso_buffer_p_d),
     .bipolar_n(piso_buffer_n_d),
-    .unsigned_inputs(cfg.unsigned_acts)
+    .unsigned_inputs(cfg.unsigned_acts),
+    .input_bits(input_bits)
 );
 
 // Registers
