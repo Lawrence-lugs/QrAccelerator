@@ -397,7 +397,7 @@ task setup_config();
     cfg.n_output_bits_cfg = `QRACC_OUTPUT_BITS;
     cfg.unsigned_acts = `UNSIGNED_ACTS;
 
-    cfg.binary_cfg = 0;
+    cfg.binary_cfg = 1;
     cfg.adc_ref_range_shifts = 2;
     
     cfg.filter_size_y = `FILTER_SIZE_Y;
