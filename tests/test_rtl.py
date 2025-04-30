@@ -302,7 +302,7 @@ def test_seq_acc(
         x_repeat = x_repeat,
         clip_output = False,
         unsigned_acts = unsigned_acts,
-        bitRange = 1 if unsigned_acts else None
+        bitRange = None
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware

@@ -275,9 +275,13 @@ def generate_qracc_inputs(
     else:
         print('[STIM_GEN] Generating random weights')
         if weight_mode=='binary':
-            w = np.random.randint(0,2, wShape) # Binary Weights
+            # When doing unsigned acts with 1b binary weights, the output tends to oversaturate. We need to make the weights sparse to have testable outputs.
+            w = np.random.randint(0,2, wShape)
+            if unsigned_acts:
+                a = np.random.rand(*wShape)
+                w = (a < 0.1).astype(int) # Sparse Weights
         elif weight_mode=='bipolar':
-            w = np.random.randint(0,2, wShape)*2-1 # Bipolar Weights
+            w = np.random.randint(0,2, wShape)*2-1
         else:
             raise ValueError('Invalid weight_mode')
 
