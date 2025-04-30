@@ -54,6 +54,7 @@ def sample_onnx_qlinearconv(
     kernel_dtype,
     pads,
     stride,
+    weight_density = 0.5,
     seed = 0
 ):
     
@@ -72,7 +73,9 @@ def sample_onnx_qlinearconv(
     # 1-bit qb scales and zero point heuristically guessed from
     # a standard normal distribution 
     if kernel_bits == 1:
-        b = np.random.randint(0,2, kernel_shape)
+        # b = np.random.randint(0,2, kernel_shape)
+        dist = np.random.rand(*kernel_shape)
+        b = (dist < weight_density).astype(int)
         qb = quant.QuantizedTensor(quantized_values = b, scale = 0.1, zero_point=0)
     else:
         qa = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
@@ -173,7 +176,8 @@ def generate_top_inputs(
         kernel_dtype = np.int8,
         pads = (1,1,1,1),
         stride = stride,
-        seed = seed
+        seed = seed,
+        weight_density=0.5
     )
     out = t_res
 
