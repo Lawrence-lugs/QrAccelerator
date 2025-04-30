@@ -242,6 +242,7 @@ def generate_qracc_inputs(
     x_repeat = False,
     clip_output = True,
     unsigned_acts = False,
+    bitRange = None
 ):
     '''
     Generates integer weights and inputs, including clipped integer reference outputs.
@@ -274,18 +275,24 @@ def generate_qracc_inputs(
     else:
         print('[STIM_GEN] Generating random weights')
         if weight_mode=='binary':
-            w = np.random.randint(0,2, wShape) # Binary Weights
+            # When doing unsigned acts with 1b binary weights, the output tends to oversaturate. We need to make the weights sparse to have testable outputs.
+            w = np.random.randint(0,2, wShape)
+            if unsigned_acts:
+                a = np.random.rand(*wShape)
+                w = (a < 0.1).astype(int) # Sparse Weights
         elif weight_mode=='bipolar':
-            w = np.random.randint(0,2, wShape)*2-1 # Bipolar Weights
+            w = np.random.randint(0,2, wShape)*2-1
         else:
             raise ValueError('Invalid weight_mode')
 
+    if bitRange is None:
+        bitRange = xTrits
     if not unsigned_acts:
-        low_lim = -(2**(xTrits)-1)
-        high_lim = 2**(xTrits)
+        low_lim = -(2**(bitRange)-1)
+        high_lim = 2**(bitRange)
     else:
         low_lim = 0
-        high_lim = 2**(xTrits)
+        high_lim = 2**(bitRange)
 
     if x_repeat:
         x = np.random.randint(low_lim, high_lim,wDimY)

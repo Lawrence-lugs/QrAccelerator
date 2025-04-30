@@ -47,7 +47,8 @@ package qracc_pkg;
 
     // Config that changes per-layer
     typedef struct packed {        
-        logic [3:0] n_input_bits_cfg;  // config to generalize controller, partly still parametrized 
+
+        logic [3:0] n_input_bits_cfg;  
         logic [3:0] n_output_bits_cfg; // we don't use this yet (it's a parameter atm)
 
         logic binary_cfg; // binary or bipolar mode

@@ -229,20 +229,20 @@ def test_seq_acc_ams(
 # @pytest.mark.parametrize("xTrits", [1, 3, 7])
 
 @pytest.mark.parametrize(
-     "unsigned_acts,xTrits,wDimX,wDimY,outBits", [
-    (         False,     1,   32,  128,       8,),
-    (         False,     3,   32,  128,       8,),
-    (         False,     7,   32,  128,       8,),
-    (          True,     2,   32,  128,       8,),
-    (          True,     4,   32,  128,       8,),
-    (          True,     8,   32,  128,       8,),
+     "unsigned_acts,xBits,wDimX,wDimY,outBits", [
+    (         False,    2,   32,  128,       8,),
+    (         False,    4,   32,  128,       8,),
+    (         False,    8,   32,  128,       8,),
+    (          True,    2,   32,  128,       8,),
+    (          True,    4,   32,  128,       8,),
+    (          True,    8,   32,  128,       8,),
 ])
 def test_seq_acc(
     simulator,
     seed,
     weight_mode,
     unsigned_acts,
-    xTrits,
+    xBits,
     wDimX, #nColumns
     wDimY, #nRows
     outBits,
@@ -269,7 +269,7 @@ def test_seq_acc(
     # Pre-simulation
     from tests.stim_lib.stimulus_gen import generate_qracc_inputs
 
-    xBits = xTrits if unsigned_acts else xTrits + 1
+    xTrits = xBits if unsigned_acts else xBits - 1
 
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
@@ -287,7 +287,7 @@ def test_seq_acc(
     print(f'weight_mode:{weight_mode,mac_mode}')
     seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
 
-    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = {weight_mode}, col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
+    print(f"w,x,wx_outBits = generate_qracc_inputs(wDimX = {wDimX}, wDimY = {wDimY}, xBatches = {xBatches}, xTrits = {xTrits}, outBits = {outBits}, seed = {seed}, weight_mode = '{weight_mode}', col_symmetric = {col_symmetric}, rangeBits = 5, x_repeat = {x_repeat}, clip_output = False, unsigned_acts = {unsigned_acts})")
     
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -301,7 +301,8 @@ def test_seq_acc(
         rangeBits = 5,
         x_repeat = x_repeat,
         clip_output = False,
-        unsigned_acts = unsigned_acts
+        unsigned_acts = unsigned_acts,
+        bitRange = None
     )
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware

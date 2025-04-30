@@ -53,7 +53,8 @@ logic mac_en;
 logic [3:0] input_bits;
 logic [3:0] input_trits;
 
-assign input_bits = cfg.n_input_bits_cfg;
+// If the activations are unsigned, the effective bits is +1
+assign input_bits = cfg.n_input_bits_cfg + {3'b0,cfg.unsigned_acts}; 
 assign input_trits = input_bits - 1;
 
 // Modules
@@ -89,7 +90,6 @@ twos_to_bipolar #(
     .twos(mac_data_i),
     .bipolar_p(piso_buffer_p_d),
     .bipolar_n(piso_buffer_n_d),
-    .unsigned_inputs(cfg.unsigned_acts),
     .input_bits(input_bits)
 );
 
