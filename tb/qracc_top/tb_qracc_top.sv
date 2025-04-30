@@ -394,6 +394,9 @@ int errcnt = 0;
 
 task setup_config();
     cfg.n_input_bits_cfg = `QRACC_INPUT_BITS;
+    cfg.n_output_bits_cfg = `QRACC_OUTPUT_BITS;
+    cfg.unsigned_acts = `UNSIGNED_ACTS;
+
     cfg.binary_cfg = 0;
     cfg.adc_ref_range_shifts = 2;
     

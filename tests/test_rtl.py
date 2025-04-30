@@ -139,7 +139,8 @@ def test_qr_acc_top(
         "IN_CHANNELS": kernel_shape[1],
         "OUT_CHANNELS": kernel_shape[0],
         "MAPPED_MATRIX_OFFSET_X": 0,
-        "MAPPED_MATRIX_OFFSET_Y": 0
+        "MAPPED_MATRIX_OFFSET_Y": 0,
+        "UNSIGNED_ACTS": 1
     }
 
     write_parameter_definition_file(parameter_list,param_file_path)
