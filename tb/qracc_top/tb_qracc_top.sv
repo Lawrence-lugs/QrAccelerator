@@ -654,7 +654,13 @@ task export_ofmap();
 
     fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
     for(i=0;i<cfg.output_fmap_size;i++) begin
-        a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i]);
+        // Later on this would be wrong if the output isn't 8b
+        // and the 4b or 2b version is packed.
+        if (cfg.unsigned_acts) begin
+            a = u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i];
+        end else begin
+            a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i]);
+        end
         $fwrite(fd,"%d\n",a);
     end
 
