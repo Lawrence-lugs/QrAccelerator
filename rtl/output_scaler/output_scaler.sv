@@ -10,7 +10,7 @@ Verilator has a lot of warnings, but this code has previously been tested and sy
 
 module output_scaler #(
     parameter inputWidth = 20,
-    parameter outputWidth = 8,
+    parameter maxOutputWidth = 8,
     // Static Parameters, mostly
     parameter fixedPointBits = 16,
     parameter shiftBits = 16
@@ -18,24 +18,43 @@ module output_scaler #(
     input clk, nrst,
 
     input signed [inputWidth-1:0] wx_i,
-    output logic signed [outputWidth-1:0] y_o,
+    output logic signed [maxOutputWidth-1:0] y_o,
 
     input [fixedPointBits-1:0] output_scale,
-    input [shiftBits-1:0] output_shift
+    input [shiftBits-1:0] output_shift,
+
+    input cfg_unsigned,
+    input [3:0] cfg_output_bits
 );
 
-localparam signed saturateHigh = {1'b0, {(outputWidth-1){1'b1}}};  // 0111...111
-localparam signed saturateLow = {1'b1, {(outputWidth-1){1'b0}}};  // 1000...000
-// Sign-extended versions of saturateHigh and saturateLow
-localparam signed compareHigh = { {(inputWidth-outputWidth+1){1'b0}} , {(outputWidth-1){1'b1}} };
-localparam signed compareLow = { {(inputWidth-outputWidth+1){1'b1}} , {(outputWidth-1){1'b0}} };
+logic signed [maxOutputWidth-1:0] saturateHigh;
+logic signed [maxOutputWidth-1:0] saturateLow;
+logic signed [inputWidth-1:0] compareHigh;
+logic signed [inputWidth-1:0] compareLow;
 
 logic signed [31:0] scaled_wx;
 logic signed [31:0] scaled_wx_fpshift;
 logic signed [31:0] scaled_wx_shifted;
-logic signed [outputWidth-1:0] y_o_d;
+logic signed [maxOutputWidth-1:0] y_o_d;
 
 assign y_o = y_o_d;
+
+always_comb begin : saturationLimits
+
+    // Saturation limits
+    if (cfg_unsigned) begin
+        saturateHigh = 2**cfg_output_bits - 1;  // 0111...111
+        saturateLow = 0;  // 0000...000
+    end else begin
+        saturateHigh = 2**(cfg_output_bits-1) - 1;  // 0111...111
+        saturateLow = -2**(cfg_output_bits-1);  // 1000...000
+    end
+
+    // Sign-extend saturateHigh and saturateLow to inputWidth
+    compareHigh = { {inputWidth-maxOutputWidth{1'b0}}, saturateHigh };
+    compareLow = { {inputWidth-maxOutputWidth{1'b1}}, saturateLow };
+
+end
 
 always_comb begin : fpMultComb
     // We have to explicitly implement this as unsigned multiplications
@@ -72,7 +91,7 @@ always_comb begin : fpMultComb
         y_o_d = saturateLow;
     end
     else begin
-        y_o_d = scaled_wx_shifted[outputWidth-1:0];
+        y_o_d = scaled_wx_shifted[maxOutputWidth-1:0];
     end
 end
 

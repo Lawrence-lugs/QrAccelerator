@@ -8,7 +8,7 @@
 module output_scaler_set #(
     parameter numElements = 64,
     parameter inputWidth = 20,
-    parameter outputWidth = 8,
+    parameter outputWidth = 8, 
     // Changing these will change the algorithm behavior
     parameter scaleBits = 16, 
     parameter shiftBits = 4    
@@ -24,7 +24,11 @@ module output_scaler_set #(
 
     // Shift memory inputs
     input shift_w_en_i,
-    input [shiftBits-1:0] shift_w_data_i
+    input [shiftBits-1:0] shift_w_data_i,
+
+    // Config
+    input cfg_unsigned,
+    input [3:0] cfg_output_bits
 );
 
 // Parameters
@@ -62,7 +66,7 @@ generate
     for (i = 0; i < numElements; i = i + 1) begin : oScalerInstances
         output_scaler #(
             .inputWidth(inputWidth),
-            .outputWidth(outputWidth),
+            .maxOutputWidth(outputWidth),
             .fixedPointBits(scaleBits),
             .shiftBits(shiftBits)
         ) u_output_scaler (
@@ -71,7 +75,9 @@ generate
             .wx_i(wx_i[i]),
             .y_o(y_o[i]),
             .output_scale(output_scale[i]),
-            .output_shift(output_shift[i])
+            .output_shift(output_shift[i]),
+            .cfg_unsigned(cfg_unsigned),
+            .cfg_output_bits(cfg_output_bits)
         );
     end
 endgenerate
