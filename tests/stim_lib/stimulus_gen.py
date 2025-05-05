@@ -282,7 +282,7 @@ def generate_top_inputs(
         'weights_np': weight_array, 
         'flat_output': q_out,
         'scaler_data': scaler_data,
-        'biases': scaler_params['gph_node'][0].biases,
+        'biases': scaler_params['gph_node'][0].biases[::-1],
     }
 
     if savepath is not None:

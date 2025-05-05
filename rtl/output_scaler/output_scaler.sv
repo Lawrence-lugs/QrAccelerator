@@ -50,15 +50,15 @@ always_comb begin : saturationLimits
     if (cfg_unsigned) begin
         saturateHigh = 2**cfg_output_bits - 1;  // 0111...111
         saturateLow = 0;  // 0000...000
+        compareHigh = { {inputWidth-maxOutputWidth{1'b0}}, saturateHigh };
+        compareLow = { {inputWidth-maxOutputWidth{1'b0}}, saturateLow };
     end else begin
         saturateHigh = 2**(cfg_output_bits-1) - 1;  // 0111...111
         saturateLow = -2**(cfg_output_bits-1);  // 1000...000
+        compareHigh = { {inputWidth-maxOutputWidth{1'b0}}, saturateHigh };
+        compareLow = { {inputWidth-maxOutputWidth{1'b1}}, saturateLow };
     end
-
-    // Sign-extend saturateHigh and saturateLow to inputWidth
-    compareHigh = { {inputWidth-maxOutputWidth{1'b0}}, saturateHigh };
-    compareLow = { {inputWidth-maxOutputWidth{1'b1}}, saturateLow };
-
+    
 end
 
 always_comb begin : fpMultComb

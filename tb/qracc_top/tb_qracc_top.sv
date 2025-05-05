@@ -2,7 +2,7 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 1
+`define NUM_ADC_REF_RANGE_SHIFTS 0
 
 module tb_qracc_top #(
 
@@ -400,7 +400,7 @@ task setup_config();
     cfg.unsigned_acts = `UNSIGNED_ACTS;
 
     cfg.binary_cfg = 1;
-    cfg.adc_ref_range_shifts = 2;
+    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
     
     cfg.filter_size_y = `FILTER_SIZE_Y;
     cfg.filter_size_x = `FILTER_SIZE_X;
