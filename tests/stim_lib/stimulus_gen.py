@@ -189,6 +189,7 @@ def sample_onnx_qlinearconv(
         'nx_node' : node,
         'gph_node' : cnode,
         'cnode_params' : cnode_params,
+        'zp_x' : zp_x,
     }
 
     # Return expected tensor values
@@ -200,7 +201,8 @@ def sample_onnx_qlinearconv(
         in_tensor=t_ifmap.squeeze(axis=0), 
         ksize=kernel_shape[-1], 
         strides=stride,
-        channel_minor=True
+        channel_minor=True,
+        zero_point=zp_x
     )
     t_res = outs[0].transpose(0,2,3,1)
 
@@ -246,7 +248,8 @@ def generate_top_inputs(
 
     # Software padding and channel minor
     t_ifmap = torch.from_numpy(t_ifmap)
-    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=0) # F.pad is weird asf
+    zp_x = float(scaler_params['zp_x'])
+    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=zp_x) # F.pad is weird asf
     ifmap_channel_minor = ifmap_channel_minor.permute(0,2,3,1) # N C H W -> N H W C
     ifmap_channel_minor = ifmap_channel_minor.numpy()
 
