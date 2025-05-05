@@ -253,7 +253,7 @@ end
 // FILE THINGS
 /////////////
 
-localparam numFiles = 12;
+localparam numFiles = 14;
 string files[numFiles] = {
     "flat_output",
     "flat_output_shape",
@@ -266,7 +266,9 @@ string files[numFiles] = {
     "toeplitz_shape",
     "toeplitz",
     "scaler_data_shape",
-    "scaler_data"
+    "scaler_data",
+    "biases",
+    "biases_shape"
 };
 int file_descriptors[numFiles];
 
@@ -389,7 +391,7 @@ endclass
 // TASKS & TEST SCRIPT
 /////////////
 
-NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data;
+NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
 
 task setup_config();
@@ -587,9 +589,26 @@ task track_toeplitz();
 
 endtask
 
+task load_biases();
+
+    $display("Loading biases at time %t", $time);
+    for (i=0;i<biases.size;i++) begin
+        // $display("[%d]:\t",i);
+        bus.data_in = biases.array[i];
+        bus.valid = 1;
+        bus.wen = 1;
+        while (!bus.ready) #(CLK_PERIOD);
+        #(CLK_PERIOD);
+        $write(".");
+        bus.valid = 0;
+    end
+    $write("\n");
+
+endtask
+
 task load_scales();
 
-    $display("Loading scales at time %t", $time);
+    $display("Loading scaler data at time %t", $time);
     for (i=0;i<scaler_data.size;i++) begin
         // $display("[%d]:\t",i);
         bus.data_in = scaler_data.array[i];
@@ -607,8 +626,10 @@ endtask
 task check_scales();
     logic [15:0] scale;
     logic [3:0] shift;
+    logic signed [31:0] bias;
     logic [15:0] scaleref;
     logic [3:0] shiftref;
+    logic signed [31:0] biasref;
     $display("Checking scales at time %t", $time);
 
     for (i=0;i<scaler_data.size;i++) begin
@@ -621,12 +642,14 @@ task check_scales();
         $write("[%d]:\t",i);
         scale = u_qr_acc_top.u_output_scaler_set.output_scale[i];
         shift = u_qr_acc_top.u_output_scaler_set.output_shift[i];
+        bias = u_qr_acc_top.u_output_scaler_set.output_bias[i];
         
         scaleref = scaler_data.array[i][4+:16];
         shiftref = scaler_data.array[i][0+:4];
-        $write("%d\t, %d\t",scale,shift);
-        if (scale != scaleref | shift != shiftref ) begin
-            $write(" != %d, %d",scaleref, shiftref);
+        biasref = biases.array[i];
+        $write("%d\t, %d\t, %d\t",scale,shift,bias);
+        if (scale != scaleref | shift != shiftref | bias != biasref) begin
+            $write(" != %d, %d, %d",scaleref, shiftref, biasref);
             errcnt++;
         end
         $write("\n");
@@ -672,6 +695,7 @@ initial begin
     weight_matrix = new("matrix");
     toeplitz = new("toeplitz");
     scaler_data = new("scaler_data");
+    biases = new("biases");
 
     // Setup monitors
     // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
@@ -689,6 +713,7 @@ initial begin
     load_weights();
     load_acts();
     load_scales();
+    load_biases();
     check_weights();
     check_acts();
     check_scales();

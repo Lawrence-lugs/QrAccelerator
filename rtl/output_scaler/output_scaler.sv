@@ -23,6 +23,7 @@ module output_scaler #(
     input [fixedPointBits-1:0] output_scale,
     input [shiftBits-1:0] output_shift,
     input [maxOutputWidth-1:0] output_offset,
+    input [31:0] output_bias,
 
     input cfg_unsigned,
     input [3:0] cfg_output_bits
@@ -33,6 +34,8 @@ logic signed [maxOutputWidth-1:0] saturateLow;
 logic signed [inputWidth-1:0] compareHigh;
 logic signed [inputWidth-1:0] compareLow;
 
+logic signed [31:0] wx_i_extended;
+logic signed [31:0] wx_i_biased;
 logic signed [31:0] scaled_wx;
 logic signed [31:0] scaled_wx_fpshift;
 logic signed [31:0] scaled_wx_shifted;
@@ -63,15 +66,17 @@ always_comb begin : fpMultComb
     // Because signed * unsigned asymmetric multiplication is ambiguous
     // Note: signed * unsigned --> unsigned * unsigned
     // All of this is scary when switching simulators.
-    
-    if (wx_i[inputWidth-1] == 1) begin
-        // wx_i is negative
-        scaled_wx = ~(31'( inputWidth'(~wx_i+1) * output_scale)) + 1;
-    end else begin
-        // wx_i is positive
-        scaled_wx = 31'(wx_i * output_scale);
-    end
 
+    wx_i_extended = { {32-inputWidth{wx_i[inputWidth-1]}}, wx_i };
+    wx_i_biased = wx_i_extended + output_bias;
+    
+    if (wx_i_biased[inputWidth-1] == 1) begin
+        // wx_i_biased is negative
+        scaled_wx = ~(31'( inputWidth'(~wx_i_biased+1) * output_scale)) + 1;
+    end else begin
+        // wx_i_biased is positive
+        scaled_wx = 31'(wx_i_biased * output_scale);
+    end
 
     // It doesn't do arithmetic shift unless $signed for some reason
     // But it doesn't matter for fpshift because it's just a bit drop

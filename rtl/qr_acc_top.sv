@@ -213,6 +213,9 @@ output_scaler_set #(
     .offset_w_en_i   (qracc_ctrl.output_scaler_offset_w_en),
     .offset_w_data_i (bus_i.data_in[20+:8]),
 
+    .bias_w_en_i    (qracc_ctrl.output_bias_w_en),
+    .bias_w_data_i  (bus_i.data_in[31:0]),
+
     .cfg_unsigned   (cfg.unsigned_acts),
     .cfg_output_bits(cfg.n_output_bits_cfg)
 );

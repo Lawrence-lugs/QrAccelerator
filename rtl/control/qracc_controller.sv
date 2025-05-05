@@ -116,7 +116,8 @@ typedef enum logic [3:0] {
     S_LOADSCALER = 2,
     S_LOADWEIGHTS = 3,
     S_COMPUTE = 4,
-    S_READACTS = 5
+    S_READACTS = 5,
+    S_LOADBIAS = 6
 } state_t;
 
 state_t state_q;
@@ -156,6 +157,10 @@ always_comb begin : ctrlDecode
             ctrl_o.output_scaler_scale_w_en = data_write;
             ctrl_o.output_scaler_shift_w_en = data_write;
             ctrl_o.output_scaler_offset_w_en = data_write;
+            bus_i.ready = 1;
+        end
+        S_LOADBIAS: begin
+            ctrl_o.output_bias_w_en = data_write;
             bus_i.ready = 1;
         end
         S_COMPUTE: begin
@@ -218,8 +223,16 @@ always_comb begin : stateDecode
         end
         S_LOADSCALER: begin
             // Scaler orchestrates its own address
-            if (scaler_ptr < numScalers) begin
+            if (scaler_ptr < numScalers-1) begin
                 state_d = S_LOADSCALER;
+            end else begin
+                state_d = S_LOADBIAS;
+            end
+        end
+        S_LOADBIAS: begin
+            // Scaler orchestrates its own address
+            if (scaler_ptr < numScalers-1) begin
+                state_d = S_LOADBIAS;
             end else begin
                 state_d = S_COMPUTE;
             end
@@ -376,7 +389,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (state_q == S_COMPUTE) begin
 
             if (state_d != S_COMPUTE) begin
-                ifmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr; // TODO: Check. Depends on the incremental behavior
+                ifmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr;
             end
         end
 
@@ -394,6 +407,12 @@ always_ff @( posedge clk or negedge nrst ) begin : scalerLogic
         if (state_q == S_LOADSCALER) begin
             if (data_write) scaler_ptr <= scaler_ptr + 1;
             if (state_d != S_LOADSCALER) begin 
+                scaler_ptr <= 0;
+            end
+        end
+        if (state_q == S_LOADBIAS) begin
+            if (data_write) scaler_ptr <= scaler_ptr + 1;
+            if (state_d != S_LOADBIAS) begin 
                 scaler_ptr <= 0;
             end
         end

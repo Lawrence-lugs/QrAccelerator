@@ -2,6 +2,7 @@
 //
 // A set of output scalers with different scales
 //
+// Output of a scaler: (wx_i + output_bias) * output_scale + output_offset
 //
 `timescale 1ns / 1ps
 
@@ -31,6 +32,10 @@ module output_scaler_set #(
     input offset_w_en_i,
     input [offsetBits-1:0] offset_w_data_i,
 
+    // Bias inputs
+    input bias_w_en_i,
+    input [31:0] bias_w_data_i,
+
     // Config
     input cfg_unsigned,
     input [3:0] cfg_output_bits
@@ -43,9 +48,11 @@ localparam addrWidth = $clog2(numElements);
 logic signed [scaleBits-1:0] output_scale [numElements];
 logic signed [shiftBits-1:0] output_shift [numElements];
 logic signed [offsetBits-1:0] output_offset [numElements];
+logic signed [31:0] output_bias [numElements];
 logic [addrWidth-1:0] scale_w_addr;
 logic [addrWidth-1:0] shift_w_addr;
 logic [addrWidth-1:0] offset_w_addr;
+logic [addrWidth-1:0] bias_w_addr;
 
 // Modules
 always_ff @( posedge clk or negedge nrst) begin : scalerMemory
@@ -54,10 +61,12 @@ always_ff @( posedge clk or negedge nrst) begin : scalerMemory
             output_scale[i] <= 0;
             output_shift[i] <= 0;
             output_offset[i] <= 0;
+            output_bias[i] <= 0;
         end
         scale_w_addr <= 0;
         shift_w_addr <= 0;
         offset_w_addr <= 0;
+        bias_w_addr <= 0;
     end else begin
         if (scale_w_en_i) begin
             output_scale[scale_w_addr] <= scale_w_data_i;
@@ -70,6 +79,10 @@ always_ff @( posedge clk or negedge nrst) begin : scalerMemory
         if (offset_w_en_i) begin
             output_offset[offset_w_addr] <= offset_w_data_i;
             offset_w_addr <= offset_w_addr + 1;
+        end
+        if (bias_w_en_i) begin
+            output_bias[bias_w_addr] <= bias_w_data_i;
+            bias_w_addr <= bias_w_addr + 1;
         end
     end
 end
@@ -90,6 +103,7 @@ generate
             .output_scale(output_scale[i]),
             .output_shift(output_shift[i]),
             .output_offset(output_offset[i]),
+            .output_bias(output_bias[i]),
             .cfg_unsigned(cfg_unsigned),
             .cfg_output_bits(cfg_output_bits)
         );

@@ -164,11 +164,31 @@ def sample_onnx_qlinearconv(
         name="test_qlinearconv",
     )
 
+    wadds = zp_x * qb.quantized_values.sum(axis=(1,2,3))
+
+    cnode_params = {
+        'scale_x' : scale_x,
+        'zp_x' : zp_x,
+        'scale_w' : np.repeat(scale_w, kernel_shape[0]),
+        'zp_w' : zp_w,
+        'scale_y' : scale_y,
+        'zp_y' : zp_y,
+        'kernel' : qb.quantized_values,
+        'biases' : np.zeros((kernel_shape[0],), dtype=np.int32),
+        'strides' : stride,
+        'group' : 1
+    }
+    
+    cnode = cnodes.from_QLinearConv(None, node, channel_minor=True, qparams = cnode_params)
+
     # Parse required offsets
     scaler_params = {
         'scale' : scale_x * scale_w / scale_y,
         'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
         'output_zp' : zp_y,
+        'nx_node' : node,
+        'gph_node' : cnode,
+        'cnode_params' : cnode_params,
     }
 
     # Return expected tensor values
@@ -261,9 +281,10 @@ def generate_top_inputs(
         'matrix': write_array,
         'weights_np': weight_array, 
         'flat_output': q_out,
-        'scaler_data': scaler_data
+        'scaler_data': scaler_data,
+        'biases': scaler_params['gph_node'][0].biases,
     }
-    
+
     if savepath is not None:
         for key, value in res_dict.items():
             if value.dtype in ['int32','float64']:
