@@ -43,6 +43,7 @@ package qracc_pkg;
 
         logic output_scaler_scale_w_en;
         logic output_scaler_shift_w_en;
+        logic output_scaler_offset_w_en;
     } qracc_control_t;
 
     // Config that changes per-layer

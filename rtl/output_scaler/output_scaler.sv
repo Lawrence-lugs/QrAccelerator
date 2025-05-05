@@ -22,6 +22,7 @@ module output_scaler #(
 
     input [fixedPointBits-1:0] output_scale,
     input [shiftBits-1:0] output_shift,
+    input [maxOutputWidth-1:0] output_offset,
 
     input cfg_unsigned,
     input [3:0] cfg_output_bits
@@ -35,6 +36,7 @@ logic signed [inputWidth-1:0] compareLow;
 logic signed [31:0] scaled_wx;
 logic signed [31:0] scaled_wx_fpshift;
 logic signed [31:0] scaled_wx_shifted;
+logic signed [31:0] scaled_wx_presat;
 logic signed [maxOutputWidth-1:0] y_o_d;
 
 assign y_o = y_o_d;
@@ -83,15 +85,17 @@ always_comb begin : fpMultComb
     scaled_wx_shifted = $signed(scaled_wx_fpshift) >>> output_shift;
     // end
 
+    scaled_wx_presat = scaled_wx_shifted + {24'b0,output_offset};
+
     // Saturating clipping
-    if ($signed(scaled_wx_shifted) > compareHigh) begin // Does this auto sign-extend for the comparison?
+    if ($signed(scaled_wx_presat) > compareHigh) begin // Does this auto sign-extend for the comparison?
         y_o_d = saturateHigh;
     end
-    else if ($signed(scaled_wx_shifted) < compareLow) begin // Does this auto sign-extend?
+    else if ($signed(scaled_wx_presat) < compareLow) begin // Does this auto sign-extend?
         y_o_d = saturateLow;
     end
     else begin
-        y_o_d = scaled_wx_shifted[maxOutputWidth-1:0];
+        y_o_d = scaled_wx_presat[maxOutputWidth-1:0];
     end
 end
 

@@ -155,6 +155,7 @@ always_comb begin : ctrlDecode
         S_LOADSCALER: begin
             ctrl_o.output_scaler_scale_w_en = data_write;
             ctrl_o.output_scaler_shift_w_en = data_write;
+            ctrl_o.output_scaler_offset_w_en = data_write;
             bus_i.ready = 1;
         end
         S_COMPUTE: begin

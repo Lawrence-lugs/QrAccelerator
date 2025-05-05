@@ -209,6 +209,9 @@ output_scaler_set #(
 
     .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
     .shift_w_data_i (bus_i.data_in[3:0]),
+    
+    .offset_w_en_i   (qracc_ctrl.output_scaler_offset_w_en),
+    .offset_w_data_i (bus_i.data_in[20+:8]),
 
     .cfg_unsigned   (cfg.unsigned_acts),
     .cfg_output_bits(cfg.n_output_bits_cfg)

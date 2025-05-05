@@ -139,23 +139,39 @@ def sample_onnx_qlinearconv(
         strides = (stride, stride),
     )
 
+    scale_x = np.array(qa.scale, dtype=np.float32)
+    zp_x = np.array(qa.zero_point, dtype=np.uint8)
+    scale_w = np.array(qb.scale, dtype=np.float32)
+    zp_w = np.array(qb.zero_point, dtype=kernel_dtype)
+    scale_y = np.array(sample_outs.scale, dtype=np.float32)
+    zp_y = np.array(sample_outs.zero_point, dtype=np.uint8)
+
+    node_initializers = [
+        qa.quantized_values,
+        scale_x,
+        zp_x,
+        qb.quantized_values,
+        scale_w,
+        zp_w,
+        scale_y,
+        zp_y,
+    ]
+
     outs = onnx_utils.infer_node_output(
         node,
-        inputs=[
-            qa.quantized_values,
-            np.array(qa.scale, dtype=np.float32),
-            np.array(qa.zero_point, dtype=np.uint8),
-            qb.quantized_values,
-            np.array(qb.scale, dtype=np.float32),
-            np.array(qb.zero_point, dtype=kernel_dtype),
-            np.array(sample_outs.scale, dtype=np.float32),
-            np.array(sample_outs.zero_point, dtype=np.uint8),
-        ],
+        inputs=node_initializers,
         outputs=[sample_outs.quantized_values],
         name="test_qlinearconv",
     )
 
-    # Matrix and results must be in NHWC format
+    # Parse required offsets
+    scaler_params = {
+        'scale' : scale_x * scale_w / scale_y,
+        'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
+        'output_zp' : zp_y,
+    }
+
+    # Return expected tensor values
     t_kern = qb.quantized_values
     t_ifmap = qa.quantized_values
     t_matrix = t_kern.transpose(0,2,3,1)
@@ -168,7 +184,7 @@ def sample_onnx_qlinearconv(
     )
     t_res = outs[0].transpose(0,2,3,1)
 
-    return t_res, t_matrix, t_ifmap, t_toeplitz, qa, qb, outs
+    return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
 def generate_top_inputs(
     savepath,
@@ -183,21 +199,11 @@ def generate_top_inputs(
 
     torch.manual_seed(seed)
     np.random.seed(seed)
-
-    # t_res, t_matrix, t_ifmap, t_toeplitz, out = generate_random_torch_conv(
-    #     ifmap_shape=ifmap_shape,
-    #     ifmap_bits=ifmap_bits,
-    #     kernel_shape=kernel_shape,
-    #     kernel_bits=kernel_bits,    
-    #     stride=stride,
-    #     seed=seed
-    # )
-
     
     print("[STIM_GEN] Generating Sample QLinearConv")
     print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}),weight_density=0.05,acts_mode='counting'")
 
-    t_res, t_matrix, t_ifmap, t_toeplitz, qa, qb, outs = sample_onnx_qlinearconv(
+    t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
         ifmap_bits=ifmap_bits,
         kernel_shape=kernel_shape,
@@ -211,7 +217,6 @@ def generate_top_inputs(
         # weight_mode='spatial'
     )
     out = t_res
-
 
     # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
     weight_array = np.zeros(core_shape, dtype=int)
@@ -230,12 +235,18 @@ def generate_top_inputs(
     ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
 
     # Generate scaler data and shifts
-    # 0.06 heuristically gained for final values that are appreciable
-    scale = np.random.rand(core_shape[1])*0 + 0.06
+    scale = scaler_params['scale']
+
+    if scale.ndim == 0:
+        scale = np.repeat(scale, core_shape[1])
+
+    # extend with zeros
+    if scale.shape[0] != core_shape[1]:
+        scale = np.pad(scale, (0, core_shape[1] - scale.shape[0]), 'constant', constant_values=(0, 0))
+
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
-    scaler_data = int_scale * (2**4) + (-shift) # Pack into a single word
-    # scaler_data = (int(int_scale) * (2**4)) + (-int(shift))
+    scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift) # Pack into a single word
     # scaler_data = np.repeat(scaler_word, core_shape[1])
 
     q_out = (out * int_scale[None,None,None,:]) 
