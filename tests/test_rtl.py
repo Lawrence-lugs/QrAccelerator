@@ -82,7 +82,8 @@ def test_qr_acc_top(
     kernel_shape = (32,3,3,3), # K C H W
     kernel_bits = 1,
     ofmap_bits = 8,
-    core_shape = (256,32)
+    core_shape = (256,32),
+    snr_limit = 8
 ):  
     weight_mode = 'binary'
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -147,6 +148,16 @@ def test_qr_acc_top(
 
     # Simulation
     run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
+
+    # Post-simulation
+
+    acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
+    result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+    acc_result = acc_result_flat.reshape(*result_shape)
+
+    rmse, snr = rmse_snr(stimulus['result'], acc_result)
+    assert snr > snr_limit, f'SNR: {snr}'
+    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"QRAccLinearConv SNR {snr}",filename =  "QRAccLinearConv")
 
     return
 
