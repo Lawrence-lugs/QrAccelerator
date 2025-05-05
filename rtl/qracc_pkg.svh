@@ -43,6 +43,8 @@ package qracc_pkg;
 
         logic output_scaler_scale_w_en;
         logic output_scaler_shift_w_en;
+        logic output_scaler_offset_w_en;
+        logic output_bias_w_en;
     } qracc_control_t;
 
     // Config that changes per-layer
@@ -51,7 +53,7 @@ package qracc_pkg;
         logic [3:0] n_input_bits_cfg;  
         logic [3:0] n_output_bits_cfg; // we don't use this yet (it's a parameter atm)
 
-        logic binary_cfg; // binary or bipolar mode
+        logic binary_cfg; // binary or bipolar mode, binary if 1
         logic unsigned_acts; // unsigned or signed acts
         logic [2:0] adc_ref_range_shifts; // for analog IMC
 

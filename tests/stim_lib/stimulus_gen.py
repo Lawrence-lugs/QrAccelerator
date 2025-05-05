@@ -46,6 +46,14 @@ def generate_random_torch_conv(
 
     return t_res, t_matrix, t_ifmap, t_toeplitz, out
 
+def generate_tensor(shape, mode = 'random',seed = 0):
+    if mode == 'random':
+        np.random.seed(seed)
+        return np.random.rand(*shape)
+    elif mode == 'linspace':
+        return np.linspace(0, 1, num = np.prod(shape)).reshape(shape)
+
+
 def sample_onnx_qlinearconv(
     ifmap_shape,
     ifmap_bits,
@@ -54,7 +62,10 @@ def sample_onnx_qlinearconv(
     kernel_dtype,
     pads,
     stride,
-    seed = 0
+    weight_density = 0.5,
+    seed = 0,
+    acts_mode = 'random',
+    weight_mode = 'random'
 ):
     
     '''
@@ -63,19 +74,39 @@ def sample_onnx_qlinearconv(
     supports precisions < 8
 
     only uint8 ifmap
+
+    acts_mode can be 'counting' or 'random'
     '''
 
     np.random.seed(seed)
 
-    qa = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
+    if acts_mode not in ['counting','random']:
+        raise ValueError(f"acts_mode must be 'counting' or 'random', got {acts_mode}")
+
+    qa_proto = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
+    if acts_mode == 'counting':
+        ifmap_size = np.prod(ifmap_shape)
+        a_qvals = np.arange(0,ifmap_size, dtype=np.uint8) % 100
+        a_qvals = a_qvals.reshape(ifmap_shape)
+        qa = quant.QuantizedTensor(quantized_values = a_qvals, scale = qa_proto.scale, zero_point=0) 
+    if acts_mode == 'random':
+        qa = qa_proto   
 
     # 1-bit qb scales and zero point heuristically guessed from
     # a standard normal distribution 
     if kernel_bits == 1:
-        b = np.random.randint(0,2, kernel_shape)
+        # b = np.random.randint(0,2, kernel_shape)
+        if weight_mode == 'random':
+            dist = np.random.rand(*kernel_shape)
+            b = (dist < weight_density).astype(int)
+        elif weight_mode == 'spatial':
+            b = np.zeros(kernel_shape)
+            for k in range(kernel_shape[0]):
+                # b[k][0][2][2] = 1
+                b[k][0][k % 3][k % 3] = 1
         qb = quant.QuantizedTensor(quantized_values = b, scale = 0.1, zero_point=0)
     else:
-        qa = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
+        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
     ofmap_shape = (
         ifmap_shape[0],
@@ -108,22 +139,60 @@ def sample_onnx_qlinearconv(
         strides = (stride, stride),
     )
 
+    scale_x = np.array(qa.scale, dtype=np.float32)
+    zp_x = np.array(qa.zero_point, dtype=np.uint8)
+    scale_w = np.array(qb.scale, dtype=np.float32)
+    zp_w = np.array(qb.zero_point, dtype=kernel_dtype)
+    scale_y = np.array(sample_outs.scale, dtype=np.float32)
+    zp_y = np.array(sample_outs.zero_point, dtype=np.uint8)
+
+    node_initializers = [
+        qa.quantized_values,
+        scale_x,
+        zp_x,
+        qb.quantized_values,
+        scale_w,
+        zp_w,
+        scale_y,
+        zp_y,
+    ]
+
     outs = onnx_utils.infer_node_output(
         node,
-        inputs=[
-            qa.quantized_values,
-            np.array(qa.scale, dtype=np.float32),
-            np.array(qa.zero_point, dtype=np.uint8),
-            qb.quantized_values,
-            np.array(qb.scale, dtype=np.float32),
-            np.array(qb.zero_point, dtype=kernel_dtype),
-            np.array(sample_outs.scale, dtype=np.float32),
-            np.array(sample_outs.zero_point, dtype=np.uint8),
-        ],
+        inputs=node_initializers,
         outputs=[sample_outs.quantized_values],
         name="test_qlinearconv",
     )
 
+    wadds = zp_x * qb.quantized_values.sum(axis=(1,2,3))
+
+    cnode_params = {
+        'scale_x' : scale_x,
+        'zp_x' : zp_x,
+        'scale_w' : np.repeat(scale_w, kernel_shape[0]),
+        'zp_w' : zp_w,
+        'scale_y' : scale_y,
+        'zp_y' : zp_y,
+        'kernel' : qb.quantized_values,
+        'biases' : np.zeros((kernel_shape[0],), dtype=np.int32),
+        'strides' : stride,
+        'group' : 1
+    }
+    
+    cnode = cnodes.from_QLinearConv(None, node, channel_minor=True, qparams = cnode_params)
+
+    # Parse required offsets
+    scaler_params = {
+        'scale' : scale_x * scale_w / scale_y,
+        'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
+        'output_zp' : zp_y,
+        'nx_node' : node,
+        'gph_node' : cnode,
+        'cnode_params' : cnode_params,
+        'zp_x' : zp_x,
+    }
+
+    # Return expected tensor values
     t_kern = qb.quantized_values
     t_ifmap = qa.quantized_values
     t_matrix = t_kern.transpose(0,2,3,1)
@@ -132,11 +201,12 @@ def sample_onnx_qlinearconv(
         in_tensor=t_ifmap.squeeze(axis=0), 
         ksize=kernel_shape[-1], 
         strides=stride,
-        channel_minor=True
+        channel_minor=True,
+        zero_point=zp_x
     )
-    t_res = outs[0]
+    t_res = outs[0].transpose(0,2,3,1)
 
-    return t_res, t_matrix, t_ifmap, t_toeplitz
+    return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
 def generate_top_inputs(
     savepath,
@@ -151,21 +221,11 @@ def generate_top_inputs(
 
     torch.manual_seed(seed)
     np.random.seed(seed)
-
-    # t_res, t_matrix, t_ifmap, t_toeplitz, out = generate_random_torch_conv(
-    #     ifmap_shape=ifmap_shape,
-    #     ifmap_bits=ifmap_bits,
-    #     kernel_shape=kernel_shape,
-    #     kernel_bits=kernel_bits,    
-    #     stride=stride,
-    #     seed=seed
-    # )
-
     
     print("[STIM_GEN] Generating Sample QLinearConv")
-    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed})")
+    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}),weight_density=0.05,acts_mode='counting'")
 
-    t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(
+    t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
         ifmap_bits=ifmap_bits,
         kernel_shape=kernel_shape,
@@ -173,20 +233,23 @@ def generate_top_inputs(
         kernel_dtype = np.int8,
         pads = (1,1,1,1),
         stride = stride,
-        seed = seed
+        seed = seed,
+        # weight_density=0.05,
+        # acts_mode='counting',
+        # weight_mode='spatial'
     )
     out = t_res
 
-
     # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
     weight_array = np.zeros(core_shape, dtype=int)
-    t_matrix = t_matrix[:,::-1] # Reverse the matrix to match hardware [31:0]
+    # t_matrix = t_matrix[:,::-1] # Reverse the matrix to match hardware [31:0]
     weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
     write_array = quant.array_bin_to_int(weight_array)
 
     # Software padding and channel minor
     t_ifmap = torch.from_numpy(t_ifmap)
-    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=0) # F.pad is weird asf
+    zp_x = float(scaler_params['zp_x'])
+    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=zp_x) # F.pad is weird asf
     ifmap_channel_minor = ifmap_channel_minor.permute(0,2,3,1) # N C H W -> N H W C
     ifmap_channel_minor = ifmap_channel_minor.numpy()
 
@@ -195,16 +258,22 @@ def generate_top_inputs(
     ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
 
     # Generate scaler data and shifts
-    # 0.06 heuristically gained for final values that are appreciable
-    scale = np.random.rand(core_shape[1])*0.06 
+    scale = scaler_params['scale']
+
+    if scale.ndim == 0:
+        scale = np.repeat(scale, core_shape[1])
+
+    # extend with zeros
+    if scale.shape[0] != core_shape[1]:
+        scale = np.pad(scale, (0, core_shape[1] - scale.shape[0]), 'constant', constant_values=(0, 0))
+
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
-    scaler_data = int_scale * (2**4) + (-shift) # Pack into a single word
-    # scaler_data = (int(int_scale) * (2**4)) + (-int(shift))
+    scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift) # Pack into a single word
     # scaler_data = np.repeat(scaler_word, core_shape[1])
 
-    q_out = (out * int_scale[None,:,None,None]) 
-    q_out = q_out >> -(-shift[None,:,None,None]-16)
+    q_out = (out * int_scale[None,None,None,:]) 
+    q_out = q_out >> -(-shift[None,None,None,:]-16)
 
     res_dict = {
         'result': t_res,
@@ -215,9 +284,10 @@ def generate_top_inputs(
         'matrix': write_array,
         'weights_np': weight_array, 
         'flat_output': q_out,
-        'scaler_data': scaler_data
+        'scaler_data': scaler_data,
+        'biases': scaler_params['gph_node'][0].biases[::-1],
     }
-    
+
     if savepath is not None:
         for key, value in res_dict.items():
             if value.dtype in ['int32','float64']:
