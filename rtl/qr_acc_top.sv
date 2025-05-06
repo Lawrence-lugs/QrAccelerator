@@ -19,15 +19,15 @@ module qr_acc_top #(
     // parameter numCsr = 4,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = 4,
-    parameter qrAccInputElements = 128,
-    parameter qrAccOutputBits = 4,
-    parameter qrAccOutputElements = 32,
+    parameter qrAccInputBits = `QRACC_INPUT_BITS,
+    parameter qrAccInputElements = `SRAM_ROWS,
+    parameter qrAccOutputBits = `QRACC_OUTPUT_BITS,
+    parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Global Buffer
-    parameter globalBufferDepth = 2**21,
+    parameter globalBufferDepth = 2**15,
     parameter globalBufferExtInterfaceWidth = 32,
     parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
     parameter globalBufferAddrWidth = 32,
