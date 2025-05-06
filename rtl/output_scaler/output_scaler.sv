@@ -54,7 +54,7 @@ always_comb begin : saturationLimits
         compareLow = { {inputWidth-maxOutputWidth{1'b0}}, saturateLow };
     end else begin
         saturateHigh = 2**(cfg_output_bits-1) - 1;  // 0111...111
-        saturateLow = -2**(cfg_output_bits-1);  // 1000...000
+        saturateLow = 2**(cfg_output_bits-1);  // 1000...000
         compareHigh = { {inputWidth-maxOutputWidth{1'b0}}, saturateHigh };
         compareLow = { {inputWidth-maxOutputWidth{1'b1}}, saturateLow };
     end

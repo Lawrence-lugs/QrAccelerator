@@ -16,8 +16,8 @@ module feature_loader #(
 
     output logic [numElements-1:0][elementWidth-1:0] data_o,
 
-    input logic [addrWidth-1:0] mask_start,
-    input logic [addrWidth-1:0] mask_end
+    input logic [9:0] mask_start,
+    input logic [9:0] mask_end
 );
 
 logic [elementWidth-1:0] staging_register [numElements];

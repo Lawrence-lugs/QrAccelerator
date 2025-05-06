@@ -4,6 +4,7 @@ n-Bit input MAC accelerator
 uses n cycles to complete an n-bit input mac
 asdasd
 */
+`timescale 1ns/1ps
 
 import qracc_pkg::*;
 
