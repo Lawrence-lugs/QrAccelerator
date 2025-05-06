@@ -100,6 +100,7 @@ def test_qr_acc_top(
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
         '../rtl/twos_to_bipolar.sv',
+        '../rtl/ts_qracc_multibank.sv',
         '../rtl/qr_acc_top.sv',
         '../rtl/output_scaler/output_scaler_set.sv',
         '../rtl/output_scaler/output_scaler.sv',

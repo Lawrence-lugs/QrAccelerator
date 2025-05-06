@@ -9,10 +9,12 @@ package qracc_pkg;
 
     // QRAcc Parameters
     parameter numRows = `SRAM_ROWS;
-    parameter numCols = `SRAM_COLS;
+    parameter numCols = 32;
     parameter numAdcBits = 4; 
     parameter compCount = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
+    parameter numBanks = `SRAM_COLS/numCols;
+    parameter outputElements = `SRAM_COLS;
     
     // Output Scaler Parameters
     parameter accumulatorBits = 16;
@@ -137,7 +139,7 @@ package qracc_pkg;
 
     typedef struct {
         logic [numCols-1:0] SA_OUT;
-        logic [compCount*numCols-1:0] ADC_OUT;
+        logic [compCount*outputElements-1:0] ADC_OUT;
     } from_analog_t;
 
     typedef struct {

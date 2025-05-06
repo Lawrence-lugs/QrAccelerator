@@ -28,6 +28,11 @@ module qr_acc_top #(
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
+    //  Parameters: Per Bank
+    parameter numRows = `SRAM_ROWS,
+    parameter numCols = 32,
+    parameter numBanks = `SRAM_COLS/numCols,
+
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**8,
     parameter globalBufferExtInterfaceWidth = 32,
@@ -49,6 +54,7 @@ module qr_acc_top #(
     // Analog passthrough signals
     output to_analog_t to_analog,
     input from_analog_t from_analog,
+    output [numBanks-1:0] bank_select,
 
     // CSR signals for testing for now
     input qracc_config_t cfg,
@@ -88,9 +94,10 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 //-----------------------------------
 
 qracc_controller #(
-    .numScalers (qrAccOutputElements),
-    .numRows    (qrAccInputElements),
-    .internalInterfaceWidth (globalBufferIntInterfaceWidth)
+    .numScalers                 (qrAccOutputElements),
+    .numRows                    (qrAccInputElements),
+    .internalInterfaceWidth     (globalBufferIntInterfaceWidth),
+    .numBanks                   (numBanks)
 ) u_qracc_controller (
     .clk                        (clk),
     .nrst                       (nrst),
@@ -101,6 +108,7 @@ qracc_controller #(
     .ctrl_o                     (qracc_ctrl),
     .to_sram                    (to_sram),
     .from_sram                  (from_sram),
+    .bank_select                (bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
@@ -119,6 +127,7 @@ seq_acc #(
     .maxInputBits     (qrAccInputBits),
     .inputElements    (qrAccInputElements),
     .outputElements   (qrAccOutputElements),
+    .numCols          (numCols), // per bank
     .adcBits          (qrAccAdcBits),
     .accumulatorBits  (qrAccAccumulatorBits)
 ) u_seq_acc (
