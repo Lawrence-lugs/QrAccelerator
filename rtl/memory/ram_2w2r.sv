@@ -37,9 +37,6 @@ localparam nDataInInterface2 = interfaceWidth2/dataSize;
 
 always_ff @(posedge clk, negedge nrst) begin
     if (!nrst) begin
-        for (int i = 0; i < depth; i++) begin
-            // mem[i] <= 0; // Comment when we want to see exactly which parts are written
-        end
         rd_data_1_o <= 0;
         rd_data_2_o <= 0;
     end else begin

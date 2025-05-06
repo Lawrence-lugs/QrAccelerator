@@ -114,7 +114,7 @@ qracc_controller #(
 
 // Main matrix multiplication
 seq_acc #(
-    .inputBits        (qrAccInputBits),
+    .maxInputBits     (qrAccInputBits),
     .inputElements    (qrAccInputElements),
     .outputElements   (qrAccOutputElements),
     .adcBits          (qrAccAdcBits),
