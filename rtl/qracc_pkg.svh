@@ -1,10 +1,6 @@
 `timescale 1ns/1ps
 
-`ifndef PYTEST_GENERATED_PARAMS
-`define SRAM_ROWS 128
-`define SRAM_COLS 32
-`define QRACC_OUTPUT_BITS 16
-`endif
+`include "qracc_params.svh"
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
@@ -21,6 +17,7 @@ package qracc_pkg;
     // Output Scaler Parameters
     parameter accumulatorBits = 16;
     parameter outputBits = `QRACC_OUTPUT_BITS;
+    parameter inputBits = `QRACC_INPUT_BITS;
 
     // Control signals for QRAcc
     typedef struct packed {

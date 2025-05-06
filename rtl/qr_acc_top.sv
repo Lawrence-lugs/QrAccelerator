@@ -4,6 +4,8 @@ uses n cycles to complete an n-bit input mac
 asdasd
 */
 
+`include "qracc_params.svh"
+
 `timescale 1ns/1ps
 
 import qracc_pkg::*;
@@ -27,7 +29,7 @@ module qr_acc_top #(
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Global Buffer
-    parameter globalBufferDepth = 2**15,
+    parameter globalBufferDepth = 2**13,
     parameter globalBufferExtInterfaceWidth = 32,
     parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
     parameter globalBufferAddrWidth = 32,
