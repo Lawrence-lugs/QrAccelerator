@@ -29,7 +29,7 @@ module qr_acc_top #(
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Global Buffer
-    parameter globalBufferDepth = 2**13,
+    parameter globalBufferDepth = 2**8,
     parameter globalBufferExtInterfaceWidth = 32,
     parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
     parameter globalBufferAddrWidth = 32,

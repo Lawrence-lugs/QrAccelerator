@@ -30,7 +30,7 @@ module tb_qracc_top #(
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Global Buffer
-    parameter globalBufferDepth = 2**15,
+    parameter globalBufferDepth = 2**21,
     parameter globalBufferExtInterfaceWidth = 32,
     parameter globalBufferIntInterfaceWidth = `GB_INT_IF_WIDTH,
     parameter globalBufferAddrWidth = 32,

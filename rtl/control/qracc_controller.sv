@@ -86,6 +86,7 @@ logic actmem_wr_en;
 logic window_data_valid_qq;
 logic [31:0] feature_loader_addr_qq;
 logic compute_stall;
+logic send_last_opix;
 logic compute_last_opix;
 
 // Write tracking signals
@@ -275,6 +276,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         opix_pos_y <= 0;
         fy_ctr <= 0;
         window_data_valid <= 0;
+        send_last_opix <= 0;
         compute_last_opix <= 0;
         ofmap_offset_ptr <= 0;
     end else begin
@@ -284,6 +286,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             opix_pos_y <= 0;
             fy_ctr <= 0;
             window_data_valid <= 0;
+            send_last_opix <= 0;
             compute_last_opix <= 0;
             ofmap_offset_ptr <= 0;
         end else
@@ -292,16 +295,24 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
 
             if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
                 opix_pos_y == cfg.output_fmap_dimy - 1 &&
-                fy_ctr == cfg.filter_size_y - 1)
+                fy_ctr == cfg.filter_size_y - 1 && qracc_output_valid)
+                send_last_opix <= 1;
+
+            // This thing would break if inputBits is small enough that 
+            if(qracc_output_valid & send_last_opix) begin
                 compute_last_opix <= 1;
+            end
 
             // Ofmap writes strided by C
             if (qracc_output_valid) begin
                 ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
             end
 
-            if (window_data_valid && !qracc_ready) begin 
+            if ( (window_data_valid && !qracc_ready) || send_last_opix || compute_last_opix ) begin 
                 // stall 
+                if (compute_last_opix) begin
+                    window_data_valid <= 0;
+                end
             end else
 
             if (fy_ctr < cfg.filter_size_y - 1) begin
@@ -327,8 +338,9 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             opix_pos_y <= 0;
             fy_ctr <= 0;
             window_data_valid <= 0;
-            compute_last_opix <= 0;
+            send_last_opix <= 0;
             ofmap_offset_ptr <= 0;
+            compute_last_opix <= 0;
         end
     end
 end

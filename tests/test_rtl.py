@@ -20,7 +20,8 @@ sim_args = {'vcs':  [
                 '+neg_tchk',
                 '-l', 'vcs.log',
                 '-R', '+lint=TFIPC-L',
-                '+define+SYNOPSYS'
+                '+define+SYNOPSYS',
+                '+incdir+../rtl',
             ],
             'xrun': [
                 '+access+r'
@@ -67,9 +68,13 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
 
 def write_parameter_definition_file(parameter_list,filepath):
     with open(filepath,'w') as f:
+        f.write(f'`ifndef PARAMETERS_FILE\n')
+        f.write(f'`define PARAMETERS_FILE\n')
+        f.write(f'`define PYTEST_GENERATED_PARAMS\n')
         f.write(f'`define PYTEST_GENERATED_PARAMS\n')
         for name, value in parameter_list.items():
-            f.write(f'`define {name} {value}\n')
+            f.write(f'`define {name} {value}\n')    
+        f.write(f'`endif // PARAMETERS_FILE\n')
 
 def test_qr_acc_top(
     col_symmetric,
@@ -77,7 +82,7 @@ def test_qr_acc_top(
     seed,
     padding = 1,
     stride = 1,
-    ifmap_shape = (1,3,16,16),
+    ifmap_shape = (1,3,32,32),
     ifmap_bits = 8,
     kernel_shape = (32,3,3,3), # K C H W
     kernel_bits = 1,
@@ -144,6 +149,8 @@ def test_qr_acc_top(
         "UNSIGNED_ACTS": 1
     }
 
+    print(f'Parameter list: {parameter_list}')
+
     write_parameter_definition_file(parameter_list,param_file_path)
 
     # Simulation
@@ -156,8 +163,9 @@ def test_qr_acc_top(
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(stimulus['result'], acc_result)
-    assert snr > snr_limit, f'SNR: {snr}'
     save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"QRAccLinearConv SNR {snr}",filename =  "QRAccLinearConv")
+    plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename='QRAccLinearConv_diff_channels')
+    assert snr > snr_limit, f'SNR: {snr}'
 
     return
 
@@ -605,5 +613,50 @@ def save_scatter_fig(expected, actual, title, filename):
     lim = [expected.min(),expected.max()]
     sns.lineplot(x=lim,y=lim,color='gray',linestyle='--')
     plt.tight_layout()
+    plt.savefig(f'images/{filename}.svg')
+    plt.savefig(f'images/png/{filename}.png')
+
+def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels'):
+    """
+    Plots all channels of the diff tensor in a subplot grid.
+
+    Parameters:
+    - diff: numpy.ndarray, the tensor to plot
+    - tensor_format: str, format of the tensor ('NCHW' or 'NHWC')
+    """
+    if tensor_format == 'NCHW':
+        _, num_channels, _, _ = diff.shape
+    elif tensor_format == 'NHWC':
+        _, _, _, num_channels = diff.shape
+    else:
+        raise ValueError("Unsupported tensor format. Use 'NCHW' or 'NHWC'.")
+
+    rows = (num_channels + 7) // 8  # Calculate rows for 8 columns
+    fig, axs = plt.subplots(rows, 8, figsize=(20, 10), dpi=200)
+    axs = axs.flatten()  # Flatten the axes array for easier indexing
+
+    for i in range(num_channels):
+        ax = axs[i]
+        ax.imshow(diff[0, i] if tensor_format == 'NCHW' else diff[0, :, :, i], cmap='gray')
+        ax.set_title(f'Channel {i}')
+        ax.axis('off')
+
+    # Hide unused subplots
+    for j in range(num_channels, len(axs)):
+        axs[j].axis('off')
+
+    # Unified colorbar
+    cbar = fig.colorbar(axs[0].imshow(diff[0, 0] if tensor_format == 'NCHW' else diff[0, :, :, 0], cmap='gray'), ax=axs, orientation='horizontal', fraction=0.02, pad=0.04)
+    cbar.set_label('Difference Value')
+    plt.suptitle('Difference between Python and HW Results', fontsize=16)
+
+    # Adjust layout to fit colorbar and title
+    plt.subplots_adjust(top=0.85, bottom=0.1, left=0.05, right=0.95)
+    # Move colorbar to the bottom
+    cbar.ax.set_position([0.1, -0.22, 0.8, 0.2])  # [left, bottom, width, height]
+
+    plt.tight_layout()
+    # plt.show()
+
     plt.savefig(f'images/{filename}.svg')
     plt.savefig(f'images/png/{filename}.png')
