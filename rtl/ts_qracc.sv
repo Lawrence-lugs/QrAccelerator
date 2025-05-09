@@ -123,7 +123,13 @@ always_comb begin : toMBL
                 // $display("MBL value %d is less than min value %d", mbl_value[j], minValue);
                 adc_out[j] = minValueAdc;
             end else begin
-                adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];// + doiroundup[j];
+                if (`NUM_ADC_REF_RANGE_SHIFTS > 1) begin
+                    // $display("MBL value %d is between min %d and max %d", mbl_value[j], minValue, maxValue);
+                    adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits] + doiroundup[j];
+                end else begin
+                    // ties to random
+                    adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];// + $random % (doiroundup[j] + 1);
+                end
             end
         end
     end

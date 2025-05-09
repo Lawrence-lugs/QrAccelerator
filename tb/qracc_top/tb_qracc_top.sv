@@ -2,8 +2,6 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 1
-
 module tb_qracc_top #(
 
 /////////////
