@@ -101,6 +101,7 @@ def test_qr_acc_top(
   
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
+        '../rtl/activation_buffer/piso_write_queue.sv',
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
@@ -149,7 +150,8 @@ def test_qr_acc_top(
         "SRAM_COLS": core_shape[1],
         "QRACC_INPUT_BITS": ifmap_bits,
         "QRACC_OUTPUT_BITS": ofmap_bits,
-        "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        # "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "FILTER_SIZE_X": kernel_shape[2],
         "FILTER_SIZE_Y": kernel_shape[3],
         "OFMAP_SIZE": np.product(ofmap_shape),

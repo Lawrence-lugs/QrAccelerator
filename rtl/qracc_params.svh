@@ -6,7 +6,7 @@
 `define SRAM_COLS 256
 `define QRACC_INPUT_BITS 8
 `define QRACC_OUTPUT_BITS 8
-`define GB_INT_IF_WIDTH 2048
+`define GB_INT_IF_WIDTH 256
 `define FILTER_SIZE_X 3
 `define FILTER_SIZE_Y 3
 `define OFMAP_SIZE 8192
