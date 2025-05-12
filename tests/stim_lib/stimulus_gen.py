@@ -270,10 +270,6 @@ def generate_top_inputs(
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
     scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift) # Pack into a single word
-    # scaler_data = np.repeat(scaler_word, core_shape[1])
-
-    q_out = (out * int_scale[None,None,None,:]) 
-    q_out = q_out >> -(-shift[None,None,None,:]-16)
 
     res_dict = {
         'result': t_res,
@@ -283,7 +279,6 @@ def generate_top_inputs(
         'small_matrix': t_matrix,
         'matrix': write_array,
         'weights_np': weight_array, 
-        'flat_output': q_out,
         'scaler_data': scaler_data,
         'biases': scaler_params['gph_node'][0].biases[::-1],
     }

@@ -80,6 +80,7 @@ def write_parameter_definition_file(parameter_list,filepath):
     "ifmap_shape,kernel_shape,core_shape,padding,stride",[
     ((1,3,16,16), (32,3,3,3), (256,32), 1, 1),
     ((1,16,16,16), (32,16,3,3), (256,32), 1, 1),
+    ((1,3,16,16), (32,3,3,3), (256,256), 1, 1),
 ])
 def test_qr_acc_top(
     col_symmetric,
@@ -93,7 +94,7 @@ def test_qr_acc_top(
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
-    snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights.
+    snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
 ):  
     weight_mode = 'bipolar'
     mac_mode = 1 if weight_mode == 'binary' else 0
