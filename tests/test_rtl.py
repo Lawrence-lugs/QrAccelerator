@@ -598,11 +598,12 @@ def test_tb_q_redis():
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
 
-def get_log_tail(log_file,lines):
-    print(f'See {log_file} for details') 
+def get_log_tail(log_file,nlines):
+    m = f'See {log_file} for details\n' 
     with open(log_file,'r') as f:
-        lines = f.readlines()[-lines:]
-        return ''.join(lines)
+        lines = f.readlines()[-nlines:]
+        a = ''.join(lines)
+    return '\n'.join([m,a])
 
 def get_log(log_file):
     with open(log_file,'r') as f:
