@@ -68,6 +68,15 @@ logic csr_main_start;
 logic csr_main_busy;
 logic csr_main_inst_write_mode;
 
+enum { 
+    S_START,
+    S_LOADWEIGHTS,
+    S_LOADACTS,
+    S_LOADBIAS,
+    S_LOADSCALE,
+    S_COMPUTE
+} tb_state;
+
 int i,j,k,l,x,y;
 
 // ======= BEGIN ANALOG SIGNALS =======
@@ -93,7 +102,7 @@ logic [numCols-1:0] WR_DATA;
 logic WRITE;
 logic [numCols-1:0] CSEL;
 logic SAEN;
-logic [compCount*numCols-1:0] ADC_OUT;
+logic [compCount*qrAccOutputElements-1:0] ADC_OUT;
 logic NF;
 logic NFB;
 logic M2A;
@@ -189,7 +198,7 @@ qr_acc_top #(
 // Analog test schematic
 ts_qracc_multibank #(
     .numRows(qrAccInputElements),
-    .numCols(qrAccOutputElements),
+    .numCols(numCols),
     .numAdcBits(numAdcBits),
     .numBanks(numBanks)
 ) u_ts_qracc (
@@ -463,8 +472,9 @@ endtask
 
 task load_weights();
 
+    tb_state = S_LOADWEIGHTS;
     $display("Loading weights at time %t", $time);
-    for (i=0;i<qrAccInputElements;i++) begin
+    for (i=0;i<qrAccInputElements*numBanks;i++) begin
         bus.data_in = weight_matrix.array[i];
         bus.valid = 1;
         bus.wen = 1;
@@ -501,6 +511,8 @@ task check_weights();
 endtask
 
 task load_acts();
+
+    tb_state = S_LOADACTS;
 
     $display("Loading activations at time %t", $time);
     for (i=0;i<ifmap.size;i++) begin
@@ -551,6 +563,9 @@ task track_toeplitz();
 
     int trow, tplitz_offset, tplitz_height, reference;
     logic errflag;
+
+
+    tb_state = S_COMPUTE;
     errflag = 0;
     trow = 0;
     tplitz_offset = cfg.mapped_matrix_offset_y;
@@ -605,6 +620,8 @@ endtask
 
 task load_biases();
 
+    tb_state = S_LOADBIAS;
+
     $display("Loading biases at time %t", $time);
     for (i=0;i<biases.size;i++) begin
         // $display("[%d]:\t",i);
@@ -621,6 +638,8 @@ task load_biases();
 endtask
 
 task load_scales();
+
+    tb_state = S_LOADSCALE;
 
     $display("Loading scaler data at time %t", $time);
     for (i=0;i<scaler_data.size;i++) begin

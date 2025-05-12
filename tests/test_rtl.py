@@ -126,6 +126,7 @@ def test_qr_acc_top(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
+    print('')
     print(f"stimulus = generate_top_inputs(stimulus_output_path,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape})")
     stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
     
@@ -170,7 +171,7 @@ def test_qr_acc_top(
     write_parameter_definition_file(parameter_list,param_file_path)
 
     # Simulation
-    run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
+    run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
     # Post-simulation
 

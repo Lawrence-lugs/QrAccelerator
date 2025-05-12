@@ -154,7 +154,7 @@ always_comb begin : ctrlDecode
             to_sram.addr_i = weight_ptr[$clog2(numBanks)+:addrBits];
             to_sram.wr_data_i = bus_i.data_in;
             bus_i.ready = from_sram.rq_ready_o;
-            bank_select_code = weight_ptr[bankCodeBits-1:0];
+            bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
             bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
         S_LOADACTS: begin
