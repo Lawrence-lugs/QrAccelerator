@@ -10,7 +10,9 @@ module qracc_controller #(
     parameter numRows = 256,
 
     parameter internalInterfaceWidth = 128,
-    parameter dataBusWidth = 32
+    parameter dataBusWidth = 32,
+
+    parameter numBanks = 8
 
 ) (
     input clk, nrst,
@@ -21,6 +23,7 @@ module qracc_controller #(
     // Signals to the people
     output qracc_control_t ctrl_o,
     output to_sram_t to_sram,
+    output logic [numBanks-1:0] bank_select,
 
     // Signals from the people
     input qracc_ready,
@@ -47,6 +50,7 @@ parameter CSR_REGISTER_CONFIG = 1;
 parameter CSR_REGISTER_STATUS = 2;
 
 localparam addrBits = $clog2(numRows);
+localparam bankCodeBits = numBanks > 1 ? $clog2(numBanks) : 1;
 
 ///////////////////
 // Signals
@@ -88,6 +92,7 @@ logic [31:0] feature_loader_addr_qq;
 logic compute_stall;
 logic send_last_opix;
 logic compute_last_opix;
+logic [$clog2(numBanks)-1:0] bank_select_code;
 
 // Write tracking signals
 logic [31:0] scaler_ptr;
@@ -140,14 +145,17 @@ always_comb begin : ctrlDecode
     to_sram.addr_i = 0;
     bus_i.ready = 0;
     bus_i.rd_data_valid = 0;
+    bank_select_code = 0;
+    bank_select = 0;
     case(state_q)
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;
             to_sram.rq_valid_i = bus_i.valid;
-            // I can't seem to resolve the linting warning without sacrificing parametrizability
-            to_sram.addr_i = weight_ptr[addrBits-1:0];
+            to_sram.addr_i = weight_ptr[$clog2(numBanks)+:addrBits];
             to_sram.wr_data_i = bus_i.data_in;
             bus_i.ready = from_sram.rq_ready_o;
+            bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
+            bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
@@ -209,7 +217,7 @@ always_comb begin : stateDecode
             end
         end
         S_LOADWEIGHTS: begin
-            if (weight_ptr < numRows) begin
+            if (weight_ptr < numRows*numBanks) begin
                 state_d = S_LOADWEIGHTS;
             end else begin
                 state_d = S_LOADACTS;

@@ -6,6 +6,7 @@ import qracc_pkg::*;
 
 module qr_acc_wrapper #(
     parameter numRows = 128,
+    parameter outputElements = 128,
     parameter numCols = 32,
     parameter numAdcBits = 4,
     parameter compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
@@ -20,7 +21,7 @@ module qr_acc_wrapper #(
     output to_analog_t to_analog_o,
 
     // DIGITAL INTERFACE: MAC
-    output logic [numCols-1:0][numAdcBits-1:0] adc_out_o,
+    output logic [outputElements-1:0][numAdcBits-1:0] adc_out_o,
     input mac_en_i,
     input [numRows-1:0] data_p_i,
     input [numRows-1:0] data_n_i,
@@ -32,8 +33,8 @@ module qr_acc_wrapper #(
 logic wc_write;
 logic wc_read;
 logic wc_done;
-logic [numCols-1:0][numAdcBits-1:0] adc_out_encoded;
-logic [numCols-1:0][compCount-1:0] adc_out;
+logic [outputElements-1:0][numAdcBits-1:0] adc_out_encoded;
+logic [outputElements-1:0][compCount-1:0] adc_out;
 
 // ADC OUT -- realign flattened ADC output
 assign adc_out = from_analog_i.ADC_OUT;

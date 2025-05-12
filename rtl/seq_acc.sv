@@ -12,6 +12,9 @@ module seq_acc #(
     parameter maxInputBits = 8,
     parameter inputElements = 128,
     parameter outputElements = 32,
+    
+    parameter numCols = 32,
+
     parameter adcBits = 4,
     parameter accumulatorBits = 16
     // localparam accumulatorBits = maxInputTrits  + adcBits + 1 // +1 from addition bit growth
@@ -61,7 +64,8 @@ assign input_trits = input_bits - 1;
 // Modules
 qr_acc_wrapper #(
     .numRows(inputElements),
-    .numCols(outputElements),
+    .numCols(numCols),
+    .outputElements(outputElements),
     .numAdcBits(numAdcBits)
 ) u_qr_acc_wrapper (
     .clk(clk),

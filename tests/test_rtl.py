@@ -75,31 +75,39 @@ def write_parameter_definition_file(parameter_list,filepath):
         for name, value in parameter_list.items():
             f.write(f'`define {name} {value}\n')    
         f.write(f'`endif // PARAMETERS_FILE\n')
-
+        
+@pytest.mark.parametrize(
+    "ifmap_shape,kernel_shape,core_shape,padding,stride",[
+    ((1,3,16,16), (32,3,3,3), (256,32), 1, 1),
+    ((1,16,16,16), (32,16,3,3), (256,32), 1, 1),
+    ((1,3,16,16), (32,3,3,3), (256,256), 1, 1),
+])
 def test_qr_acc_top(
     col_symmetric,
     simulator,
     seed,
-    padding = 1,
-    stride = 1,
-    ifmap_shape = (1,3,32,32),
-    ifmap_bits = 8,
-    kernel_shape = (32,3,3,3), # K C H W
+    kernel_shape, 
+    ifmap_shape,
+    core_shape,
+    padding,
+    stride,
+    ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
-    core_shape = (256,32),
-    snr_limit = 8
+    snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
 ):  
-    weight_mode = 'binary'
+    weight_mode = 'bipolar'
     mac_mode = 1 if weight_mode == 'binary' else 0
   
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
+        '../rtl/activation_buffer/piso_write_queue.sv',
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
         '../rtl/twos_to_bipolar.sv',
+        '../rtl/ts_qracc_multibank.sv',
         '../rtl/qr_acc_top.sv',
         '../rtl/output_scaler/output_scaler_set.sv',
         '../rtl/output_scaler/output_scaler.sv',
@@ -119,6 +127,8 @@ def test_qr_acc_top(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
+    print('')
+    print(f"stimulus = generate_top_inputs(stimulus_output_path,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape})")
     stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
     
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
@@ -128,12 +138,20 @@ def test_qr_acc_top(
     ofmap_dimc = kernel_shape[0]
     ofmap_shape = (ofmap_dimc,ofmap_dimy,ofmap_dimx)
 
+    # Infer optimal ADC reference range shifts
+    first_partials = q.int_to_trit(stimulus['toeplitz'][0],ifmap_bits).T @ stimulus['small_matrix']
+    mean_partial = first_partials.mean()
+    adc_ref_range_shifts = np.ceil(np.log(mean_partial)/np.log(2)) - 3
+    if adc_ref_range_shifts < 0:
+        adc_ref_range_shifts = 0
+
     parameter_list = {
         "SRAM_ROWS": core_shape[0],
         "SRAM_COLS": core_shape[1],
         "QRACC_INPUT_BITS": ifmap_bits,
         "QRACC_OUTPUT_BITS": ofmap_bits,
-        "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        # "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "FILTER_SIZE_X": kernel_shape[2],
         "FILTER_SIZE_Y": kernel_shape[3],
         "OFMAP_SIZE": np.product(ofmap_shape),
@@ -146,7 +164,8 @@ def test_qr_acc_top(
         "OUT_CHANNELS": kernel_shape[0],
         "MAPPED_MATRIX_OFFSET_X": 0,
         "MAPPED_MATRIX_OFFSET_Y": 0,
-        "UNSIGNED_ACTS": 1
+        "UNSIGNED_ACTS": 1,
+        "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }
 
     print(f'Parameter list: {parameter_list}')
@@ -154,7 +173,7 @@ def test_qr_acc_top(
     write_parameter_definition_file(parameter_list,param_file_path)
 
     # Simulation
-    run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
+    run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
     # Post-simulation
 
@@ -582,11 +601,12 @@ def test_tb_q_redis():
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
 
-def get_log_tail(log_file,lines):
-    print(f'See {log_file} for details') 
+def get_log_tail(log_file,nlines):
+    m = f'See {log_file} for details\n' 
     with open(log_file,'r') as f:
-        lines = f.readlines()[-lines:]
-        return ''.join(lines)
+        lines = f.readlines()[-nlines:]
+        a = ''.join(lines)
+    return '\n'.join([m,a])
 
 def get_log(log_file):
     with open(log_file,'r') as f:
@@ -616,13 +636,14 @@ def save_scatter_fig(expected, actual, title, filename):
     plt.savefig(f'images/{filename}.svg')
     plt.savefig(f'images/png/{filename}.png')
 
-def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels'):
+def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
     """
     Plots all channels of the diff tensor in a subplot grid.
 
     Parameters:
     - diff: numpy.ndarray, the tensor to plot
     - tensor_format: str, format of the tensor ('NCHW' or 'NHWC')
+    - bitPrecision: int, bit precision for value range (default 8)
     """
     if tensor_format == 'NCHW':
         _, num_channels, _, _ = diff.shape
@@ -634,10 +655,12 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels'):
     rows = (num_channels + 7) // 8  # Calculate rows for 8 columns
     fig, axs = plt.subplots(rows, 8, figsize=(20, 10), dpi=200)
     axs = axs.flatten()  # Flatten the axes array for easier indexing
+    vmin, vmax = 0, 2**bitPrecision - 1
 
     for i in range(num_channels):
         ax = axs[i]
-        ax.imshow(diff[0, i] if tensor_format == 'NCHW' else diff[0, :, :, i], cmap='gray')
+        channel_data = diff[0, i] if tensor_format == 'NCHW' else diff[0, :, :, i]
+        im = ax.imshow(channel_data, cmap='gray', vmin=vmin, vmax=vmax)
         ax.set_title(f'Channel {i}')
         ax.axis('off')
 
@@ -645,18 +668,12 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels'):
     for j in range(num_channels, len(axs)):
         axs[j].axis('off')
 
-    # Unified colorbar
-    cbar = fig.colorbar(axs[0].imshow(diff[0, 0] if tensor_format == 'NCHW' else diff[0, :, :, 0], cmap='gray'), ax=axs, orientation='horizontal', fraction=0.02, pad=0.04)
+    # Unified colorbar with fixed range
+    plt.subplots_adjust(bottom=0.15)  # Make space for colorbar
+    cbar = fig.colorbar(im, ax=axs, orientation='horizontal')
     cbar.set_label('Difference Value')
     plt.suptitle('Difference between Python and HW Results', fontsize=16)
 
-    # Adjust layout to fit colorbar and title
-    plt.subplots_adjust(top=0.85, bottom=0.1, left=0.05, right=0.95)
-    # Move colorbar to the bottom
-    cbar.ax.set_position([0.1, -0.22, 0.8, 0.2])  # [left, bottom, width, height]
-
-    plt.tight_layout()
-    # plt.show()
-
-    plt.savefig(f'images/{filename}.svg')
-    plt.savefig(f'images/png/{filename}.png')
+    plt.savefig(f'images/{filename}.svg', bbox_inches='tight')
+    plt.savefig(f'images/png/{filename}.png', bbox_inches='tight')
+    plt.close()

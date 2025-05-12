@@ -28,10 +28,15 @@ module qr_acc_top #(
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
+    //  Parameters: Per Bank
+    parameter numRows = `SRAM_ROWS,
+    parameter numCols = 32,
+    parameter numBanks = `SRAM_COLS/numCols,
+
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**8,
     parameter globalBufferExtInterfaceWidth = 32,
-    parameter globalBufferIntInterfaceWidth = qrAccInputElements*qrAccInputBits,
+    parameter globalBufferIntInterfaceWidth = 256,
     parameter globalBufferAddrWidth = 32,
     parameter globalBufferDataSize = 8,          // Byte-Addressability
 
@@ -49,6 +54,7 @@ module qr_acc_top #(
     // Analog passthrough signals
     output to_analog_t to_analog,
     input from_analog_t from_analog,
+    output [numBanks-1:0] bank_select,
 
     // CSR signals for testing for now
     input qracc_config_t cfg,
@@ -78,6 +84,8 @@ from_sram_t from_sram; // no need to touch this for now, can use it later to rea
 // Signals : Activation Buffer
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_int_wr_data;
+logic [globalBufferAddrWidth-1:0] activation_buffer_int_wr_addr;
+logic int_write_queue_valid_out;
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
@@ -88,9 +96,10 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 //-----------------------------------
 
 qracc_controller #(
-    .numScalers (qrAccOutputElements),
-    .numRows    (qrAccInputElements),
-    .internalInterfaceWidth (globalBufferIntInterfaceWidth)
+    .numScalers                 (qrAccOutputElements),
+    .numRows                    (qrAccInputElements),
+    .internalInterfaceWidth     (globalBufferIntInterfaceWidth),
+    .numBanks                   (numBanks)
 ) u_qracc_controller (
     .clk                        (clk),
     .nrst                       (nrst),
@@ -101,6 +110,7 @@ qracc_controller #(
     .ctrl_o                     (qracc_ctrl),
     .to_sram                    (to_sram),
     .from_sram                  (from_sram),
+    .bank_select                (bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
@@ -119,6 +129,7 @@ seq_acc #(
     .maxInputBits     (qrAccInputBits),
     .inputElements    (qrAccInputElements),
     .outputElements   (qrAccOutputElements),
+    .numCols          (numCols), // per bank
     .adcBits          (qrAccAdcBits),
     .accumulatorBits  (qrAccAccumulatorBits)
 ) u_seq_acc (
@@ -162,9 +173,9 @@ ram_2w2r #(
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
     // Internal Interface
-    .wr_data_2_i       ({output_scaler_output,{oscalerExtendBits{1'b0}} }),
-    .wr_en_2_i         (qracc_ctrl.activation_buffer_int_wr_en),
-    .wr_addr_2_i       (qracc_ctrl.activation_buffer_int_wr_addr),
+    .wr_data_2_i       (activation_buffer_int_wr_data),
+    .wr_en_2_i         (int_write_queue_valid_out),
+    .wr_addr_2_i       (activation_buffer_int_wr_addr),
     .rd_data_2_o       (activation_buffer_rd_data),
     .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
     .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
@@ -221,6 +232,38 @@ output_scaler_set #(
     .cfg_unsigned   (cfg.unsigned_acts),
     .cfg_output_bits(cfg.n_output_bits_cfg)
 );
+
+logic [numBanks-1:0] piso_write_queue_valid_in;
+logic [numBanks-1:0][globalBufferAddrWidth-1:0] piso_write_queue_addr_in;
+always_comb begin
+    piso_write_queue_valid_in = '0;
+    piso_write_queue_addr_in = '0;
+    for (int i = 0; i < numBanks; i++) begin
+        piso_write_queue_valid_in[i] = qracc_ctrl.activation_buffer_int_wr_en && ( 
+            ( cfg.num_output_channels > (numCols * i)) );
+        piso_write_queue_addr_in[i] = qracc_ctrl.activation_buffer_int_wr_addr + (i * numCols); 
+    end
+end
+
+piso_write_queue #(
+    .numParallelIn (numBanks),
+    .writeInterfaceWidth (globalBufferIntInterfaceWidth), // Changed to internal interface width
+    .queueDepth (4),
+    .maxBits (8)
+) u_piso_write_queue (
+    .clk            (clk),
+    .nrst           (nrst),
+
+    .data_in        (output_scaler_output), // must always be equal to numBanks * oscalerOutputSize
+    .addr_in        (piso_write_queue_addr_in),
+    .valid_in       (piso_write_queue_valid_in),
+    .ready_out      (), // Not connected since writing to internal interface
+
+    .addr_out       (activation_buffer_int_wr_addr), // Writing to internal interface
+    .data_out       (activation_buffer_int_wr_data), // Writing to internal interface
+    .valid_out      (int_write_queue_valid_out) // Valid signal for internal interface
+);
+
 
 
 // csr #(
