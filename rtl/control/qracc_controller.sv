@@ -12,8 +12,9 @@ module qracc_controller #(
     parameter internalInterfaceWidth = 128,
     parameter dataBusWidth = 32,
 
-    parameter numBanks = 8
-
+    parameter numBanks = 8,
+    parameter numColsPerBank = 32,
+    localparam internalInterfaceElements = internalInterfaceWidth / 8
 ) (
     input clk, nrst,
 
@@ -94,6 +95,11 @@ logic send_last_opix;
 logic compute_last_opix;
 logic [$clog2(numBanks)-1:0] bank_select_code;
 
+// Multicycle Activation Read
+logic [9:0] read_set;
+logic [9:0] num_read_sets;
+assign num_read_sets = ( (cfg.num_input_channels*cfg.filter_size_x - 1) / internalInterfaceElements ) + 1;
+
 // Write tracking signals
 logic [31:0] scaler_ptr;
 logic [31:0] weight_ptr;
@@ -171,18 +177,15 @@ always_comb begin : ctrlDecode
         S_LOADBIAS: begin
             ctrl_o.output_bias_w_en = data_write;
             bus_i.ready = 1;
+            // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE) ? 1 : 0;
         end
         S_COMPUTE: begin
             ctrl_o.qracc_mac_data_valid = window_data_valid_qq;
-            
-            // IFMAP READ
-            // ctrl_o.activation_buffer_int_rd_addr = 
-            //     cfg.num_input_channels * ( opix_pos_x + 
-            //     cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr}) ); // ifmap_addr = c + x*C + (y + fy)*C*OX, but c is always 0.
                 
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * opix_pos_x
+                +   cfg.num_input_channels * opix_pos_x 
+                +   read_set*internalInterfaceElements // multicycle read if interface width < ifmap window row size
                 ; // h*W*C + w*C + c
 
             ctrl_o.activation_buffer_int_rd_en = 1;
@@ -190,7 +193,7 @@ always_comb begin : ctrlDecode
             // WINDOW LOAD
             // window_data_valid_qq && window_data_valid indicates an active stall
             ctrl_o.feature_loader_wr_en = ! (window_data_valid_qq && window_data_valid);
-            ctrl_o.feature_loader_addr = feature_loader_addr_qq; // FX*C*fy
+            ctrl_o.feature_loader_addr = feature_loader_addr_qq ; // FX*C*fy;  // multicycle read if interface width < ifmap window row size
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
@@ -274,7 +277,8 @@ always_ff @( posedge clk or negedge nrst ) begin
         feature_loader_addr_qq <= 0;
     end else begin
         window_data_valid_qq <= window_data_valid;
-        feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x;
+        feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
+                                + read_set*internalInterfaceElements; // multicycle read if interface width < ifmap window row size
     end
 end
 
@@ -287,6 +291,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         send_last_opix <= 0;
         compute_last_opix <= 0;
         ofmap_offset_ptr <= 0;
+        read_set <= 0;
     end else begin
 
         if (csr_main_clear) begin
@@ -297,13 +302,14 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             send_last_opix <= 0;
             compute_last_opix <= 0;
             ofmap_offset_ptr <= 0;
+            read_set <= 0;
         end else
         
         if (state_q == S_COMPUTE) begin
 
             if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
                 opix_pos_y == cfg.output_fmap_dimy - 1 &&
-                fy_ctr == cfg.filter_size_y - 1 && qracc_output_valid)
+                fy_ctr == cfg.filter_size_y - 1)
                 send_last_opix <= 1;
 
             // This thing would break if inputBits is small enough that 
@@ -316,28 +322,42 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                 ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
             end
 
-            if ( (window_data_valid && !qracc_ready) || send_last_opix || compute_last_opix ) begin 
+            if ( 
+                (window_data_valid && !qracc_ready) 
+                || compute_last_opix 
+                || (read_set < num_read_sets - 1) // uncommenting this line causes an infinite array read loop
+            ) begin 
                 // stall 
+                if (window_data_valid && !qracc_ready) begin
+                    // skip is due to stall
+                    read_set <= read_set;
+                end else begin
+                    // skip is not due to stall
+                    read_set <= read_set + 1;
+                    window_data_valid <= 0;
+                end
+
                 if (compute_last_opix) begin
                     window_data_valid <= 0;
                 end
-            end else
-
-            if (fy_ctr < cfg.filter_size_y - 1) begin
-                fy_ctr <= fy_ctr + 1;
-                window_data_valid <= 0;
             end else begin
-                fy_ctr <= 0;
-                window_data_valid <= 1;
-
-                if (opix_pos_x < cfg.output_fmap_dimx - 1) begin
-                    opix_pos_x <= opix_pos_x + 1;
+                read_set <= 0;
+                if (fy_ctr < cfg.filter_size_y - 1) begin
+                    fy_ctr <= fy_ctr + 1;
+                    window_data_valid <= 0;
                 end else begin
-                    opix_pos_x <= 0;
-                    if (opix_pos_y < cfg.output_fmap_dimy - 1) begin
-                        opix_pos_y <= opix_pos_y + 1;
+                    fy_ctr <= 0;
+                    window_data_valid <= 1;
+
+                    if (opix_pos_x < cfg.output_fmap_dimx - 1) begin
+                        opix_pos_x <= opix_pos_x + 1;
                     end else begin
-                        opix_pos_y <= 0;
+                        opix_pos_x <= 0;
+                        if (opix_pos_y < cfg.output_fmap_dimy - 1) begin
+                            opix_pos_y <= opix_pos_y + 1;
+                        end else begin
+                            opix_pos_y <= 0;
+                        end
                     end
                 end
             end
@@ -347,6 +367,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             fy_ctr <= 0;
             window_data_valid <= 0;
             send_last_opix <= 0;
+            compute_last_opix <= 0;
             ofmap_offset_ptr <= 0;
             compute_last_opix <= 0;
         end

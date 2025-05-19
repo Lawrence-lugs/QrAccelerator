@@ -398,10 +398,10 @@ class NumpyArray;
             return -1;
         end
         
-        if (flat_index >= this.size) begin
-            $display("[ARRAY] Index out of bounds: %d", flat_index);
-            return -1;
-        end
+        // if (flat_index >= this.size) begin
+        //     $display("[ARRAY] Index out of bounds: %d", flat_index);
+        //     return -1;
+        // end
         return this.array[flat_index];
     endfunction
 
@@ -576,7 +576,7 @@ task track_toeplitz();
 
         // Track only when the MAC input is accepted by the seq_acc
         if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
-            $write("Window [%d]: \n", trow);
+            $write("Window [%d][%d,%d]: \n", trow, u_qr_acc_top.u_qracc_controller.opix_pos_x, u_qr_acc_top.u_qracc_controller.opix_pos_y);
             
             // Produces a -- pattern for irrelevant activations
             for (j=0;j<qrAccInputElements;j++) begin

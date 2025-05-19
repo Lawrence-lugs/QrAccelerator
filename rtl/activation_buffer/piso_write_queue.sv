@@ -51,6 +51,7 @@ module piso_write_queue #(
             read_ptr <= '0;
             count <= '0;
             data_queue <= '0;
+            addr_queue <= '0;
         end else begin
             // Handle parallel write
             if (|valid_in && !queue_full) begin
