@@ -1,4 +1,5 @@
 // Write data_queue with parallel write and serial read
+`timescale 1ns / 1ps
 
 module piso_write_queue #(
     parameter numParallelIn = 8,
@@ -57,19 +58,19 @@ module piso_write_queue #(
             if (|valid_in && !queue_full) begin
                 for (int i = 0 ; i < numParallelIn ; i++) begin
                     if (valid_in[i]) begin
-                        data_queue[write_ptr] <= data_in[i];
-                        addr_queue[write_ptr] <= addr_in[i];
+                        data_queue[write_ptr+i] <= data_in[i];
+                        addr_queue[write_ptr+i] <= addr_in[i];
                     end
                 end
                 write_ptr <= (write_ptr + num_valids_this_cycle) % queueDepth;
-                count <= count + num_valids_this_cycle;
             end
 
             // Handle serial read
             if (!queue_empty) begin
                 read_ptr <= (read_ptr + 1) % queueDepth;
-                count <= count - 1;
             end
+            count <= count + num_valids_this_cycle - (queue_empty ? 0 : 1);
+
         end
     end
 

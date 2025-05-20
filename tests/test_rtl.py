@@ -43,8 +43,12 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
             tb_file
         ] + sim_args[simulator] + rtl_file_list + parameter_list + top_command
     
-    print(command)
+    print('=====VCS COMMAND=====')
+    print(' '.join(command))
+    print('=====LOG FILE========')
     print(log_file)
+    print('=====================')
+
     
     if run:
         with open(log_file,'w+') as f:
@@ -77,10 +81,12 @@ def write_parameter_definition_file(parameter_list,filepath):
         f.write(f'`endif // PARAMETERS_FILE\n')
         
 @pytest.mark.parametrize(
-    "ifmap_shape,kernel_shape,core_shape,padding,stride",[
-    ((1,3,16,16), (32,3,3,3), (256,32), 1, 1),
-    ((1,16,16,16), (32,16,3,3), (256,32), 1, 1),
-    ((1,3,16,16), (32,3,3,3), (256,256), 1, 1),
+    "ifmap_shape,kernel_shape,core_shape,padding,stride,test_name",[
+    ((1,3,16,16), (32,3,3,3), (256,32), 1, 1, 'singlebank'),    # single-bank test
+    ((1,16,16,16), (32,16,3,3), (256,32), 1, 1, 'morethan32fload'),  # requires multistage write
+    ((1,3,16,16), (32,3,3,3), (256,256), 1, 1, 'fc_smallload'),   # fits in one bank, multibank
+    ((1,27,16,16), (256,27,3,3), (256,256), 1, 1, 'fc_fullload'), # max size matrix for 3x3 kernel
+    ((1,3,16,16), (48,3,3,3), (256,256), 1, 1, 'fc_wideload'), # wide matrix, short vertical
 ])
 def test_qr_acc_top(
     col_symmetric,
@@ -91,6 +97,7 @@ def test_qr_acc_top(
     core_shape,
     padding,
     stride,
+    test_name,
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
@@ -182,8 +189,8 @@ def test_qr_acc_top(
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(stimulus['result'], acc_result)
-    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"QRAccLinearConv SNR {snr}",filename =  "QRAccLinearConv")
-    plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename='QRAccLinearConv_diff_channels')
+    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"QRAccLinearConv SNR {snr}",filename =  f"{test_name}_snr")
+    plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 
     return
@@ -382,7 +389,11 @@ def test_seq_acc(
             tb_file
         ] + sim_args[simulator] + rtl_file_list + parameter_list
 
-    print(command)
+    # print command as list with strings
+    print('=====VCS COMMAND=====')
+    print(' '.join(command))
+    print('=====================')
+
     print(log_file)
     if run:
         with open(log_file,'w+') as f:

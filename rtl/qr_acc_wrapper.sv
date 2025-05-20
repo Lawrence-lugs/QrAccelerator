@@ -160,7 +160,7 @@ always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
     end
 end
 always_comb begin : AdcEncoderLogic
-    for (int i = 0; i < numCols; i++) begin
+    for (int i = 0; i < outputElements; i++) begin
         casez (adc_out[i])
             15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8 // 0000
             15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9 // 0001

@@ -241,15 +241,16 @@ always_comb begin
     for (int i = 0; i < numBanks; i++) begin
         piso_write_queue_valid_in[i] = qracc_ctrl.activation_buffer_int_wr_en && ( 
             ( cfg.num_output_channels > (numCols * i)) );
-        piso_write_queue_addr_in[i] = qracc_ctrl.activation_buffer_int_wr_addr + (i * numCols); 
+        piso_write_queue_addr_in[i] = qracc_ctrl.activation_buffer_int_wr_addr + (i * numCols);
     end
 end
 
 piso_write_queue #(
-    .numParallelIn (numBanks),
-    .writeInterfaceWidth (globalBufferIntInterfaceWidth), // Changed to internal interface width
-    .queueDepth (4),
-    .maxBits (8)
+    .numParallelIn       (numBanks),
+    .writeInterfaceWidth (globalBufferIntInterfaceWidth),
+    .queueDepth          ( (qrAccOutputElements/numCols)*2 ), 
+    .maxBits             (8),
+    .writeAddrWidth      (globalBufferAddrWidth)
 ) u_piso_write_queue (
     .clk            (clk),
     .nrst           (nrst),

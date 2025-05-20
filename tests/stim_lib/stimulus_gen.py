@@ -223,7 +223,7 @@ def generate_top_inputs(
     np.random.seed(seed)
     
     print("[STIM_GEN] Generating Sample QLinearConv")
-    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}),weight_density=0.05,acts_mode='counting'")
+    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed})")
 
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
