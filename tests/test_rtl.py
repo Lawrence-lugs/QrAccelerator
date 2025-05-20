@@ -86,7 +86,7 @@ def write_parameter_definition_file(parameter_list,filepath):
     ((1,16,16,16), (32,16,3,3), (256,32), 1, 1, 'morethan32fload'),  # requires multistage write
     ((1,3,16,16), (32,3,3,3), (256,256), 1, 1, 'fc_smallload'),   # fits in one bank, multibank
     ((1,27,16,16), (256,27,3,3), (256,256), 1, 1, 'fc_fullload'), # max size matrix for 3x3 kernel
-    ((1,3,16,16), (48,3,3,3), (256,256), 1, 1, 'fc_wideload'), # wide matrix, short vertical
+    ((1,3,16,16), (256,3,3,3), (256,256), 1, 1, 'fc_wideload'), # wide matrix, short vertical
 ])
 def test_qr_acc_top(
     col_symmetric,

@@ -208,6 +208,19 @@ def sample_onnx_qlinearconv(
 
     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
+def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0):
+
+    weight_array = np.zeros(core_shape, dtype=int)
+    weight_array[x_offset:matrix.shape[0], y_offset:matrix.shape[1]] = matrix
+
+    return
+
+def mapped_matrix_to_bank_writes(num_bank_cols = 32):
+
+
+
+    return 
+
 def generate_top_inputs(
     savepath,
     stride,
@@ -245,7 +258,7 @@ def generate_top_inputs(
     # t_matrix = t_matrix[:,::-1] # Reverse the matrix to match hardware [31:0]
     weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
     weight_array_banked = weight_array.reshape(-1, 32)
-    write_array = quant.array_bin_to_int(weight_array_banked)
+    write_array = quant.array_bin_to_int(weight_array_banked.T[::-1].T)
 
     # Software padding and channel minor
     t_ifmap = torch.from_numpy(t_ifmap)
@@ -263,19 +276,18 @@ def generate_top_inputs(
 
     if scale.ndim == 0:
         scale = np.repeat(scale, core_shape[1])
-
-    # extend with zeros
     if scale.shape[0] != core_shape[1]:
         scale = np.pad(scale, (0, core_shape[1] - scale.shape[0]), 'constant', constant_values=(0, 0))
 
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
-    scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift) # Pack into a single word
-
+    scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift)
+    scaler_data = scaler_data[::-1]
 
     # Prepare biases
-    biases = scaler_params['gph_node'][0].biases[::-1]
+    biases = scaler_params['gph_node'][0].biases
     biases = np.pad(biases, (0, core_shape[1] - biases.shape[0]), 'constant', constant_values=(0, 0))
+    # biases = biases[::-1]
 
     print('=== Weight Array ===')
     print(weight_array)

@@ -47,7 +47,8 @@ always_ff @(posedge clk, negedge nrst) begin
         end
         if (wr_en_2_i) begin
             for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
-                mem[wr_addr_2_i + i] <= wr_data_2_i[(interfaceWidth2/dataSize-1-i)*dataSize +: dataSize];
+                // mem[wr_addr_2_i + i] <= wr_data_2_i[(interfaceWidth2/dataSize-1-i)*dataSize +: dataSize];
+                mem[wr_addr_2_i + i] <= wr_data_2_i[(i)*dataSize +: dataSize];
             end
         end
         if (rd_en_1_i) begin

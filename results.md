@@ -12,6 +12,25 @@
 | QR Accelerator | ![alt text](images/qr_acc_binary.svg) | ![alt text](images/qr_acc_ams_binary.svg) |
 | Sequential Accelerator | ![alt text](images/seq_acc_binary.svg) | ![alt text](images/seq_acc_ams_binary.svg) |
 
+
+## QRAccLinearConv Scatter Plots
+| Test Name         | ifmap_shape      | kernel_shape    | core_shape   | padding | stride | Scatter Plot Image |
+|-------------------|-----------------|-----------------|--------------|---------|--------|--------------------|
+| singlebank        | (1, 3, 16, 16)  | (32, 3, 3, 3)   | (256, 32)    | 1       | 1      | ![singlebank](images/singlebank_snr.svg) |
+| morethan32fload   | (1, 16, 16, 16) | (32, 16, 3, 3)  | (256, 32)    | 1       | 1      | ![morethan32fload](images/morethan32fload_snr.svg) |
+| fc_smallload      | (1, 3, 16, 16)  | (32, 3, 3, 3)   | (256, 256)   | 1       | 1      | ![fc_smallload](images/fc_smallload_snr.svg) |
+| fc_fullload       | (1, 27, 16, 16) | (256, 27, 3, 3) | (256, 256)   | 1       | 1      | ![fc_fullload](images/fc_fullload_snr.svg) |
+| fc_wideload       | (1, 3, 16, 16)  | (48, 3, 3, 3)   | (256, 256)   | 1       | 1      | ![fc_wideload](images/fc_wideload_snr.svg) |
+
+## QRAccLinearConv Per-Channel Difference Plots
+| Test Name         | ifmap_shape      | kernel_shape    | core_shape   | padding | stride | Per-Channel Plot Image |
+|-------------------|-----------------|-----------------|--------------|---------|--------|------------------------|
+| singlebank        | (1, 3, 16, 16)  | (32, 3, 3, 3)   | (256, 32)    | 1       | 1      | ![singlebank](images/singlebank_channels.svg) |
+| morethan32fload   | (1, 16, 16, 16) | (32, 16, 3, 3)  | (256, 32)    | 1       | 1      | ![morethan32fload](images/morethan32fload_channels.svg) |
+| fc_smallload      | (1, 3, 16, 16)  | (32, 3, 3, 3)   | (256, 256)   | 1       | 1      | ![fc_smallload](images/fc_smallload_channels.svg) |
+| fc_fullload       | (1, 27, 16, 16) | (256, 27, 3, 3) | (256, 256)   | 1       | 1      | ![fc_fullload](images/fc_fullload_channels.svg) |
+| fc_wideload       | (1, 3, 16, 16)  | (48, 3, 3, 3)   | (256, 256)   | 1       | 1      | ![fc_wideload](images/fc_wideload_channels.svg) |
+
 ## Results Tables
 
 |       |Throughput       |Energy Efficiency  (1b TOPS/W)   |Power      |
