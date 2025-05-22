@@ -278,7 +278,7 @@ always_ff @( posedge clk or negedge nrst ) begin
     end else begin
         window_data_valid_qq <= window_data_valid;
         feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
-                                + read_set*internalInterfaceElements; // multicycle read if interface width < ifmap window row size
+                                + read_set*internalInterfaceElements + cfg.mapped_matrix_offset_y; // multicycle read if interface width < ifmap window row size
     end
 end
 

@@ -53,6 +53,28 @@ def generate_tensor(shape, mode = 'random',seed = 0):
     elif mode == 'linspace':
         return np.linspace(0, 1, num = np.prod(shape)).reshape(shape)
 
+# def test_from_onnx_node(
+#     onnx_node,
+#     input_array,
+#     output_array
+# ):
+    
+
+
+
+#     # Parse required offsets
+#     scaler_params = {
+#         'scale' : scale_x * scale_w / scale_y,
+#         'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
+#         'output_zp' : zp_y,
+#         'nx_node' : node,
+#         'gph_node' : cnode,
+#         'cnode_params' : cnode_params,
+#         'zp_x' : zp_x,
+#     }
+
+#     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
+
 
 def sample_onnx_qlinearconv(
     ifmap_shape,
@@ -210,16 +232,17 @@ def sample_onnx_qlinearconv(
 
 def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0):
 
-    weight_array = np.zeros(core_shape, dtype=int)
-    weight_array[x_offset:matrix.shape[0], y_offset:matrix.shape[1]] = matrix
+    matrix_map = np.zeros(core_shape, dtype=int)
+    matrix_map[y_offset:y_offset+matrix.shape[0], x_offset:x_offset+matrix.shape[1]] = matrix
 
-    return
+    return matrix_map
 
-def mapped_matrix_to_bank_writes(num_bank_cols = 32):
+def mapped_matrix_to_bank_writes(matrix_map, num_bank_cols = 32):
 
+    matrix_map_banked = matrix_map.reshape(-1, num_bank_cols)
+    write_array = quant.array_bin_to_int(matrix_map_banked.T[::-1].T)
 
-
-    return 
+    return write_array
 
 def generate_top_inputs(
     savepath,
@@ -229,6 +252,8 @@ def generate_top_inputs(
     kernel_shape,
     kernel_bits,
     core_shape,
+    mm_offset_x = 0,
+    mm_offset_y = 0,
     seed = 0
 ):
 
@@ -236,7 +261,7 @@ def generate_top_inputs(
     np.random.seed(seed)
     
     print("[STIM_GEN] Generating Sample QLinearConv")
-    print(f"t_res, t_matrix, t_ifmap, t_toeplitz = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed})")
+    print(f"t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed})")
 
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
@@ -253,12 +278,9 @@ def generate_top_inputs(
     )
     out = t_res
 
-    # For now, extend the matrix into numRows and numCols to imitate a "mapped matrix"
-    weight_array = np.zeros(core_shape, dtype=int)
-    # t_matrix = t_matrix[:,::-1] # Reverse the matrix to match hardware [31:0]
-    weight_array[:t_matrix.shape[0], :t_matrix.shape[1]] = t_matrix
-    weight_array_banked = weight_array.reshape(-1, 32)
-    write_array = quant.array_bin_to_int(weight_array_banked.T[::-1].T)
+    print(f'matrix_map = map_single_matrix({t_matrix}, {core_shape}, x_offset={mm_offset_x}, y_offset={mm_offset_y})')
+    matrix_map = map_single_matrix(t_matrix, core_shape, x_offset=mm_offset_x, y_offset=mm_offset_y)
+    write_array = mapped_matrix_to_bank_writes(matrix_map,32)
 
     # Software padding and channel minor
     t_ifmap = torch.from_numpy(t_ifmap)
@@ -285,12 +307,15 @@ def generate_top_inputs(
     scaler_data = scaler_data[::-1]
 
     # Prepare biases
-    biases = scaler_params['gph_node'][0].biases
-    biases = np.pad(biases, (0, core_shape[1] - biases.shape[0]), 'constant', constant_values=(0, 0))
+    biases_to_map = scaler_params['gph_node'][0].biases
+    # biases = np.pad(biases, (0, core_shape[1] - biases.shape[0]), 'constant', constant_values=(0, 0))
+    biases = np.zeros((core_shape[1],), dtype=np.int32)
+    biases[mm_offset_x:mm_offset_x+scaler_params['gph_node'][0].biases.shape[0]] = biases_to_map
+
     # biases = biases[::-1]
 
     print('=== Weight Array ===')
-    print(weight_array)
+    print(matrix_map)
 
     res_dict = {
         'result': t_res,
@@ -299,7 +324,7 @@ def generate_top_inputs(
         'ifmap_ints': ifmap_channel_minor,
         'small_matrix': t_matrix,
         'matrix': write_array,
-        'weights_np': weight_array, 
+        'weights_np': matrix_map, 
         'scaler_data': scaler_data,
         'biases': biases,
     }

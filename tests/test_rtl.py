@@ -81,23 +81,27 @@ def write_parameter_definition_file(parameter_list,filepath):
         f.write(f'`endif // PARAMETERS_FILE\n')
         
 @pytest.mark.parametrize(
-    "ifmap_shape,kernel_shape,core_shape,padding,stride,test_name",[
-    ((1,3,16,16), (32,3,3,3), (256,32), 1, 1, 'singlebank'),    # single-bank test
-    ((1,16,16,16), (32,16,3,3), (256,32), 1, 1, 'morethan32fload'),  # requires multistage write
-    ((1,3,16,16), (32,3,3,3), (256,256), 1, 1, 'fc_smallload'),   # fits in one bank, multibank
-    ((1,27,16,16), (256,27,3,3), (256,256), 1, 1, 'fc_fullload'), # max size matrix for 3x3 kernel
-    ((1,3,16,16), (256,3,3,3), (256,256), 1, 1, 'fc_wideload'), # wide matrix, short vertical
+    "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y",[
+    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0),           # single-bank test
+    ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0),           # offset 
+    ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38),           # offset 
+    ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0),           # requires multistage write
+    ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           # fits in one bank, multibank
+    ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           # max size matrix for 3x3 kernel
+    ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
 ])
 def test_qr_acc_top(
     col_symmetric,
     simulator,
     seed,
+    test_name,
     kernel_shape, 
     ifmap_shape,
     core_shape,
     padding,
     stride,
-    test_name,
+    mm_offset_x,
+    mm_offset_y,
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
@@ -109,6 +113,7 @@ def test_qr_acc_top(
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/activation_buffer/piso_write_queue.sv',
+        '../rtl/activation_buffer/mm_output_aligner.sv',
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
@@ -136,7 +141,7 @@ def test_qr_acc_top(
     # Pre-simulation
     print('')
     print(f"stimulus = generate_top_inputs(stimulus_output_path,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape})")
-    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape)
+    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,mm_offset_x,mm_offset_y)
     
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
 
@@ -169,8 +174,8 @@ def test_qr_acc_top(
         "OFMAP_DIMY": ifmap_shape[3],
         "IN_CHANNELS": kernel_shape[1],
         "OUT_CHANNELS": kernel_shape[0],
-        "MAPPED_MATRIX_OFFSET_X": 0,
-        "MAPPED_MATRIX_OFFSET_Y": 0,
+        "MAPPED_MATRIX_OFFSET_X": mm_offset_x,
+        "MAPPED_MATRIX_OFFSET_Y": mm_offset_y,
         "UNSIGNED_ACTS": 1,
         "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }

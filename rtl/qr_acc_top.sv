@@ -89,6 +89,7 @@ logic int_write_queue_valid_out;
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
+logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_output;
 
 
 //-----------------------------------
@@ -199,8 +200,8 @@ feature_loader #(
     // Interface with QR accelerator
     .data_o            (qracc_mac_data),
 
-    .mask_start        (cfg.mapped_matrix_offset_x),
-    .mask_end          (cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels)
+    .mask_start        (cfg.mapped_matrix_offset_y),
+    .mask_end          (cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels + cfg.mapped_matrix_offset_y)
 );
 
 // Fixed point scaling from quantization methods in TFLite
@@ -233,6 +234,16 @@ output_scaler_set #(
     .cfg_output_bits(cfg.n_output_bits_cfg)
 );
 
+mm_output_aligner #(
+    .numColsPerBank (numCols),
+    .elementBits    (qrAccOutputBits),
+    .numElements    (qrAccOutputElements)
+) u_mm_output_aligner (
+    .data_i         (output_scaler_output),
+    .cfg_i          (cfg),
+    .data_o         (aligned_output_scaler_output)
+);
+
 logic [numBanks-1:0] piso_write_queue_valid_in;
 logic [numBanks-1:0][globalBufferAddrWidth-1:0] piso_write_queue_addr_in;
 always_comb begin
@@ -255,7 +266,7 @@ piso_write_queue #(
     .clk            (clk),
     .nrst           (nrst),
 
-    .data_in        (output_scaler_output), // must always be equal to numBanks * oscalerOutputSize
+    .data_in        (aligned_output_scaler_output), // must always be equal to numBanks * oscalerOutputSize
     .addr_in        (piso_write_queue_addr_in),
     .valid_in       (piso_write_queue_valid_in),
     .ready_out      (), // Not connected since writing to internal interface
