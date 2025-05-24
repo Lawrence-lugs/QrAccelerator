@@ -79,6 +79,7 @@ def write_parameter_definition_file(parameter_list,filepath):
         for name, value in parameter_list.items():
             f.write(f'`define {name} {value}\n')    
         f.write(f'`endif // PARAMETERS_FILE\n')
+
         
 @pytest.mark.parametrize(
     "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y",[
@@ -89,8 +90,10 @@ def write_parameter_definition_file(parameter_list,filepath):
     ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           # fits in one bank, multibank
     ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           # max size matrix for 3x3 kernel
     ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
+    ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0),           # wide matrix, short vertical
+    ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
 ])
-def test_qr_acc_top(
+def test_qr_acc_top_single_load(
     col_symmetric,
     simulator,
     seed,
@@ -109,6 +112,11 @@ def test_qr_acc_top(
 ):  
     weight_mode = 'bipolar'
     mac_mode = 1 if weight_mode == 'binary' else 0
+
+    # Pointwise convolutions do not pad or stride
+    if kernel_shape[2] == 1 and kernel_shape[3] == 1:
+        padding = 0
+        stride = 1
   
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
@@ -140,8 +148,8 @@ def test_qr_acc_top(
 
     # Pre-simulation
     print('')
-    print(f"stimulus = generate_top_inputs(stimulus_output_path,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape})")
-    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,mm_offset_x,mm_offset_y)
+    print(f"stimulus = generate_top_inputs(None,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape},{padding},{mm_offset_x},{mm_offset_y})")
+    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y)
     
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
 
@@ -166,16 +174,18 @@ def test_qr_acc_top(
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "FILTER_SIZE_X": kernel_shape[2],
         "FILTER_SIZE_Y": kernel_shape[3],
-        "OFMAP_SIZE": np.product(ofmap_shape),
-        "IFMAP_SIZE": np.product(ifmap_shape_with_padding),
+        "OFMAP_SIZE": np.prod(ofmap_shape),
+        "IFMAP_SIZE": np.prod(ifmap_shape_with_padding),
         "IFMAP_DIMX": ifmap_shape_with_padding[2],
         "IFMAP_DIMY": ifmap_shape_with_padding[3],
         "OFMAP_DIMX": ofmap_dimx,
-        "OFMAP_DIMY": ifmap_shape[3],
+        "OFMAP_DIMY": ofmap_dimy,
         "IN_CHANNELS": kernel_shape[1],
         "OUT_CHANNELS": kernel_shape[0],
         "MAPPED_MATRIX_OFFSET_X": mm_offset_x,
         "MAPPED_MATRIX_OFFSET_Y": mm_offset_y,
+        "STRIDE_X": stride,
+        "STRIDE_Y": stride,
         "UNSIGNED_ACTS": 1,
         "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }
@@ -195,6 +205,7 @@ def test_qr_acc_top(
 
     rmse, snr = rmse_snr(stimulus['result'], acc_result)
     save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"QRAccLinearConv SNR {snr}",filename =  f"{test_name}_snr")
+    print(acc_result.shape, stimulus['result'].shape)
     plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 
@@ -661,13 +672,10 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
     - tensor_format: str, format of the tensor ('NCHW' or 'NHWC')
     - bitPrecision: int, bit precision for value range (default 8)
     """
-    if tensor_format == 'NCHW':
-        _, num_channels, _, _ = diff.shape
-    elif tensor_format == 'NHWC':
-        _, _, _, num_channels = diff.shape
-    else:
-        raise ValueError("Unsupported tensor format. Use 'NCHW' or 'NHWC'.")
+    if tensor_format == 'NHWC':
+        diff_2plot = diff.transpose(0, 3, 1, 2)  # Convert to NCHW format for plotting
 
+    num_channels = diff_2plot.shape[1]  # Number of channels in the last dimension
     rows = (num_channels + 7) // 8  # Calculate rows for 8 columns
     fig, axs = plt.subplots(rows, 8, figsize=(20, 10), dpi=200)
     axs = axs.flatten()  # Flatten the axes array for easier indexing
@@ -675,8 +683,7 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
 
     for i in range(num_channels):
         ax = axs[i]
-        channel_data = diff[0, i] if tensor_format == 'NCHW' else diff[0, :, :, i]
-        im = ax.imshow(channel_data, cmap='gray', vmin=vmin, vmax=vmax)
+        im = ax.imshow(diff_2plot[0, i], vmin=vmin, vmax=vmax, cmap='YlOrBr')
         ax.set_title(f'Channel {i}')
         ax.axis('off')
 

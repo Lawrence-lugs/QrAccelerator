@@ -115,6 +115,7 @@ qracc_controller #(
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
+    .int_write_queue_valid      (int_write_queue_valid_out),
 
     .cfg                        (cfg),
     .csr_main_clear             (csr_main_clear),

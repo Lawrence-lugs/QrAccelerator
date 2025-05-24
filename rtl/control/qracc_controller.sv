@@ -30,6 +30,7 @@ module qracc_controller #(
     input qracc_ready,
     input qracc_output_valid,
     input from_sram_t from_sram,
+    input int_write_queue_valid,
 
     // Signals from csr
     input qracc_config_t cfg,
@@ -86,13 +87,11 @@ logic [31:0] opix_pos_y;
 logic [3:0] fy_ctr; // filter y
 logic [31:0] current_read_addr; // filter x
 logic [31:0] ofmap_offset_ptr;
-logic window_data_valid;
+logic window_data_valid_q;
 logic actmem_wr_en;
-logic window_data_valid_qq;
+logic feature_loader_valid_out_qq;
 logic [31:0] feature_loader_addr_qq;
-logic compute_stall;
-logic send_last_opix;
-logic compute_last_opix;
+logic last_window;
 logic [$clog2(numBanks)-1:0] bank_select_code;
 
 // Multicycle Activation Read
@@ -143,6 +142,8 @@ always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
     end
 end
 
+logic feature_loader_wr_en_d;
+
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
     to_sram.rq_wr_i = 0;
@@ -180,20 +181,19 @@ always_comb begin : ctrlDecode
             // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE) ? 1 : 0;
         end
         S_COMPUTE: begin
-            ctrl_o.qracc_mac_data_valid = window_data_valid_qq;
                 
             ctrl_o.activation_buffer_int_rd_addr = 
-                    cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * opix_pos_x 
+                    cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y * cfg.stride_y + {28'b0, fy_ctr})
+                +   cfg.num_input_channels * opix_pos_x * cfg.stride_x 
                 +   read_set*internalInterfaceElements // multicycle read if interface width < ifmap window row size
                 ; // h*W*C + w*C + c
-
-            ctrl_o.activation_buffer_int_rd_en = 1;
-
-            // WINDOW LOAD
-            // window_data_valid_qq && window_data_valid indicates an active stall
-            ctrl_o.feature_loader_wr_en = ! (window_data_valid_qq && window_data_valid);
-            ctrl_o.feature_loader_addr = feature_loader_addr_qq ; // FX*C*fy;  // multicycle read if interface width < ifmap window row size
+        
+            ctrl_o.feature_loader_addr = feature_loader_addr_qq;
+            // Do not write to feature loader seq_acc isn't ready yet
+            ctrl_o.feature_loader_wr_en = ~(feature_loader_valid_out_qq && ~qracc_ready);
+            // Latch output if feature loader isn't accepting writes
+            ctrl_o.activation_buffer_int_rd_en = ctrl_o.feature_loader_wr_en; 
+            ctrl_o.qracc_mac_data_valid = feature_loader_valid_out_qq;
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
@@ -250,7 +250,7 @@ always_comb begin : stateDecode
             end
         end
         S_COMPUTE: begin
-            if (compute_last_opix && qracc_output_valid) begin
+            if (~feature_loader_valid_out_qq && qracc_ready && int_write_queue_valid) begin
                 state_d = S_READACTS;
             end else begin
                 state_d = S_COMPUTE;
@@ -267,18 +267,20 @@ always_comb begin : stateDecode
     endcase
 end
 
-// Convolution output tracking counter
-
-assign compute_stall = (state_q == S_COMPUTE) && (window_data_valid && !qracc_ready);
-
 always_ff @( posedge clk or negedge nrst ) begin
     if (!nrst) begin
-        window_data_valid_qq <= 0;
+        feature_loader_valid_out_qq <= 0;
         feature_loader_addr_qq <= 0;
     end else begin
-        window_data_valid_qq <= window_data_valid;
-        feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
-                                + read_set*internalInterfaceElements + cfg.mapped_matrix_offset_y; // multicycle read if interface width < ifmap window row size
+        if (feature_loader_valid_out_qq && ~qracc_ready) begin
+            // Stall the feature loader
+            feature_loader_valid_out_qq <= feature_loader_valid_out_qq;
+            feature_loader_addr_qq <= feature_loader_addr_qq;
+        end else begin
+            feature_loader_valid_out_qq <= window_data_valid_q;
+            feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
+                                    + read_set*internalInterfaceElements + cfg.mapped_matrix_offset_y; // multicycle read if interface width < ifmap window row size
+        end
     end
 end
 
@@ -287,9 +289,8 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         opix_pos_x <= 0;
         opix_pos_y <= 0;
         fy_ctr <= 0;
-        window_data_valid <= 0;
-        send_last_opix <= 0;
-        compute_last_opix <= 0;
+        window_data_valid_q <= 0;
+        last_window <= 0;
         ofmap_offset_ptr <= 0;
         read_set <= 0;
     end else begin
@@ -298,56 +299,50 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             opix_pos_x <= 0;
             opix_pos_y <= 0;
             fy_ctr <= 0;
-            window_data_valid <= 0;
-            send_last_opix <= 0;
-            compute_last_opix <= 0;
+            window_data_valid_q <= 0;
+            last_window <= 0;
             ofmap_offset_ptr <= 0;
             read_set <= 0;
         end else
         
         if (state_q == S_COMPUTE) begin
 
-            if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
-                opix_pos_y == cfg.output_fmap_dimy - 1 &&
-                fy_ctr == cfg.filter_size_y - 1)
-                send_last_opix <= 1;
-
-            // This thing would break if inputBits is small enough that 
-            if(qracc_output_valid & send_last_opix) begin
-                compute_last_opix <= 1;
-            end
-
-            // Ofmap writes strided by C
             if (qracc_output_valid) begin
                 ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
             end
 
+            if (last_window) begin
+                if(ctrl_o.feature_loader_wr_en) window_data_valid_q <= 0;
+            end else begin
+
             if ( 
-                (window_data_valid && !qracc_ready) 
-                || compute_last_opix 
-                || (read_set < num_read_sets - 1) // uncommenting this line causes an infinite array read loop
+                // (window_data_valid_q && !qracc_ready) 
+                ~ctrl_o.activation_buffer_int_rd_en
+                || (read_set < num_read_sets - 1)
             ) begin 
                 // stall 
-                if (window_data_valid && !qracc_ready) begin
+                if (~ctrl_o.activation_buffer_int_rd_en) begin
                     // skip is due to stall
                     read_set <= read_set;
                 end else begin
-                    // skip is not due to stall
+                    // skip is due to read set
                     read_set <= read_set + 1;
-                    window_data_valid <= 0;
-                end
-
-                if (compute_last_opix) begin
-                    window_data_valid <= 0;
+                    window_data_valid_q <= 0;
                 end
             end else begin
                 read_set <= 0;
                 if (fy_ctr < cfg.filter_size_y - 1) begin
                     fy_ctr <= fy_ctr + 1;
-                    window_data_valid <= 0;
+                    window_data_valid_q <= 0;
                 end else begin
                     fy_ctr <= 0;
-                    window_data_valid <= 1;
+
+                    if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
+                        opix_pos_y == cfg.output_fmap_dimy - 1 &&
+                        fy_ctr == cfg.filter_size_y - 1 && 
+                        read_set == num_read_sets - 1)
+                        last_window <= 1;
+                    window_data_valid_q <= 1;
 
                     if (opix_pos_x < cfg.output_fmap_dimx - 1) begin
                         opix_pos_x <= opix_pos_x + 1;
@@ -360,16 +355,14 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                         end
                     end
                 end
-            end
+            end end
         end else begin
             opix_pos_x <= 0;
             opix_pos_y <= 0;
             fy_ctr <= 0;
-            window_data_valid <= 0;
-            send_last_opix <= 0;
-            compute_last_opix <= 0;
+            window_data_valid_q <= 0;
+            last_window <= 0;
             ofmap_offset_ptr <= 0;
-            compute_last_opix <= 0;
         end
     end
 end

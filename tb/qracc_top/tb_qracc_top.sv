@@ -431,6 +431,9 @@ task setup_config();
     cfg.output_fmap_dimx = `OFMAP_DIMX;
     cfg.output_fmap_dimy = `OFMAP_DIMY;
 
+    cfg.stride_x = `STRIDE_X;
+    cfg.stride_y = `STRIDE_Y;
+
     cfg.num_input_channels = `IN_CHANNELS;
     cfg.num_output_channels = `OUT_CHANNELS;
 
@@ -559,6 +562,8 @@ task check_acts();
 
 endtask
 
+localparam MAX_TROWS = 260;
+
 task track_toeplitz();
 
     int trow, tplitz_offset, tplitz_height, reference;
@@ -573,6 +578,11 @@ task track_toeplitz();
 
     // Track only during compute state
     while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE) begin
+
+        if (trow >= MAX_TROWS) begin
+            $display("ERROR: Reached maximum number of rows (%d). Stopping tracking.", MAX_TROWS);
+            $finish;
+        end
 
         // Track only when the MAC input is accepted by the seq_acc
         if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin

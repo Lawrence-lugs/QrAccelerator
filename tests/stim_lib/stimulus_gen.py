@@ -126,7 +126,8 @@ def sample_onnx_qlinearconv(
             for k in range(kernel_shape[0]):
                 # b[k][0][2][2] = 1
                 b[k][0][k % 3][k % 3] = 1
-        qb = quant.QuantizedTensor(quantized_values = b, scale = 0.1, zero_point=0)
+        scale = np.random.uniform(0.01,0.2,kernel_shape[0])
+        qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
     else:
         qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
@@ -252,6 +253,7 @@ def generate_top_inputs(
     kernel_shape,
     kernel_bits,
     core_shape,
+    padding = 1,
     mm_offset_x = 0,
     mm_offset_y = 0,
     seed = 0
@@ -269,7 +271,7 @@ def generate_top_inputs(
         kernel_shape=kernel_shape,
         kernel_bits=kernel_bits,
         kernel_dtype = np.int8,
-        pads = (1,1,1,1),
+        pads = (padding,padding,padding,padding),
         stride = stride,
         seed = seed,
         # weight_density=0.05,
@@ -285,7 +287,7 @@ def generate_top_inputs(
     # Software padding and channel minor
     t_ifmap = torch.from_numpy(t_ifmap)
     zp_x = float(scaler_params['zp_x'])
-    ifmap_channel_minor = F.pad(t_ifmap, (1,1,1,1), mode='constant', value=zp_x) # F.pad is weird asf
+    ifmap_channel_minor = F.pad(t_ifmap, (padding,padding,padding,padding), mode='constant', value=zp_x)
     ifmap_channel_minor = ifmap_channel_minor.permute(0,2,3,1) # N C H W -> N H W C
     ifmap_channel_minor = ifmap_channel_minor.numpy()
 
@@ -294,17 +296,18 @@ def generate_top_inputs(
     ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
 
     # Generate scaler data and shifts
-    scale = scaler_params['scale']
+    scale_to_map = scaler_params['scale']
 
-    if scale.ndim == 0:
-        scale = np.repeat(scale, core_shape[1])
-    if scale.shape[0] != core_shape[1]:
-        scale = np.pad(scale, (0, core_shape[1] - scale.shape[0]), 'constant', constant_values=(0, 0))
+    if scale_to_map.ndim == 0:
+        scale_to_map = np.repeat(scale_to_map, core_shape[1])
+    
+    scale = np.ones((core_shape[1],), dtype=np.float32)
+    scale[mm_offset_x:mm_offset_x+scaler_params['gph_node'][0].kernel.shape[0]] = scale_to_map
 
     m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
     int_scale = quant.vconvert_to_fixed_point_int(m0,16)
     scaler_data = scaler_params['output_zp'] * (2**20) + int_scale * (2**4) + (-shift)
-    scaler_data = scaler_data[::-1]
+    scaler_data = scaler_data
 
     # Prepare biases
     biases_to_map = scaler_params['gph_node'][0].biases
