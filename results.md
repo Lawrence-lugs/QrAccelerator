@@ -3,14 +3,14 @@
 ## Bipolar Scatter Plots
 |   | RTL | AMS |
 |---|-----|-----|
-| QR Accelerator | ![alt text](images/qr_acc_bipolar.svg) | ![alt text](images/qr_acc_ams_bipolar.svg) |
-| Sequential Accelerator | ![alt text](images/seq_acc_bipolar.svg) | ![alt text](images/seq_acc_ams_bipolar.svg) |
+| QR Accelerator | ![alt text](images/png/qr_acc_bipolar.png) | ![alt text](images/png/qr_acc_ams_bipolar.png) |
+| Sequential Accelerator | ![alt text](images/png/seq_acc_bipolar.png) | ![alt text](images/png/seq_acc_ams_bipolar.png) |
 
 ## Binary Scatter Plots
 |   | RTL | AMS |
 |---|-----|-----|
-| QR Accelerator | ![alt text](images/qr_acc_binary.svg) | ![alt text](images/qr_acc_ams_binary.svg) |
-| Sequential Accelerator | ![alt text](images/seq_acc_binary.svg) | ![alt text](images/seq_acc_ams_binary.svg) |
+| QR Accelerator | ![alt text](images/png/qr_acc_binary.png) | ![alt text](images/png/qr_acc_ams_binary.png) |
+| Sequential Accelerator | ![alt text](images/png/seq_acc_binary.png) | ![alt text](images/png/seq_acc_ams_binary.png) |
 
 
 ## QRAccLinearConv Scatter Plots

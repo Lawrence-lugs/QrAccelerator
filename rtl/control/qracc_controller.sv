@@ -93,6 +93,9 @@ logic feature_loader_valid_out_qq;
 logic [31:0] feature_loader_addr_qq;
 logic last_window;
 logic [$clog2(numBanks)-1:0] bank_select_code;
+logic write_queue_done;
+logic int_write_queue_valid_q;
+logic feature_loader_wr_en_d;
 
 // Multicycle Activation Read
 logic [9:0] read_set;
@@ -104,20 +107,8 @@ logic [31:0] scaler_ptr;
 logic [31:0] weight_ptr;
 
 ///////////////////
-// Modules
-///////////////////
-
-///////////////////
 // Logic
 ///////////////////
-
-// Control signals decode
-// parameter S_IDLE = 4'b0000;
-// parameter S_LOADACTS = 4'b0001;
-// parameter S_LOADSCALER = 4'b0010;
-// parameter S_LOADWEIGHTS = 4'b0011;
-// parameter S_COMPUTE = 4'b0100;
-// parameter S_READACTS = 4'b0101;
 
 assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 
@@ -142,7 +133,16 @@ always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
     end
 end
 
-logic feature_loader_wr_en_d;
+// Tracking queue emptiness
+always_ff @( posedge clk or negedge nrst ) begin
+    if (!nrst) begin
+        write_queue_done <= 0;
+        int_write_queue_valid_q <= int_write_queue_valid;
+    end else begin
+        int_write_queue_valid_q <= int_write_queue_valid;
+        write_queue_done <= ~int_write_queue_valid && int_write_queue_valid_q; // 1->0 transition
+    end
+end
 
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
@@ -250,7 +250,7 @@ always_comb begin : stateDecode
             end
         end
         S_COMPUTE: begin
-            if (~feature_loader_valid_out_qq && qracc_ready && int_write_queue_valid && last_window) begin
+            if (~feature_loader_valid_out_qq && qracc_ready && write_queue_done && last_window) begin
                 state_d = S_READACTS;
             end else begin
                 state_d = S_COMPUTE;
@@ -266,6 +266,8 @@ always_comb begin : stateDecode
         default: state_d = state_q;
     endcase
 end
+
+
 
 always_ff @( posedge clk or negedge nrst ) begin
     if (!nrst) begin

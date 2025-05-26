@@ -92,6 +92,7 @@ def write_parameter_definition_file(parameter_list,filepath):
     ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
     ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0),           # wide matrix, short vertical
     ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
+    ('fc_pw_long',      (1,40,16,16),   (32,40,1,1),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
 ])
 def test_qr_acc_top_single_load(
     col_symmetric,
