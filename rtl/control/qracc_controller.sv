@@ -250,7 +250,7 @@ always_comb begin : stateDecode
             end
         end
         S_COMPUTE: begin
-            if (~feature_loader_valid_out_qq && qracc_ready && int_write_queue_valid) begin
+            if (~feature_loader_valid_out_qq && qracc_ready && int_write_queue_valid && last_window) begin
                 state_d = S_READACTS;
             end else begin
                 state_d = S_COMPUTE;
