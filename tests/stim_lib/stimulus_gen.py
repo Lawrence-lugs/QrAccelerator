@@ -231,9 +231,12 @@ def sample_onnx_qlinearconv(
 
     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
-def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0):
+def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0, randomize = False):
 
-    matrix_map = np.zeros(core_shape, dtype=int)
+    if randomize:
+        matrix_map = np.random.randint(0, 2, core_shape, dtype=int)
+    else:
+        matrix_map = np.zeros(core_shape, dtype=int)
     matrix_map[y_offset:y_offset+matrix.shape[0], x_offset:x_offset+matrix.shape[1]] = matrix
 
     return matrix_map
@@ -244,6 +247,27 @@ def mapped_matrix_to_bank_writes(matrix_map, num_bank_cols = 32):
     write_array = quant.array_bin_to_int(matrix_map_banked.T[::-1].T)
 
     return write_array
+
+def generate_stimuli_from_packed_cgraph(
+    cgraph: cgraph.Cgraph,
+    cnode_index,
+    savepath,
+    core_shape
+):
+
+    res_dict = {
+        'result': t_res,
+        'toeplitz': t_toeplitz,
+        'ifmap': ifmap_channel_packed_ints,
+        'ifmap_ints': ifmap_channel_minor,
+        'small_matrix': t_matrix,
+        'matrix': write_array,
+        'weights_np': matrix_map, 
+        'scaler_data': scaler_data,
+        'biases': biases,
+    }
+
+    return res_dict
 
 def generate_top_inputs(
     savepath,

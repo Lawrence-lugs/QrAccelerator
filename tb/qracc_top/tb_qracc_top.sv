@@ -243,18 +243,18 @@ static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/q
 static string tb_name = "tb_qracc_top";
 
 // Waveform dumping
-`ifdef SYNOPSYS
-initial begin
-    $vcdplusfile({tb_name,".vpd"});
-    $vcdpluson();
-    $vcdplusmemon();
-    $dumpvars(0);
-end
-`endif
-initial begin
-    $dumpfile({tb_name,".vcd"});
-    $dumpvars(0);
-end
+// `ifdef SYNOPSYS
+// initial begin
+//     $vcdplusfile({tb_name,".vpd"});
+//     $vcdpluson();
+//     $vcdplusmemon();
+//     $dumpvars(0);
+// end
+// `endif
+// initial begin
+//     $dumpfile({tb_name,".vcd"});
+//     $dumpvars(0);
+// end
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
