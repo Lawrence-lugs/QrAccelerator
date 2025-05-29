@@ -191,6 +191,32 @@ def test_qr_acc_top_single_load(
         "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }
 
+    # Write config file
+    config_dict = {
+        "n_input_bits_cfg": ifmap_bits,
+        "n_output_bits_cfg": ofmap_bits,
+        "unsigned_acts": 1,
+        "binary_cfg": 1,
+        "adc_ref_range_shifts": int(adc_ref_range_shifts),
+        "filter_size_y": kernel_shape[3],
+        "filter_size_x": kernel_shape[2],
+        "input_fmap_size": np.prod(ifmap_shape_with_padding),
+        "output_fmap_size": np.prod(ofmap_shape),
+        "input_fmap_dimx": ifmap_shape_with_padding[2],
+        "input_fmap_dimy": ifmap_shape_with_padding[3],
+        "output_fmap_dimx": ofmap_dimx,
+        "output_fmap_dimy": ofmap_dimy,
+        "stride_x": stride,
+        "stride_y": stride,
+        "num_input_channels": kernel_shape[1],
+        "num_output_channels": kernel_shape[0],
+        "mapped_matrix_offset_x": mm_offset_x,
+        "mapped_matrix_offset_y": mm_offset_y
+    }
+    with open(stimulus_output_path + '/config.txt', 'w') as f:
+        for key, value in config_dict.items():
+            f.write(f'{key}: {value}\n')
+
     print(f'Parameter list: {parameter_list}')
 
     write_parameter_definition_file(parameter_list,param_file_path)

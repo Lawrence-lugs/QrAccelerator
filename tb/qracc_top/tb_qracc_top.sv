@@ -273,7 +273,7 @@ end
 // FILE THINGS
 /////////////
 
-localparam numFiles = 14;
+localparam numFiles = 15;
 string files[numFiles] = {
     "flat_output",
     "flat_output_shape",
@@ -288,7 +288,8 @@ string files[numFiles] = {
     "scaler_data_shape",
     "scaler_data",
     "biases",
-    "biases_shape"
+    "biases_shape",
+    "config"
 };
 int file_descriptors[numFiles];
 
@@ -414,6 +415,35 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
 
+task setup_config_from_file(int fd);
+
+    // Read the config file
+    $fscanf(fd,"n_input_bits_cfg: %d\n",cfg.n_input_bits_cfg);
+    $fscanf(fd,"n_output_bits_cfg: %d\n",cfg.n_output_bits_cfg);
+    $fscanf(fd,"unsigned_acts: %d\n",cfg.unsigned_acts);
+    $fscanf(fd,"binary_cfg: %d\n",cfg.binary_cfg);
+    $fscanf(fd,"adc_ref_range_shifts: %d\n",cfg.adc_ref_range_shifts);
+
+    $fscanf(fd,"filter_size_y: %d\n",cfg.filter_size_y);
+    $fscanf(fd,"filter_size_x: %d\n",cfg.filter_size_x);
+    $fscanf(fd,"input_fmap_size: %d\n",cfg.input_fmap_size);
+    $fscanf(fd,"output_fmap_size: %d\n",cfg.output_fmap_size);
+    $fscanf(fd,"input_fmap_dimx: %d\n",cfg.input_fmap_dimx);
+    $fscanf(fd,"input_fmap_dimy: %d\n",cfg.input_fmap_dimy);
+    $fscanf(fd,"output_fmap_dimx: %d\n",cfg.output_fmap_dimx);
+    $fscanf(fd,"output_fmap_dimy: %d\n",cfg.output_fmap_dimy);
+
+    $fscanf(fd,"stride_x: %d\n",cfg.stride_x);
+    $fscanf(fd,"stride_y: %d\n",cfg.stride_y);
+
+    $fscanf(fd,"num_input_channels: %d\n",cfg.num_input_channels);
+    $fscanf(fd,"num_output_channels: %d\n",cfg.num_output_channels);
+
+    $fscanf(fd,"mapped_matrix_offset_x: %d\n",cfg.mapped_matrix_offset_x);
+    $fscanf(fd,"mapped_matrix_offset_y: %d\n",cfg.mapped_matrix_offset_y);
+
+endtask
+
 task setup_config();
     cfg.n_input_bits_cfg = `QRACC_INPUT_BITS;
     cfg.n_output_bits_cfg = `QRACC_OUTPUT_BITS;
@@ -455,7 +485,7 @@ task start_sim();
     csr_main_busy = 0;
     csr_main_clear = 0;
     csr_main_inst_write_mode = 0;
-    csr_main_trigger = 0;
+    csr_main_trigger = TRIGGER_IDLE;
 
     bus.wen = 0;
     bus.valid = 0;
@@ -765,15 +795,11 @@ initial begin
     scaler_data = new("scaler_data");
     biases = new("biases");
 
-    csr_main_trigger = TRIGGER_IDLE;
-
-
     start_sim();
     
-    setup_config();
+    setup_config_from_file(input_files("config"));
 
     #(CLK_PERIOD*2);
-    csr_main_trigger = TRIGGER_LOADWEIGHTS_PERIPHS;
 
     do_trigger_loadweights_periphs();
     check_weights();
