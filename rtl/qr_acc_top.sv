@@ -59,9 +59,9 @@ module qr_acc_top #(
     // CSR signals for testing for now
     input qracc_config_t cfg,
     input csr_main_clear,
-    input csr_main_start,
     input csr_main_busy,
-    input csr_main_inst_write_mode
+    input csr_main_inst_write_mode, // TODO: Remove?
+    input qracc_trigger_t csr_main_trigger
 );
 
 
@@ -119,7 +119,7 @@ qracc_controller #(
 
     .cfg                        (cfg),
     .csr_main_clear             (csr_main_clear),
-    .csr_main_start             (csr_main_start),
+    .csr_main_trigger           (csr_main_trigger),
     .csr_main_busy              (csr_main_busy),
     .csr_main_inst_write_mode   (csr_main_inst_write_mode),
 

@@ -21,6 +21,16 @@ package qracc_pkg;
     parameter outputBits = `QRACC_OUTPUT_BITS;
     parameter inputBits = `QRACC_INPUT_BITS;
 
+    // Trigger Values
+    typedef enum logic [2:0] {
+        TRIGGER_IDLE,
+        TRIGGER_LOAD_ACTIVATION,
+        TRIGGER_LOADWEIGHTS_PERIPHS,
+        TRIGGER_COMPUTE_ANALOG,
+        TRIGGER_COMPUTE_DIGITAL,
+        TRIGGER_READ_ACTIVATION
+    } qracc_trigger_t;
+
     // Control signals for QRAcc
     typedef struct packed {
         // QRAcc
@@ -72,6 +82,8 @@ package qracc_pkg;
 
         logic [9:0] mapped_matrix_offset_x;
         logic [9:0] mapped_matrix_offset_y;
+
+        logic [3:0] mode;
 
     } qracc_config_t;
 

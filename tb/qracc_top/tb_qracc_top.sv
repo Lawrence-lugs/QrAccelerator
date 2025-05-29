@@ -64,7 +64,7 @@ logic [numBanks-1:0] bank_select;
 
 qracc_config_t cfg;
 logic csr_main_clear;
-logic csr_main_start;
+qracc_trigger_t csr_main_trigger;
 logic csr_main_busy;
 logic csr_main_inst_write_mode;
 
@@ -189,7 +189,7 @@ qr_acc_top #(
     // CSR signals for testing for now
     .cfg                            (cfg),
     .csr_main_clear                 (csr_main_clear),
-    .csr_main_start                 (csr_main_start),
+    .csr_main_trigger               (csr_main_trigger),
     .csr_main_busy                  (csr_main_busy),
     .csr_main_inst_write_mode       (csr_main_inst_write_mode)
 
@@ -455,7 +455,7 @@ task start_sim();
     csr_main_busy = 0;
     csr_main_clear = 0;
     csr_main_inst_write_mode = 0;
-    csr_main_start = 0;
+    csr_main_trigger = 0;
 
     bus.wen = 0;
     bus.valid = 0;
@@ -573,11 +573,11 @@ task track_toeplitz();
     tb_state = S_COMPUTE;
     errflag = 0;
     trow = 0;
-    tplitz_offset = cfg.mapped_matrix_offset_y;
+    tplitz_offset = {22'b0,cfg.mapped_matrix_offset_y};
     tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
 
     // Track only during compute state
-    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE) begin
+    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE_ANALOG) begin
 
         if (trow >= MAX_TROWS) begin
             $display("ERROR: Reached maximum number of rows (%d). Stopping tracking.", MAX_TROWS);
@@ -714,6 +714,8 @@ endtask
 
 task export_ofmap();
 
+    // Magically export of the ofmap without actual readout
+
     int a;
     int fd;
     $display("Exporting ofmap at time %t", $time);
@@ -723,13 +725,36 @@ task export_ofmap();
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
         if (cfg.unsigned_acts) begin
-            a = u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i];
+            a = u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ifmap_start_addr + i];
         end else begin
-            a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i]);
+            a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ifmap_start_addr + i]);
         end
         $fwrite(fd,"%d\n",a);
     end
 
+endtask
+
+task do_trigger_loadweights_periphs();
+    csr_main_trigger = TRIGGER_LOADWEIGHTS_PERIPHS;
+    #(CLK_PERIOD);
+    csr_main_trigger = TRIGGER_IDLE;
+    load_weights();
+    load_scales();
+    load_biases();
+endtask
+
+task do_trigger_loadacts();
+    csr_main_trigger = TRIGGER_LOAD_ACTIVATION;
+    #(CLK_PERIOD);
+    csr_main_trigger = TRIGGER_IDLE;
+    load_acts();
+endtask
+
+task do_trigger_compute_analog();
+    csr_main_trigger = TRIGGER_COMPUTE_ANALOG;
+    #(CLK_PERIOD);
+    csr_main_trigger = TRIGGER_IDLE;
+    track_toeplitz();
 endtask
 
 initial begin
@@ -740,8 +765,7 @@ initial begin
     scaler_data = new("scaler_data");
     biases = new("biases");
 
-    // Setup monitors
-    // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
+    csr_main_trigger = TRIGGER_IDLE;
 
 
     start_sim();
@@ -749,21 +773,23 @@ initial begin
     setup_config();
 
     #(CLK_PERIOD*2);
-    csr_main_start = 1;
+    csr_main_trigger = TRIGGER_LOADWEIGHTS_PERIPHS;
 
-    // weight_matrix.print_array();
-
-    load_weights();
-    load_acts();
-    load_scales();
-    load_biases();
+    do_trigger_loadweights_periphs();
     check_weights();
-    check_acts();
     check_scales();
 
-    #(CLK_PERIOD*2);
+    #(CLK_PERIOD*10);
 
-    track_toeplitz();
+    do_trigger_loadacts();
+    check_acts();
+
+    #(CLK_PERIOD*10);
+
+    do_trigger_compute_analog();
+
+    #(CLK_PERIOD*10);
+
     export_ofmap();
 
     #(CLK_PERIOD*1000);

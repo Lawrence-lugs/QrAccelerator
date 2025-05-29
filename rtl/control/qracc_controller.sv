@@ -35,7 +35,7 @@ module qracc_controller #(
     // Signals from csr
     input qracc_config_t cfg,
     input csr_main_clear,
-    input csr_main_start,
+    input qracc_trigger_t csr_main_trigger,
     input csr_main_busy,
     input csr_main_inst_write_mode,
 
@@ -117,9 +117,10 @@ typedef enum logic [3:0] {
     S_LOADACTS = 1,
     S_LOADSCALER = 2,
     S_LOADWEIGHTS = 3,
-    S_COMPUTE = 4,
+    S_COMPUTE_ANALOG = 4,
     S_READACTS = 5,
-    S_LOADBIAS = 6
+    S_LOADBIAS = 6,
+    S_COMPUTE_DIGITAL = 7
 } state_t;
 
 state_t state_q;
@@ -178,9 +179,9 @@ always_comb begin : ctrlDecode
         S_LOADBIAS: begin
             ctrl_o.output_bias_w_en = data_write;
             bus_i.ready = 1;
-            // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE) ? 1 : 0;
+            // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE_ANALOG) ? 1 : 0;
         end
-        S_COMPUTE: begin
+        S_COMPUTE_ANALOG: begin
                 
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y * cfg.stride_y + {28'b0, fy_ctr})
@@ -213,24 +214,28 @@ end
 always_comb begin : stateDecode
     case(state_q)
         S_IDLE: begin
-            if (csr_main_start) begin
-                state_d = S_LOADWEIGHTS;
-            end else begin
-                state_d = S_IDLE;
-            end
+            case(csr_main_trigger)
+                TRIGGER_IDLE: state_d = S_IDLE;
+                TRIGGER_LOAD_ACTIVATION: state_d = S_LOADACTS;
+                TRIGGER_LOADWEIGHTS_PERIPHS: state_d = S_LOADWEIGHTS;
+                TRIGGER_COMPUTE_ANALOG: state_d = S_COMPUTE_ANALOG;
+                TRIGGER_COMPUTE_DIGITAL: state_d = S_COMPUTE_DIGITAL;
+                TRIGGER_READ_ACTIVATION: state_d = S_READACTS;
+                default: state_d = S_IDLE;
+            endcase
         end
         S_LOADWEIGHTS: begin
             if (weight_ptr < numRows*numBanks) begin
                 state_d = S_LOADWEIGHTS;
             end else begin
-                state_d = S_LOADACTS;
+                state_d = S_LOADSCALER;
             end
         end
         S_LOADACTS: begin
             if (act_wr_ptr + n_elements_per_word < cfg.input_fmap_size) begin
                 state_d = S_LOADACTS;
             end else begin
-                state_d = S_LOADSCALER;
+                state_d = S_IDLE;
             end
         end
         S_LOADSCALER: begin
@@ -246,14 +251,14 @@ always_comb begin : stateDecode
             if (scaler_ptr < numScalers-1) begin
                 state_d = S_LOADBIAS;
             end else begin
-                state_d = S_COMPUTE;
+                state_d = S_IDLE;
             end
         end
-        S_COMPUTE: begin
+        S_COMPUTE_ANALOG: begin
             if (~feature_loader_valid_out_qq && qracc_ready && write_queue_done && last_window) begin
-                state_d = S_READACTS;
+                state_d = S_IDLE;
             end else begin
-                state_d = S_COMPUTE;
+                state_d = S_COMPUTE_ANALOG;
             end
         end
         S_READACTS: begin
@@ -267,8 +272,6 @@ always_comb begin : stateDecode
     endcase
 end
 
-
-
 always_ff @( posedge clk or negedge nrst ) begin
     if (!nrst) begin
         feature_loader_valid_out_qq <= 0;
@@ -281,7 +284,7 @@ always_ff @( posedge clk or negedge nrst ) begin
         end else begin
             feature_loader_valid_out_qq <= window_data_valid_q;
             feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
-                                    + read_set*internalInterfaceElements + cfg.mapped_matrix_offset_y; // multicycle read if interface width < ifmap window row size
+                                    + read_set*internalInterfaceElements + {22'b0, cfg.mapped_matrix_offset_y}; // multicycle read if interface width < ifmap window row size
         end
     end
 end
@@ -307,7 +310,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             read_set <= 0;
         end else
         
-        if (state_q == S_COMPUTE) begin
+        if (state_q == S_COMPUTE_ANALOG) begin
 
             if (qracc_output_valid) begin
                 ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
@@ -402,6 +405,10 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             act_rd_ptr <= 0;
         end else
 
+        if (state_q == S_IDLE) begin
+            if (state_d == S_LOADACTS) ifmap_start_addr <= 0;
+        end
+
         if (state_q == S_LOADACTS) begin
             
             if (state_d != S_LOADACTS) begin 
@@ -424,10 +431,11 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             end
         end
 
-        if (state_q == S_COMPUTE) begin
+        if (state_q == S_COMPUTE_ANALOG) begin
 
-            if (state_d != S_COMPUTE) begin
-                ifmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr;
+            if (state_d != S_COMPUTE_ANALOG) begin
+                ifmap_start_addr <= ofmap_start_addr;
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
             end
         end
 
