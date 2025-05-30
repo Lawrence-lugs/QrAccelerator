@@ -60,31 +60,27 @@ package qracc_pkg;
     typedef struct packed {        
 
         logic [3:0] n_input_bits_cfg;  
-        logic [3:0] n_output_bits_cfg; // we don't use this yet (it's a parameter atm)
+        logic [3:0] n_output_bits_cfg;
 
-        logic binary_cfg; // binary or bipolar mode, binary if 1
-        logic unsigned_acts; // unsigned or signed acts
-        logic [2:0] adc_ref_range_shifts; // for analog IMC
+        logic binary_cfg;                // 0 - binary or bipolar mode, binary if 1
+        logic unsigned_acts;             // 1 - unsigned or signed acts
+        logic [2:0] adc_ref_range_shifts;// 4:2
+        logic [3:0] filter_size_y;       // 7:4
+        logic [3:0] filter_size_x;       // 11:8
+        logic [3:0] stride_x;            // 15:12
+        logic [3:0] stride_y;            // 19:16
 
-        logic [3:0] filter_size_y;
-        logic [3:0] filter_size_x;
-        logic [31:0] input_fmap_size;  // H * W * C
-        logic [31:0] output_fmap_size; // in number of elements
-        logic [31:0] input_fmap_dimx;  // W
-        logic [31:0] input_fmap_dimy;  // H
+        logic [31:0] input_fmap_size;    // H * W * C
+        logic [31:0] output_fmap_size;   // in number of elements
+        logic [31:0] input_fmap_dimx;    // W
+        logic [31:0] input_fmap_dimy;    // H
         logic [9:0] num_input_channels;
         logic [31:0] output_fmap_dimx; 
         logic [31:0] output_fmap_dimy;
         logic [9:0] num_output_channels;
 
-        logic [3:0] stride_x;
-        logic [3:0] stride_y;
-
         logic [9:0] mapped_matrix_offset_x;
         logic [9:0] mapped_matrix_offset_y;
-
-        logic [3:0] mode;
-
     } qracc_config_t;
 
     typedef struct {

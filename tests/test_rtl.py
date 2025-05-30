@@ -86,6 +86,7 @@ def write_parameter_definition_file(parameter_list,filepath):
     ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0),           # single-bank test
     ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0),           # offset 
     ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38),           # offset 
+    ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),     (256,256),  1,          1,      69,         38),           # offset 
     ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0),           # requires multistage write
     ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           # fits in one bank, multibank
     ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           # max size matrix for 3x3 kernel

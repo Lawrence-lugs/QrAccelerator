@@ -36,8 +36,8 @@ module qracc_controller #(
     input qracc_config_t cfg,
     input csr_main_clear,
     input qracc_trigger_t csr_main_trigger,
-    input csr_main_busy,
     input csr_main_inst_write_mode,
+    output logic csr_main_busy,
 
     // Debugging
     output logic [31:0] debug_pc_o
@@ -155,6 +155,7 @@ always_comb begin : ctrlDecode
     bus_i.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
+    csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;

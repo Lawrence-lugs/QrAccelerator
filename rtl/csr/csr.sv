@@ -1,18 +1,20 @@
 // CSR Implementation inspired by sir Ry
 
+import qracc_pkg::*;
 
 module csr #(
-    parameter csrWidth = 32,
-    parameter numCsr = 4
+    parameter csrWidth = 32
 ) (
     input clk, nrst,
 
     qracc_ctrl_interface periph_i,
-    output qracc_config_t qracc_cfg_o,
-    
-    // Trigger Signals
-    input acc_done_i,
-    output start_o
+
+    // CSR signals
+    output qracc_config_t cfg_o,
+    output csr_main_clear,
+    output qracc_trigger_t csr_main_trigger,
+    input csr_main_busy,
+    output csr_main_inst_write_mode,
 );
 
 // Parameters
