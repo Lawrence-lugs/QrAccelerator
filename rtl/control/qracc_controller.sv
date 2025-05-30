@@ -58,6 +58,12 @@ localparam bankCodeBits = numBanks > 1 ? $clog2(numBanks) : 1;
 // Signals
 ///////////////////
 
+// Derived Layer Parameters
+logic [31:0] input_fmap_size;
+assign input_fmap_size = cfg.input_fmap_dimx * cfg.input_fmap_dimy * cfg.num_input_channels;
+logic [31:0] output_fmap_size;
+assign output_fmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
+
 // Handshake Signals
 logic periph_handshake;
 logic periph_read;
@@ -233,7 +239,7 @@ always_comb begin : stateDecode
             end
         end
         S_LOADACTS: begin
-            if (act_wr_ptr + n_elements_per_word < cfg.input_fmap_size) begin
+            if (act_wr_ptr + n_elements_per_word < input_fmap_size) begin
                 state_d = S_LOADACTS;
             end else begin
                 state_d = S_IDLE;
@@ -263,7 +269,7 @@ always_comb begin : stateDecode
             end
         end
         S_READACTS: begin
-            if (act_rd_ptr == cfg.output_fmap_size - 1) begin
+            if (act_rd_ptr == output_fmap_size - 1) begin
                 state_d = S_IDLE;
             end else begin
                 state_d = S_READACTS;
@@ -285,7 +291,8 @@ always_ff @( posedge clk or negedge nrst ) begin
         end else begin
             feature_loader_valid_out_qq <= window_data_valid_q;
             feature_loader_addr_qq <= fy_ctr*cfg.num_input_channels*cfg.filter_size_x
-                                    + read_set*internalInterfaceElements + {22'b0, cfg.mapped_matrix_offset_y}; // multicycle read if interface width < ifmap window row size
+                                    + read_set*internalInterfaceElements 
+                                    + {16'b0, cfg.mapped_matrix_offset_y}; // multicycle read if interface width < ifmap window row size
         end
     end
 end
@@ -314,7 +321,7 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         if (state_q == S_COMPUTE_ANALOG) begin
 
             if (qracc_output_valid) begin
-                ofmap_offset_ptr <=  ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
+                ofmap_offset_ptr <=  ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
             end
 
             if (last_window) begin
@@ -343,18 +350,18 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
                 end else begin
                     fy_ctr <= 0;
 
-                    if (opix_pos_x == cfg.output_fmap_dimx - 1 && 
-                        opix_pos_y == cfg.output_fmap_dimy - 1 &&
+                    if (opix_pos_x == 32'(cfg.output_fmap_dimx) - 1 && 
+                        opix_pos_y == 32'(cfg.output_fmap_dimy) - 1 &&
                         fy_ctr == cfg.filter_size_y - 1 && 
                         read_set == num_read_sets - 1)
                         last_window <= 1;
                     window_data_valid_q <= 1;
 
-                    if (opix_pos_x < cfg.output_fmap_dimx - 1) begin
                         opix_pos_x <= opix_pos_x + 1;
+                    if (opix_pos_x < 32'(cfg.output_fmap_dimx) - 1) begin
                     end else begin
                         opix_pos_x <= 0;
-                        if (opix_pos_y < cfg.output_fmap_dimy - 1) begin
+                        if (opix_pos_y < 32'(cfg.output_fmap_dimy) - 1) begin
                             opix_pos_y <= opix_pos_y + 1;
                         end else begin
                             opix_pos_y <= 0;
@@ -436,7 +443,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
             if (state_d != S_COMPUTE_ANALOG) begin
                 ifmap_start_addr <= ofmap_start_addr;
-                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 22'b0 , cfg.num_output_channels};
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
             end
         end
 

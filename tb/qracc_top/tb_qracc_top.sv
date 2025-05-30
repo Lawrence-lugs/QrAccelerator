@@ -426,8 +426,6 @@ task setup_config_from_file(int fd);
 
     $fscanf(fd,"filter_size_y: %d\n",cfg.filter_size_y);
     $fscanf(fd,"filter_size_x: %d\n",cfg.filter_size_x);
-    $fscanf(fd,"input_fmap_size: %d\n",cfg.input_fmap_size);
-    $fscanf(fd,"output_fmap_size: %d\n",cfg.output_fmap_size);
     $fscanf(fd,"input_fmap_dimx: %d\n",cfg.input_fmap_dimx);
     $fscanf(fd,"input_fmap_dimy: %d\n",cfg.input_fmap_dimy);
     $fscanf(fd,"output_fmap_dimx: %d\n",cfg.output_fmap_dimx);
@@ -454,8 +452,6 @@ task setup_config();
     
     cfg.filter_size_y = `FILTER_SIZE_Y;
     cfg.filter_size_x = `FILTER_SIZE_X;
-    cfg.input_fmap_size = `IFMAP_SIZE;
-    cfg.output_fmap_size = `OFMAP_SIZE;
     cfg.input_fmap_dimx = `IFMAP_DIMX;
     cfg.input_fmap_dimy = `IFMAP_DIMY;
     cfg.output_fmap_dimx = `OFMAP_DIMX;
@@ -469,6 +465,33 @@ task setup_config();
 
     cfg.mapped_matrix_offset_x = `MAPPED_MATRIX_OFFSET_X;
     cfg.mapped_matrix_offset_y = `MAPPED_MATRIX_OFFSET_Y;
+endtask
+
+task display_config();
+
+    $display("=== CONFIGURATION ===");
+    $display("n_input_bits_cfg: %d", cfg.n_input_bits_cfg);
+    $display("n_output_bits_cfg: %d", cfg.n_output_bits_cfg);
+    $display("unsigned_acts: %d", cfg.unsigned_acts);
+    $display("binary_cfg: %d", cfg.binary_cfg);
+    $display("adc_ref_range_shifts: %d", cfg.adc_ref_range_shifts);
+
+    $display("filter_size_y: %d", cfg.filter_size_y);
+    $display("filter_size_x: %d", cfg.filter_size_x);
+    $display("input_fmap_dimx: %d", cfg.input_fmap_dimx);
+    $display("input_fmap_dimy: %d", cfg.input_fmap_dimy);
+    $display("output_fmap_dimx: %d", cfg.output_fmap_dimx);
+    $display("output_fmap_dimy: %d", cfg.output_fmap_dimy);
+
+    $display("stride_x: %d", cfg.stride_x);
+    $display("stride_y: %d", cfg.stride_y);
+
+    $display("num_input_channels: %d", cfg.num_input_channels);
+    $display("num_output_channels: %d", cfg.num_output_channels);
+
+    $display("mapped_matrix_offset_x: %d", cfg.mapped_matrix_offset_x);
+    $display("mapped_matrix_offset_y: %d", cfg.mapped_matrix_offset_y);
+
 endtask
 
 task start_sim();
@@ -603,7 +626,7 @@ task track_toeplitz();
     tb_state = S_COMPUTE;
     errflag = 0;
     trow = 0;
-    tplitz_offset = {22'b0,cfg.mapped_matrix_offset_y};
+    tplitz_offset = {16'b0,cfg.mapped_matrix_offset_y};
     tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
 
     // Track only during compute state
@@ -748,10 +771,14 @@ task export_ofmap();
 
     int a;
     int fd;
+    int ofmap_size;
+
+    ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
+
     $display("Exporting ofmap at time %t", $time);
 
     fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
-    for(i=0;i<cfg.output_fmap_size;i++) begin
+    for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
         if (cfg.unsigned_acts) begin
@@ -807,10 +834,15 @@ initial begin
 
     #(CLK_PERIOD*10);
 
+    display_config();
+    $display("ifmap_size: %d vs %d", u_qr_acc_top.u_qracc_controller.input_fmap_size, `IFMAP_SIZE);
+    $display("ofmap_size: %d vs %d", u_qr_acc_top.u_qracc_controller.output_fmap_size, `OFMAP_SIZE);
+
     do_trigger_loadacts();
     check_acts();
 
     #(CLK_PERIOD*10);
+
 
     do_trigger_compute_analog();
 
