@@ -18,7 +18,6 @@ module qracc_controller #(
 ) (
     input clk, nrst,
 
-    qracc_ctrl_interface periph_i,
     qracc_data_interface bus_i,
 
     // Signals to the people
@@ -38,6 +37,7 @@ module qracc_controller #(
     input qracc_trigger_t csr_main_trigger,
     input csr_main_inst_write_mode,
     output logic csr_main_busy,
+    output logic [3:0] csr_main_internal_state,
 
     // Debugging
     output logic [31:0] debug_pc_o
@@ -46,10 +46,6 @@ module qracc_controller #(
 ///////////////////
 // Parameters
 ///////////////////
-
-parameter CSR_REGISTER_MAIN = 0;
-parameter CSR_REGISTER_CONFIG = 1;
-parameter CSR_REGISTER_STATUS = 2;
 
 localparam addrBits = $clog2(numRows);
 localparam bankCodeBits = numBanks > 1 ? $clog2(numBanks) : 1;
@@ -64,13 +60,7 @@ assign input_fmap_size = cfg.input_fmap_dimx * cfg.input_fmap_dimy * cfg.num_inp
 logic [31:0] output_fmap_size;
 assign output_fmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
 
-// Handshake Signals
-logic periph_handshake;
-logic periph_read;
-logic periph_write;
-assign periph_handshake = periph_i.valid && periph_i.ready;
-assign periph_read      = periph_handshake && !periph_i.wen;
-assign periph_write     = periph_handshake && periph_i.wen;
+// Handshake Signalsl
 logic data_handshake;
 logic data_read;
 logic data_write;
@@ -80,6 +70,7 @@ assign data_write     = data_handshake && bus_i.wen;
 
 // Configuration Calculation signals
 logic [31:0] n_elements_per_word;
+assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 
 // Ping pong tracking signals
 logic [31:0] ofmap_start_addr;
@@ -104,8 +95,8 @@ logic int_write_queue_valid_q;
 logic feature_loader_wr_en_d;
 
 // Multicycle Activation Read
-logic [9:0] read_set;
-logic [9:0] num_read_sets;
+logic [31:0] read_set;
+logic [31:0] num_read_sets;
 assign num_read_sets = ( (cfg.num_input_channels*cfg.filter_size_x - 1) / internalInterfaceElements ) + 1;
 
 // Write tracking signals
@@ -116,7 +107,6 @@ logic [31:0] weight_ptr;
 // Logic
 ///////////////////
 
-assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 
 typedef enum logic [3:0] {
     S_IDLE = 0,
@@ -131,6 +121,7 @@ typedef enum logic [3:0] {
 
 state_t state_q;
 state_t state_d;
+assign csr_main_internal_state = state_q;
 
 always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
     if (!nrst) begin

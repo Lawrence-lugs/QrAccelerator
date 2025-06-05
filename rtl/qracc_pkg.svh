@@ -59,25 +59,40 @@ package qracc_pkg;
     // Config that changes per-layer
     typedef struct packed {        
 
+        // CSR 0: Main
+        // 2:0 - csr_main_trigger
+        // 3 - csr_main_clear
+        // 4 - csr_main_busy = state_q == S_IDLE
+        // 5 - csr_main_inst_write_mode = 1 if writing instructions
+        // 7:5 - free
+        // 11:8 - csr_main_internal_state = state_q of qracc_controller
 
-        logic binary_cfg;                // 0 - binary or bipolar mode, binary if 1
-        logic unsigned_acts;             // 1 - unsigned or signed acts
-        logic [3:0] adc_ref_range_shifts;// 4:2
-        logic [3:0] filter_size_y;       // 7:4
-        logic [3:0] filter_size_x;       // 11:8
-        logic [3:0] stride_x;            // 15:12
-        logic [3:0] stride_y;            // 19:16
-        logic [3:0] n_input_bits_cfg;    // 23:20 
-        logic [3:0] n_output_bits_cfg;   // 27:24
+        // CSR 1: Config
+        logic binary_cfg;                       // 0 - binary or bipolar mode, binary if 1
+        logic unsigned_acts;                    // 1 - unsigned or signed acts
+        logic [3:0] adc_ref_range_shifts;       // 4:2
+        logic [3:0] filter_size_y;              // 7:4
+        logic [3:0] filter_size_x;              // 11:8
+        logic [3:0] stride_x;                   // 15:12
+        logic [3:0] stride_y;                   // 19:16
+        logic [3:0] n_input_bits_cfg;           // 23:20 
+        logic [3:0] n_output_bits_cfg;          // 27:24
 
-        logic [15:0] input_fmap_dimx;    // W
-        logic [15:0] input_fmap_dimy;    // H
-        logic [15:0] output_fmap_dimx; 
-        logic [15:0] output_fmap_dimy;
-        logic [15:0] num_input_channels;
-        logic [15:0] num_output_channels;
-        logic [15:0] mapped_matrix_offset_x;
-        logic [15:0] mapped_matrix_offset_y;
+        // CSR 2: Ifmap Dims
+        logic [15:0] input_fmap_dimx;           // 15:0
+        logic [15:0] input_fmap_dimy;           // 31:16
+
+        // CSR 3: Ofmap Dims
+        logic [15:0] output_fmap_dimx;          // 15:0
+        logic [15:0] output_fmap_dimy;          // 31:16
+
+        // CSR 4: Channels
+        logic [15:0] num_input_channels;        // 15:0
+        logic [15:0] num_output_channels;       // 31:16
+
+        // CSR 5: Mapped Matrix Offsets
+        logic [15:0] mapped_matrix_offset_x;    // 15:0
+        logic [15:0] mapped_matrix_offset_y;    // 31:16
     } qracc_config_t;
 
     typedef struct {

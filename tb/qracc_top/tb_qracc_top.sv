@@ -178,7 +178,6 @@ qr_acc_top #(
     .nrst                           (nrst),
 
     // Control Interface
-    .periph_i                       (periph.slave),
     .bus_i                          (bus.slave), 
 
     // Analog passthrough signals
@@ -273,10 +272,8 @@ end
 // FILE THINGS
 /////////////
 
-localparam numFiles = 15;
+localparam numFiles = 13;
 string files[numFiles] = {
-    "flat_output",
-    "flat_output_shape",
     "ifmap",
     "ifmap_shape",
     "matrix_shape",
@@ -505,7 +502,6 @@ task start_sim();
     end
 
     cfg = 0;
-    csr_main_busy = 0;
     csr_main_clear = 0;
     csr_main_inst_write_mode = 0;
     csr_main_trigger = TRIGGER_IDLE;
@@ -514,10 +510,6 @@ task start_sim();
     bus.valid = 0;
     bus.addr = 0;
     bus.data_in = 0;
-    periph.wen = 0;
-    periph.valid = 0;
-    periph.addr = 0;
-    periph.data = 0;
 
     $display("=============== STARTING SIMULATION ===============");
     nrst = 0;
@@ -824,6 +816,11 @@ initial begin
 
     start_sim();
     
+    `ifdef SYNOPSYS
+    $set_toggle_region(u_qr_acc_top);
+    $toggle_start();
+    `endif
+    
     setup_config_from_file(input_files("config"));
 
     #(CLK_PERIOD*2);
@@ -843,14 +840,19 @@ initial begin
 
     #(CLK_PERIOD*10);
 
-
     do_trigger_compute_analog();
 
     #(CLK_PERIOD*10);
 
+    `ifdef SYNOPSYS
+    $toggle_stop();
+    $toggle_report("toggle_report.saif",1e-12, u_qr_acc_top);
+    `endif
+
     export_ofmap();
 
     #(CLK_PERIOD*1000);
+
     end_sim();
 
     $finish;

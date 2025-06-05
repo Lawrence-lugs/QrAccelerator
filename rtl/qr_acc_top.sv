@@ -48,7 +48,6 @@ module qr_acc_top #(
     input clk, nrst,
 
     // Control Interface
-    qracc_ctrl_interface periph_i,
     qracc_data_interface bus_i, 
 
     // Analog passthrough signals
@@ -59,9 +58,10 @@ module qr_acc_top #(
     // CSR signals for testing for now
     input qracc_config_t cfg,
     input csr_main_clear,
-    input csr_main_busy,
+    output csr_main_busy,
     input csr_main_inst_write_mode, // TODO: Remove?
-    input qracc_trigger_t csr_main_trigger
+    input qracc_trigger_t csr_main_trigger,
+    output csr_main_internal_state
 );
 
 
@@ -105,7 +105,6 @@ qracc_controller #(
     .clk                        (clk),
     .nrst                       (nrst),
 
-    .periph_i                   (periph_i.slave),
     .bus_i                      (bus_i.slave),
 
     .ctrl_o                     (qracc_ctrl),
@@ -122,6 +121,7 @@ qracc_controller #(
     .csr_main_trigger           (csr_main_trigger),
     .csr_main_busy              (csr_main_busy),
     .csr_main_inst_write_mode   (csr_main_inst_write_mode),
+    .csr_main_internal_state    (csr_main_internal_state),
 
     .debug_pc_o                 () 
 );
