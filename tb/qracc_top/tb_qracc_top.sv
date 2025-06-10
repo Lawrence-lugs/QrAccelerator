@@ -183,15 +183,7 @@ qr_acc_top #(
     // Analog passthrough signals
     .to_analog                      (to_analog),
     .from_analog                    (from_analog),
-    .bank_select                    (bank_select),
-
-    // CSR signals for testing for now
-    .cfg                            (cfg),
-    .csr_main_clear                 (csr_main_clear),
-    .csr_main_trigger               (csr_main_trigger),
-    .csr_main_busy                  (csr_main_busy),
-    .csr_main_inst_write_mode       (csr_main_inst_write_mode)
-
+    .bank_select                    (bank_select)
 );
 
 // Analog test schematic
@@ -238,22 +230,10 @@ ts_qracc_multibank #(
 
 static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
 static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/outputs/";
-
 static string tb_name = "tb_qracc_top";
 
 // Waveform dumping
-// `ifdef SYNOPSYS
-// initial begin
-//     $vcdplusfile({tb_name,".vpd"});
-//     $vcdpluson();
-//     $vcdplusmemon();
-//     $dumpvars(0);
-// end
-// `endif
-// initial begin
-//     $dumpfile({tb_name,".vcd"});
-//     $dumpvars(0);
-// end
+// `ifdef SYNOPSYS;
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
@@ -516,6 +496,52 @@ task start_sim();
     #(CLK_PERIOD*2);
     nrst = 1;
     #(CLK_PERIOD*2);
+endtask
+
+task status_checkup();
+
+    if(u_qr_acc_top.u_qracc_controller.state_q != u_qr_acc_top.u_qracc_controller.state_d) 
+        $display("Changing state from %s to %s at time %t", 
+            u_qr_acc_top.u_qracc_controller.state_q.name(), 
+            u_qr_acc_top.u_qracc_controller.state_d.name(), 
+            $time);
+
+endtask
+
+task bus_write_loop();
+
+    int fd;
+    int data;
+    int addr;
+    int i;
+    fd = $fopen({files_path,"writes.txt"},"r");
+    
+    $display("=========== BUS WRITE LOOP ============");
+    if (fd == 0) begin
+        $display("Error opening writes file");
+        $finish;
+    end
+
+    while (!$feof(fd)) begin
+        $fscanf(fd,"%h %h",addr,data);
+        casex(addr)
+            32'h0000_001x: $display("Writing to CSR: %h = %h...", addr, data);
+            32'h0000-0100: $display("Writing to QRAcc: %h = %h...", addr, data);
+            default: $display("Writing to unknown address: %h = %h...", addr, data);
+        endcase
+        bus.addr = addr;
+        bus.data_in = data;
+        bus.valid = 1;
+        bus.wen = 1;
+        while (!bus.ready) #(CLK_PERIOD);
+        #(CLK_PERIOD);
+        $write("DONE\n");
+        bus.valid = 0;
+        status_checkup();
+    end
+
+    $display("=========== END OF BUS WRITE LOOP ============");
+
 endtask
 
 task load_weights();
@@ -807,6 +833,8 @@ task do_trigger_compute_analog();
 endtask
 
 initial begin
+    $display("=============== TESTBENCH START ===============");
+
     ifmap = new("ifmap");
     ofmap = new("result");
     weight_matrix = new("matrix");
@@ -815,43 +843,12 @@ initial begin
     biases = new("biases");
 
     start_sim();
-    
-    `ifdef SYNOPSYS
-    $set_toggle_region(u_qr_acc_top);
-    $toggle_start();
-    `endif
-    
-    setup_config_from_file(input_files("config"));
 
-    #(CLK_PERIOD*2);
+    bus_write_loop();
 
-    do_trigger_loadweights_periphs();
-    check_weights();
-    check_scales();
-
-    #(CLK_PERIOD*10);
-
-    display_config();
-    $display("ifmap_size: %d vs %d", u_qr_acc_top.u_qracc_controller.input_fmap_size, `IFMAP_SIZE);
-    $display("ofmap_size: %d vs %d", u_qr_acc_top.u_qracc_controller.output_fmap_size, `OFMAP_SIZE);
-
-    do_trigger_loadacts();
-    check_acts();
-
-    #(CLK_PERIOD*10);
-
-    do_trigger_compute_analog();
-
-    #(CLK_PERIOD*10);
-
-    `ifdef SYNOPSYS
-    $toggle_stop();
-    $toggle_report("toggle_report.saif",1e-12, u_qr_acc_top);
-    `endif
+    track_toeplitz();
 
     export_ofmap();
-
-    #(CLK_PERIOD*1000);
 
     end_sim();
 

@@ -23,12 +23,12 @@ package qracc_pkg;
 
     // Trigger Values
     typedef enum logic [2:0] {
-        TRIGGER_IDLE,
-        TRIGGER_LOAD_ACTIVATION,
-        TRIGGER_LOADWEIGHTS_PERIPHS,
-        TRIGGER_COMPUTE_ANALOG,
-        TRIGGER_COMPUTE_DIGITAL,
-        TRIGGER_READ_ACTIVATION
+        TRIGGER_IDLE                  = 0,
+        TRIGGER_LOAD_ACTIVATION       = 1, 
+        TRIGGER_LOADWEIGHTS_PERIPHS   = 2,
+        TRIGGER_COMPUTE_ANALOG        = 3,
+        TRIGGER_COMPUTE_DIGITAL       = 4,
+        TRIGGER_READ_ACTIVATION       = 5
     } qracc_trigger_t;
 
     // Control signals for QRAcc
@@ -70,13 +70,13 @@ package qracc_pkg;
         // CSR 1: Config
         logic binary_cfg;                       // 0 - binary or bipolar mode, binary if 1
         logic unsigned_acts;                    // 1 - unsigned or signed acts
-        logic [3:0] adc_ref_range_shifts;       // 4:2
-        logic [3:0] filter_size_y;              // 7:4
-        logic [3:0] filter_size_x;              // 11:8
-        logic [3:0] stride_x;                   // 15:12
-        logic [3:0] stride_y;                   // 19:16
-        logic [3:0] n_input_bits_cfg;           // 23:20 
-        logic [3:0] n_output_bits_cfg;          // 27:24
+        logic [3:0] adc_ref_range_shifts;       // 7:4
+        logic [3:0] filter_size_y;              // 11:8
+        logic [3:0] filter_size_x;              // 15:12
+        logic [3:0] stride_x;                   // 19:16
+        logic [3:0] stride_y;                   // 23:20
+        logic [3:0] n_input_bits_cfg;           // 27:24 
+        logic [3:0] n_output_bits_cfg;          // 31:28
 
         // CSR 2: Ifmap Dims
         logic [15:0] input_fmap_dimx;           // 15:0

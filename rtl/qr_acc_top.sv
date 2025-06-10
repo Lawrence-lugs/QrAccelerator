@@ -43,7 +43,11 @@ module qr_acc_top #(
     // Parameters: Feature Loader
     parameter aflDimY = 128,
     parameter aflDimX = 6,
-    parameter aflAddrWidth = 32
+    parameter aflAddrWidth = 32,
+
+    // Parameters: Addressing
+    parameter csrBaseAddr = 32'h0000_0010, // Base address for CSR
+    parameter accBaseAddr = 32'h0000_0100 // Base address for Accelerator
 ) (
     input clk, nrst,
 
@@ -53,15 +57,15 @@ module qr_acc_top #(
     // Analog passthrough signals
     output to_analog_t to_analog,
     input from_analog_t from_analog,
-    output [numBanks-1:0] bank_select,
+    output [numBanks-1:0] bank_select
 
-    // CSR signals for testing for now
-    input qracc_config_t cfg,
-    input csr_main_clear,
-    output csr_main_busy,
-    input csr_main_inst_write_mode, // TODO: Remove?
-    input qracc_trigger_t csr_main_trigger,
-    output csr_main_internal_state
+    // // CSR signals for testing for now
+    // input qracc_config_t cfg,
+    // input csr_main_clear,
+    // output csr_main_busy,
+    // input csr_main_inst_write_mode, // TODO: Remove?
+    // input qracc_trigger_t csr_main_trigger,
+    // output csr_main_internal_state
 );
 
 
@@ -70,8 +74,14 @@ module qr_acc_top #(
 //-----------------------------------
 
 // Signals : Control
-qracc_config_t qracc_cfg;
+qracc_config_t cfg;
 qracc_control_t qracc_ctrl;
+logic csr_main_clear;
+logic csr_main_busy;
+logic csr_main_inst_write_mode;
+logic [3:0] csr_main_internal_state;
+qracc_trigger_t csr_main_trigger;
+logic [31:0] csr_rd_data;
 
 // Signals : QRAcc
 logic [qrAccInputElements-1:0][qrAccInputBits-1:0] qracc_mac_data;
@@ -86,6 +96,7 @@ logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_int_wr_data;
 logic [globalBufferAddrWidth-1:0] activation_buffer_int_wr_addr;
 logic int_write_queue_valid_out;
+logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
@@ -95,6 +106,23 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_outpu
 //-----------------------------------
 // Modules
 //-----------------------------------
+
+qracc_csr #(
+    .csrWidth                   (32),
+    .numCsr                     (16),
+    .CSR_BASE_ADDR              (csrBaseAddr) // Last hex is for CSR address
+) u_csr (
+    .clk                        (clk),
+    .nrst                       (nrst),
+    .bus_i                      (bus_i.slave),
+    .cfg_o                      (cfg),
+    .csr_rd_data_o              (csr_rd_data),
+    .csr_main_clear             (csr_main_clear),
+    .csr_main_trigger           (csr_main_trigger),
+    .csr_main_busy              (csr_main_busy),
+    .csr_main_inst_write_mode   (csr_main_inst_write_mode),
+    .csr_main_internal_state    (csr_main_internal_state)
+);
 
 qracc_controller #(
     .numScalers                 (qrAccOutputElements),
@@ -170,7 +198,7 @@ ram_2w2r #(
     .wr_data_1_i        (bus_i.data_in),
     .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
     .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
-    .rd_data_1_o        (bus_i.data_out), // nothing else is connected to data out
+    .rd_data_1_o        (abuf_rd_data),
     .rd_addr_1_i        (qracc_ctrl.activation_buffer_ext_rd_addr),
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
@@ -277,25 +305,22 @@ piso_write_queue #(
     .valid_out      (int_write_queue_valid_out) // Valid signal for internal interface
 );
 
-
-
-// csr #(
-// ) u_csr (
-//     .clk                      (clk),
-//     .nrst                     (nrst),
-
-//     .csr_data_i               (periph_i.data),
-//     .csr_addr_i               (periph_i.addr[1:0]), // Figure out later on
-//     .csr_data_o               (periph_i.read_data),
-//     .csr_wr_en_i              (periph_write),
-//     .csr_rd_en_i              (periph_read),
-
-//     .cfg_o                    (cfg),
+// Manage bus output
+always_comb begin : busOutputManage
     
-//     .csr_main_clear           (csr_main_clear),
-//     .csr_main_start           (csr_main_start),
-//     .csr_main_busy            (csr_main_busy),
-//     .csr_main_inst_write_mode (csr_main_inst_write_mode)
-// );
+    case(bus_i.addr & 32'hFFFF_FFF0) // Mask for base address
+        csrBaseAddr: begin
+            // CSR Read Data
+            bus_i.data_out = csr_rd_data;
+        end
+        accBaseAddr: begin
+            // QRAcc Output Data
+            bus_i.data_out = abuf_rd_data;
+        end
+        default: begin
+            bus_i.data_out = '0; // Default case, return zero
+        end
+    endcase
+end
 
 endmodule

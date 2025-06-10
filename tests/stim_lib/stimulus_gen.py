@@ -10,7 +10,11 @@ import torch
 def _hex_but_no_0x(x):
     return hex(x)[2:]
 
-hex_but_no_0x = np.vectorize(_hex_but_no_0x)
+def _hex3(n):
+    return "%s"%("00000000%x"%(n&0xffffffff))[-8:]
+
+hex_but_no_0x = np.vectorize(_hex3)
+vhex3 = np.vectorize(_hex3)
 
 def generate_random_torch_conv(
     ifmap_shape,
@@ -26,7 +30,7 @@ def generate_random_torch_conv(
     t_res = F.conv2d(t_ifmap, t_kern, padding=1, stride=stride).numpy()
 
     t_matrix = t_kern.permute(0,2,3,1).numpy()
-    t_matrix = t_matrix.reshape(t_kern.shape[0],-1).T
+    t_matrix = t_matrix.reshape(t_kern.shape[0],-1).T  
 
     t_toeplitz = compute.toeplitzize_input(
         in_tensor=t_ifmap.squeeze(0).numpy(), 
@@ -269,6 +273,113 @@ def generate_stimuli_from_packed_cgraph(
 
     return res_dict
 
+def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits = 8):
+    first_partials = quant.int_to_trit(tplitz_act_vector,ifmap_bits).T @ weights
+    mean_partial = first_partials.mean()
+    adc_ref_range_shifts = np.ceil(np.log(mean_partial)/np.log(2)) - 3
+    if adc_ref_range_shifts < 0:
+        adc_ref_range_shifts = 0
+
+    return adc_ref_range_shifts
+
+def minorize_pad_ifmap(t_ifmap, padding=1, act_zero_point=0):
+    """
+    Prepare the input feature map for convolution by padding it.
+    """
+    t_ifmap = torch.from_numpy(t_ifmap)
+    zp_x = float(act_zero_point)
+    ifmap_channel_minor = F.pad(t_ifmap, (padding,padding,padding,padding), mode='constant', value=zp_x)    
+    ifmap_channel_minor = ifmap_channel_minor.permute(0,2,3,1) # N C H W -> N H W C
+    ifmap_channel_minor = ifmap_channel_minor.numpy()
+    return ifmap_channel_minor
+
+def pack_ifmap_to_ints(t_ifmap):
+    """
+    Pack the input feature map into integers.
+    """
+    ifmap_channel_packed_ints = [int(i,base=16) for i in quant.as_packed_hex(t_ifmap)]
+    ifmap_channel_packed_ints = np.array(ifmap_channel_packed_ints)
+    return ifmap_channel_packed_ints
+
+def pad_scaler_writes(scale_to_map,core_shape,output_zero_point,mm_offset_x):
+    if scale_to_map.ndim == 0:
+        scale_to_map = np.repeat(scale_to_map, core_shape[1])
+    scale = np.ones((core_shape[1],), dtype=np.float32)
+    scales_width = scale_to_map.shape[0]
+    scale[mm_offset_x:mm_offset_x+scales_width] = scale_to_map
+    m0, shift = quant.vconvert_scale_to_shift_and_m0(scale, precision=16)
+    int_scale = quant.vconvert_to_fixed_point_int(m0,16)
+    scaler_data = output_zero_point * (2**20) + int_scale * (2**4) + (-shift)
+    return scaler_data
+
+def pad_bias_data(biases_to_map, core_shape, mm_offset_x):
+    biases = np.zeros((core_shape[1],), dtype=np.int32)
+    biases_width = biases_to_map.shape[0]
+    biases[mm_offset_x:mm_offset_x+biases_width] = biases_to_map
+    return biases
+
+def generate_hexes(
+    stride,
+    ifmap_shape,
+    ifmap_bits,
+    kernel_shape,
+    kernel_bits,
+    core_shape,
+    padding = 1,
+    mm_offset_x = 0,
+    mm_offset_y = 0,
+    seed = 0
+    ):
+    t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
+        ifmap_shape=ifmap_shape,
+        ifmap_bits=ifmap_bits,
+        kernel_shape=kernel_shape,
+        kernel_bits=kernel_bits,
+        kernel_dtype = np.int8,
+        pads = (padding,padding,padding,padding),
+        stride = stride,
+        seed = seed,
+        # weight_density=0.05,
+        # acts_mode='counting',
+        # weight_mode='spatial'
+    )
+
+    matrix_map = map_single_matrix(t_matrix, core_shape, x_offset=mm_offset_x, y_offset=mm_offset_y)
+    write_array = mapped_matrix_to_bank_writes(matrix_map,32)
+    weight_array_hex = vhex3(write_array)
+    scaler_data = pad_scaler_writes(scaler_params['scale'], 
+                                        core_shape=core_shape,
+                                        output_zero_point=scaler_params['output_zp'],
+                                        mm_offset_x=mm_offset_x)
+    scaler_data_hex = vhex3(scaler_data)
+    bias_data = pad_bias_data(scaler_params['gph_node'][0].biases, 
+                                        core_shape=core_shape, 
+                                        mm_offset_x=mm_offset_x)
+    bias_data_hex = vhex3(bias_data)
+    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=1)
+    ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
+
+    raw_data = {
+        'ifmap':pack_ifmap_to_ints(minorized_padded_ifmap),
+        'biases':bias_data,
+        'scales':scaler_data,
+        'weights':write_array,
+    }
+        
+    res_dict = {
+        'result': t_res,
+        'toeplitz': t_toeplitz,
+        'ifmap': minorized_padded_ifmap,
+        'ifmap_ints': minorized_padded_ifmap,
+        'small_matrix': t_matrix,
+        'matrix': write_array,
+        'weights_np': matrix_map, 
+        'scaler_data': scaler_data,
+        'biases': bias_data,
+    }
+
+    return raw_data, res_dict
+
 def generate_top_inputs(
     savepath,
     stride,
@@ -335,11 +446,8 @@ def generate_top_inputs(
 
     # Prepare biases
     biases_to_map = scaler_params['gph_node'][0].biases
-    # biases = np.pad(biases, (0, core_shape[1] - biases.shape[0]), 'constant', constant_values=(0, 0))
     biases = np.zeros((core_shape[1],), dtype=np.int32)
     biases[mm_offset_x:mm_offset_x+scaler_params['gph_node'][0].biases.shape[0]] = biases_to_map
-
-    # biases = biases[::-1]
 
     print('=== Weight Array ===')
     print(matrix_map)
