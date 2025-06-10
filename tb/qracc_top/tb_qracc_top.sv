@@ -255,7 +255,7 @@ end
 
 // Watchdog
 initial begin
-    #(100_000); // 100 ms
+    #(100_000_0); // 100 ms
     $display("TEST FAILED - WATCHDOG TIMEOUT");
     $finish;
 end
@@ -494,7 +494,7 @@ task start_sim();
         $display("Error: SRAM_COLS must be multiple of 32");
         $finish;
     end
-    
+
     bus.wen = 0;
     bus.valid = 0;
     bus.addr = 0;
