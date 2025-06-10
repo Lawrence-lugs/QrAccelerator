@@ -43,6 +43,7 @@ logic [31:0] csr_main_read_output;
 always_comb begin : csrAddressed
     kausap_ako = (bus_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
     handshake_success = bus_i.valid && bus_i.ready && kausap_ako;
+    csr_addr = bus_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
 end
 
 // CSR Write & Reads

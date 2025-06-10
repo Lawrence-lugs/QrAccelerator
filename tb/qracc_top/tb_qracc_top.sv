@@ -232,8 +232,20 @@ static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr
 static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/outputs/";
 static string tb_name = "tb_qracc_top";
 
-// Waveform dumping
-// `ifdef SYNOPSYS;
+// Waveform Dumping
+`ifdef SYNOPSYS
+initial begin
+    $vcdplusfile({tb_name,".vpd"});
+    $vcdpluson();
+    $vcdplusmemon();
+    $dumpvars(0);
+end
+`endif
+initial begin
+    $dumpfile({tb_name,".vcd"});
+    $dumpvars(0);
+end
+
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
@@ -243,7 +255,7 @@ end
 
 // Watchdog
 initial begin
-    #(100_000_000); // 100 ms
+    #(100_000); // 100 ms
     $display("TEST FAILED - WATCHDOG TIMEOUT");
     $finish;
 end
@@ -444,30 +456,32 @@ task setup_config();
     cfg.mapped_matrix_offset_y = `MAPPED_MATRIX_OFFSET_Y;
 endtask
 
+assign cfg = u_qr_acc_top.cfg;
+
 task display_config();
 
     $display("=== CONFIGURATION ===");
-    $display("n_input_bits_cfg: %d", cfg.n_input_bits_cfg);
-    $display("n_output_bits_cfg: %d", cfg.n_output_bits_cfg);
-    $display("unsigned_acts: %d", cfg.unsigned_acts);
-    $display("binary_cfg: %d", cfg.binary_cfg);
-    $display("adc_ref_range_shifts: %d", cfg.adc_ref_range_shifts);
+    $display("n_input_bits_cfg: %d", u_qr_acc_top.cfg.n_input_bits_cfg);
+    $display("n_output_bits_cfg: %d", u_qr_acc_top.cfg.n_output_bits_cfg);
+    $display("unsigned_acts: %d", u_qr_acc_top.cfg.unsigned_acts);
+    $display("binary_cfg: %d", u_qr_acc_top.cfg.binary_cfg);
+    $display("adc_ref_range_shifts: %d", u_qr_acc_top.cfg.adc_ref_range_shifts);
 
-    $display("filter_size_y: %d", cfg.filter_size_y);
-    $display("filter_size_x: %d", cfg.filter_size_x);
-    $display("input_fmap_dimx: %d", cfg.input_fmap_dimx);
-    $display("input_fmap_dimy: %d", cfg.input_fmap_dimy);
-    $display("output_fmap_dimx: %d", cfg.output_fmap_dimx);
-    $display("output_fmap_dimy: %d", cfg.output_fmap_dimy);
+    $display("filter_size_y: %d", u_qr_acc_top.cfg.filter_size_y);
+    $display("filter_size_x: %d", u_qr_acc_top.cfg.filter_size_x);
+    $display("input_fmap_dimx: %d", u_qr_acc_top.cfg.input_fmap_dimx);
+    $display("input_fmap_dimy: %d", u_qr_acc_top.cfg.input_fmap_dimy);
+    $display("output_fmap_dimx: %d", u_qr_acc_top.cfg.output_fmap_dimx);
+    $display("output_fmap_dimy: %d", u_qr_acc_top.cfg.output_fmap_dimy);
 
-    $display("stride_x: %d", cfg.stride_x);
-    $display("stride_y: %d", cfg.stride_y);
+    $display("stride_x: %d", u_qr_acc_top.cfg.stride_x);
+    $display("stride_y: %d", u_qr_acc_top.cfg.stride_y);
 
-    $display("num_input_channels: %d", cfg.num_input_channels);
-    $display("num_output_channels: %d", cfg.num_output_channels);
+    $display("num_input_channels: %d", u_qr_acc_top.cfg.num_input_channels);
+    $display("num_output_channels: %d", u_qr_acc_top.cfg.num_output_channels);
 
-    $display("mapped_matrix_offset_x: %d", cfg.mapped_matrix_offset_x);
-    $display("mapped_matrix_offset_y: %d", cfg.mapped_matrix_offset_y);
+    $display("mapped_matrix_offset_x: %d", u_qr_acc_top.cfg.mapped_matrix_offset_x);
+    $display("mapped_matrix_offset_y: %d", u_qr_acc_top.cfg.mapped_matrix_offset_y);
 
 endtask
 
@@ -480,12 +494,7 @@ task start_sim();
         $display("Error: SRAM_COLS must be multiple of 32");
         $finish;
     end
-
-    cfg = 0;
-    csr_main_clear = 0;
-    csr_main_inst_write_mode = 0;
-    csr_main_trigger = TRIGGER_IDLE;
-
+    
     bus.wen = 0;
     bus.valid = 0;
     bus.addr = 0;
@@ -499,13 +508,7 @@ task start_sim();
 endtask
 
 task status_checkup();
-
-    if(u_qr_acc_top.u_qracc_controller.state_q != u_qr_acc_top.u_qracc_controller.state_d) 
-        $display("Changing state from %s to %s at time %t", 
-            u_qr_acc_top.u_qracc_controller.state_q.name(), 
-            u_qr_acc_top.u_qracc_controller.state_d.name(), 
-            $time);
-
+    $display("STATE: %s", u_qr_acc_top.u_qracc_controller.state_q.name());
 endtask
 
 task bus_write_loop();
@@ -525,21 +528,27 @@ task bus_write_loop();
     while (!$feof(fd)) begin
         $fscanf(fd,"%h %h",addr,data);
         casex(addr)
-            32'h0000_001x: $display("Writing to CSR: %h = %h...", addr, data);
-            32'h0000-0100: $display("Writing to QRAcc: %h = %h...", addr, data);
-            default: $display("Writing to unknown address: %h = %h...", addr, data);
+            32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
+            32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
+            default: $write("Writing to unknown address: %h = %h", addr, data);
         endcase
         bus.addr = addr;
         bus.data_in = data;
         bus.valid = 1;
         bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write("DONE\n");
-        bus.valid = 0;
-        status_checkup();
+        if(!$feof(fd)) begin
+            while (!bus.ready) begin 
+                #(CLK_PERIOD);
+                $write(".");
+            end
+            #(CLK_PERIOD);
+            $write("\tDONE\n");
+            bus.valid = 0;
+            status_checkup();
+        end
     end
 
+    $write("\n");
     $display("=========== END OF BUS WRITE LOOP ============");
 
 endtask
@@ -845,6 +854,8 @@ initial begin
     start_sim();
 
     bus_write_loop();
+
+    display_config();
 
     track_toeplitz();
 

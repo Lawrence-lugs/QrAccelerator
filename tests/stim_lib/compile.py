@@ -44,7 +44,7 @@ def bundle_config_into_write(
     # CSR register addresses (offsets from base)
     CSR_REG_CONFIG      = 1
     CSR_REG_IFMAP_DIMS  = 2
-    CSR_REG_OFMAP_DIMS  = 13
+    CSR_REG_OFMAP_DIMS  = 3
     CSR_REG_CHANNELS    = 4
     CSR_REG_OFFSETS     = 5
 

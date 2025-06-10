@@ -154,6 +154,9 @@ always_comb begin : ctrlDecode
     bank_select = 0;
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
+        S_IDLE: begin
+            bus_i.ready = 1; // CSR is always ready to take data
+        end
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;
             to_sram.rq_valid_i = bus_i.valid;
