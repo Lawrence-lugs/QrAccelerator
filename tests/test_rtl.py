@@ -226,6 +226,8 @@ def test_qr_acc_top_single_load(
     commands += write_array_to_asm(raw_data['ifmap'])
     commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
     commands += [f'WAITBUSY']
+    commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
+    commands += [f'WAITREAD']
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:

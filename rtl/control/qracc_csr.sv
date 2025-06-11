@@ -10,6 +10,7 @@ module qracc_csr #(
 
     qracc_data_interface bus_i,
     output logic [31:0] csr_rd_data_o, // CSR read data output
+    output logic csr_rd_data_valid_o,
 
     // CSR signals
     output qracc_config_t cfg_o,
@@ -59,7 +60,7 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
             if (bus_i.wen) begin
                 csr_set[csr_addr] <= bus_i.data_in;
             end else begin
-                // Read from CSR
+                csr_rd_data_valid_o <= 1'b1;
                 case (csr_addr)
                     CSR_REG_MAIN: begin
                         // $display("CSR_REG_MAIN: csr_main_read_output = %h", csr_main_read_output);

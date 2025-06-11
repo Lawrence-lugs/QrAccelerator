@@ -38,6 +38,7 @@ module qracc_controller #(
     input csr_main_inst_write_mode,
     output logic csr_main_busy,
     output logic [3:0] csr_main_internal_state,
+    input csr_rd_data_valid,
 
     // Debugging
     output logic [31:0] debug_pc_o
@@ -98,6 +99,7 @@ logic feature_loader_wr_en_d;
 logic [31:0] read_set;
 logic [31:0] num_read_sets;
 assign num_read_sets = ( (cfg.num_input_channels*cfg.filter_size_x - 1) / internalInterfaceElements ) + 1;
+logic read_acts_out_valid;
 
 // Write tracking signals
 logic [31:0] scaler_ptr;
@@ -156,6 +158,7 @@ always_comb begin : ctrlDecode
     case(state_q)
         S_IDLE: begin
             bus_i.ready = 1; // CSR is always ready to take data
+            bus_i.rd_data_valid = csr_rd_data_valid;
         end
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;
@@ -204,9 +207,11 @@ always_comb begin : ctrlDecode
             ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
         end
         S_READACTS: begin
+            bus_i.ready = 1;
             ctrl_o.activation_buffer_ext_rd_en = 1;
-            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ofmap_start_addr;
-            bus_i.rd_data_valid = 1;
+            // Due to the ifmap->ofmap swapping, the ofmap is now in the ifmap_start_addr
+            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ifmap_start_addr;
+            bus_i.rd_data_valid = read_acts_out_valid;
         end
         default: begin
             ctrl_o = 0;
@@ -428,10 +433,14 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
         if (state_q == S_READACTS) begin
 
-            if (data_read) act_rd_ptr <= act_rd_ptr + 1;
+            if (data_read) begin
+                act_rd_ptr <= act_rd_ptr + 4;
+                read_acts_out_valid <= 1;
+            end
 
             if (state_d != S_READACTS) begin 
                 act_rd_ptr <= 0;
+                read_acts_out_valid <= 0;
             end
         end
 

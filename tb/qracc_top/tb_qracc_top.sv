@@ -42,8 +42,11 @@ module tb_qracc_top #(
     // Parameters: Feature Loader
     parameter aflDimY = 128,
     parameter aflDimX = 6,
-    parameter aflAddrWidth = 32
+    parameter aflAddrWidth = 32,
 
+    // Parameters: Addresses
+    parameter CSR_REG_MAIN_ADDR = 32'h0000_0010, // CSR base address
+    parameter QRACC_MAIN_ADDR = 32'h0000_0100 // QRAcc main address
 ) (
     
 );
@@ -223,6 +226,21 @@ ts_qracc_multibank #(
     .CLK(clk)
 );
 
+// Fake L2 Memory
+
+logic [7:0] l2_mem [2**21-1];
+logic [31:0] l2_mem_addr;
+always_ff @( posedge clk or negedge nrst ) begin : l2Mem
+    
+    if(!nrst) l2_mem_addr <= 0;
+    
+    if (bus.rd_data_valid) begin
+        for (int i = 0; i < 32/8; i++) begin
+            l2_mem[l2_mem_addr + i] <= bus.data_out[(32/8-1-i)*8 +: 8];
+        end
+        l2_mem_addr <= l2_mem_addr + 4;
+    end
+end
 
 /////////////
 // TESTING BOILERPLATE
@@ -553,9 +571,26 @@ task bus_write_loop();
             end
             "WAITBUSY": begin
                 
-                wait_busy_silent();
-                // track_toeplitz();
+                // wait_busy_silent(CSR_REG_MAIN_ADDR);
+                track_toeplitz();
 
+            end
+            "WAITREAD": begin
+                // Wait for reads to finish
+                i = 0;
+                for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
+                    bus.addr = QRACC_MAIN_ADDR;
+                    bus.valid = 1;
+                    bus.wen = 0;
+                    while (!bus.ready) begin 
+                        #(CLK_PERIOD);
+                        i++;
+                        $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    i++;
+                end
+                $display("\nQRAcc is ready after %d cycles", i);
             end
         endcase
     end
@@ -566,11 +601,13 @@ task bus_write_loop();
 endtask
 
 task wait_busy_silent();
+
+    input int addr;
     int i;
     $display("Waiting for QRAcc to be ready", $time);
     i = 0;
     do begin
-        bus.addr = 32'h0000_0010; // CSR_REG_MAIN
+        bus.addr = addr; // CSR_REG_MAIN
         bus.valid = 1;
         bus.wen = 0;
         // $display("%h",bus.data_out);
@@ -583,64 +620,6 @@ task wait_busy_silent();
         i++;
     end while (bus.data_out[4] == 1); // QRACC IS BUSY 
     $display("\nQRAcc is ready after %d cycles", i);
-endtask
-
-task load_weights();
-
-    tb_state = S_LOADWEIGHTS;
-    $display("Loading weights at time %t", $time);
-    for (i=0;i<qrAccInputElements*numBanks;i++) begin
-        bus.data_in = weight_matrix.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
-endtask
-
-task check_weights();
-
-    // Check weights doesn't work for multibank, because we're trying to access inside.
-
-    // $display("Checking weights at time %t", $time);
-    // for (i=0;i<qrAccInputElements;i++) begin
-    //     if (i%4 == 0) begin
-    //         $write("\n");
-    //         $write("[%d]:\t",i);
-    //     end else begin
-    //         $write("\t");
-    //     end
-
-    //     $write("%h\t",u_ts_qracc.mem[i]);
-    //     if (u_ts_qracc..mem[i] != weight_matrix.array[i]) begin
-    //         $write(" != %h",weight_matrix.array[i]);
-    //         errcnt++;
-    //     end
-    // end
-    // $write("\n");
-
-endtask
-
-task load_acts();
-
-    tb_state = S_LOADACTS;
-
-    $display("Loading activations at time %t", $time);
-    for (i=0;i<ifmap.size;i++) begin
-        bus.data_in = ifmap.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
 endtask
 
 // Address by 4-byte word
@@ -740,44 +719,6 @@ task track_toeplitz();
 
 endtask
 
-task load_biases();
-
-    tb_state = S_LOADBIAS;
-
-    $display("Loading biases at time %t", $time);
-    for (i=0;i<biases.size;i++) begin
-        // $display("[%d]:\t",i);
-        bus.data_in = biases.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
-endtask
-
-task load_scales();
-
-    tb_state = S_LOADSCALE;
-
-    $display("Loading scaler data at time %t", $time);
-    for (i=0;i<scaler_data.size;i++) begin
-        // $display("[%d]:\t",i);
-        bus.data_in = scaler_data.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
-endtask
-
 task check_scales();
     logic [15:0] scale;
     logic [3:0] shift;
@@ -824,7 +765,7 @@ task end_sim();
     $finish;
 endtask
 
-task export_ofmap();
+task magic_export_ofmap();
 
     // Magically export of the ofmap without actual readout
 
@@ -836,7 +777,7 @@ task export_ofmap();
 
     $display("Exporting ofmap at time %t", $time);
 
-    fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
+    fd = $fopen({output_path,"hw_ofmap_magic",".txt"},"w");
     for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
@@ -850,27 +791,21 @@ task export_ofmap();
 
 endtask
 
-task do_trigger_loadweights_periphs();
-    csr_main_trigger = TRIGGER_LOADWEIGHTS_PERIPHS;
-    #(CLK_PERIOD);
-    csr_main_trigger = TRIGGER_IDLE;
-    load_weights();
-    load_scales();
-    load_biases();
-endtask
+task export_l2();
 
-task do_trigger_loadacts();
-    csr_main_trigger = TRIGGER_LOAD_ACTIVATION;
-    #(CLK_PERIOD);
-    csr_main_trigger = TRIGGER_IDLE;
-    load_acts();
-endtask
+    int a;
+    int fd;
+    int ofmap_size;
 
-task do_trigger_compute_analog();
-    csr_main_trigger = TRIGGER_COMPUTE_ANALOG;
-    #(CLK_PERIOD);
-    csr_main_trigger = TRIGGER_IDLE;
-    track_toeplitz();
+    ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
+
+    $display("Exporting ofmap at time %t", $time);
+
+    fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
+    for(i=0;i<ofmap_size;i++) begin
+        $fwrite(fd,"%d\n",l2_mem[i]);
+    end
+
 endtask
 
 initial begin
@@ -889,9 +824,7 @@ initial begin
 
     display_config();
 
-    // track_toeplitz();
-
-    export_ofmap();
+    export_l2();
 
     end_sim();
 

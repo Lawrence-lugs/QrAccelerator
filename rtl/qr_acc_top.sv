@@ -102,6 +102,7 @@ logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_output;
 
+logic csr_rd_data_valid;
 
 //-----------------------------------
 // Modules
@@ -117,6 +118,7 @@ qracc_csr #(
     .bus_i                      (bus_i.slave),
     .cfg_o                      (cfg),
     .csr_rd_data_o              (csr_rd_data),
+    .csr_rd_data_valid_o        (csr_rd_data_valid),
     .csr_main_clear             (csr_main_clear),
     .csr_main_trigger           (csr_main_trigger),
     .csr_main_busy              (csr_main_busy),
@@ -150,6 +152,7 @@ qracc_controller #(
     .csr_main_busy              (csr_main_busy),
     .csr_main_inst_write_mode   (csr_main_inst_write_mode),
     .csr_main_internal_state    (csr_main_internal_state),
+    .csr_rd_data_valid          (csr_rd_data_valid),
 
     .debug_pc_o                 () 
 );
