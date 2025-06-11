@@ -270,7 +270,7 @@ always_comb begin : stateDecode
             end
         end
         S_READACTS: begin
-            if (act_rd_ptr == output_fmap_size - 1) begin
+            if (act_rd_ptr > output_fmap_size - 1) begin
                 state_d = S_IDLE;
             end else begin
                 state_d = S_READACTS;

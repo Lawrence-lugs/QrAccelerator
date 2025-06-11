@@ -93,6 +93,10 @@ package qracc_pkg;
         // CSR 5: Mapped Matrix Offsets
         logic [15:0] mapped_matrix_offset_x;    // 15:0
         logic [15:0] mapped_matrix_offset_y;    // 31:16
+
+        // CSR 6: Padding Information
+        logic [3:0] padding;                    // 3:0
+        logic [7:0] padding_value;              // 11:4
     } qracc_config_t;
 
     typedef struct {

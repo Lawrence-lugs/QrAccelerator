@@ -319,6 +319,7 @@ def pad_bias_data(biases_to_map, core_shape, mm_offset_x):
     return biases
 
 def generate_hexes(
+    savepath,
     stride,
     ifmap_shape,
     ifmap_bits,
@@ -356,7 +357,7 @@ def generate_hexes(
                                         core_shape=core_shape, 
                                         mm_offset_x=mm_offset_x)
     bias_data_hex = vhex3(bias_data)
-    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=1,act_zero_point = scaler_params['zp_x'])
+    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=padding,act_zero_point = scaler_params['zp_x'])
     ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
 
     raw_data = {
@@ -376,7 +377,19 @@ def generate_hexes(
         'weights_np': matrix_map, 
         'scaler_data': scaler_data,
         'biases': bias_data,
+        'scaler_params' : scaler_params
     }
+
+    # We still need to save the stimuli for toeplitz tracking
+    if savepath is not None:
+        for key, value in res_dict.items():
+            if type(value) is dict:
+                continue
+            if value.dtype in ['int32','float64']:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            else:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
+            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
 
     return raw_data, res_dict
 

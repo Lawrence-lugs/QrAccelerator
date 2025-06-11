@@ -153,7 +153,7 @@ def test_qr_acc_top_single_load(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
-    raw_data, stimulus = generate_hexes(stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y)
+    raw_data, stimulus = generate_hexes(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y)
     
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
     ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
@@ -210,11 +210,11 @@ def test_qr_acc_top_single_load(
         "num_input_channels": kernel_shape[1],
         "num_output_channels": kernel_shape[0],
         "mapped_matrix_offset_x": mm_offset_x,
-        "mapped_matrix_offset_y": mm_offset_y
+        "mapped_matrix_offset_y": mm_offset_y,
+        "padding": padding,
+        "padding_value": stimulus["scaler_params"]["zp_x"],  # Padding value for the input feature map
     }
-    # with open(stimulus_output_path + '/config.txt', 'w') as f:
-    #     for key, value in config_dict.items():
-    #         f.write(f'{key}: {value}\n')
+    print(f"Config Dict: {config_dict}")
     config_writes = bundle_config_into_write(config_dict, config_write_address)
 
     commands = config_writes
@@ -228,6 +228,7 @@ def test_qr_acc_top_single_load(
     commands += [f'WAITBUSY']
     commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
     commands += [f'WAITREAD']
+    commands += ['END']
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
