@@ -35,7 +35,7 @@ def make_trigger_write(
     inst_write_mode_val = (inst_write_mode & 0x1) << 5
 
     word = trigger_val | clear_val | inst_write_mode_val
-    return [f'{write_address} {word:08x}']
+    return [f'LOAD {write_address} {word:08x}']
 
 def bundle_config_into_write(
     config_dict,
@@ -81,11 +81,11 @@ def bundle_config_into_write(
 
     # List of (address, hex_word) for each CSR
     config_writes = [
-        f"{base_addr + CSR_REG_CONFIG:08x} {config_word:08x}",
-        f"{base_addr + CSR_REG_IFMAP_DIMS:08x} {ifmap_dims_word:08x}",
-        f"{base_addr + CSR_REG_OFMAP_DIMS:08x} {ofmap_dims_word:08x}",
-        f"{base_addr + CSR_REG_CHANNELS:08x} {channels_word:08x}",
-        f"{base_addr + CSR_REG_OFFSETS:08x} {offsets_word:08x}",
+        f"LOAD {base_addr + CSR_REG_CONFIG:08x} {config_word:08x}",
+        f"LOAD {base_addr + CSR_REG_IFMAP_DIMS:08x} {ifmap_dims_word:08x}",
+        f"LOAD {base_addr + CSR_REG_OFMAP_DIMS:08x} {ofmap_dims_word:08x}",
+        f"LOAD {base_addr + CSR_REG_CHANNELS:08x} {channels_word:08x}",
+        f"LOAD {base_addr + CSR_REG_OFFSETS:08x} {offsets_word:08x}",
     ]
     
     return config_writes
@@ -93,5 +93,5 @@ def bundle_config_into_write(
 def write_array_to_asm(write_array, address='00000100'):
     asm = []
     for element in write_array:
-        asm.append(f"{address} {vhex3(element)}")
+        asm.append(f"LOAD {address} {vhex3(element)}")
     return asm

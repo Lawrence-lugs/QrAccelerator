@@ -517,40 +517,72 @@ task bus_write_loop();
     int data;
     int addr;
     int i;
-    fd = $fopen({files_path,"writes.txt"},"r");
+    string command;
+    fd = $fopen({files_path,"commands.txt"},"r");
     
-    $display("=========== BUS WRITE LOOP ============");
+    $display("=========== BUS COMMAND LOOP ============");
     if (fd == 0) begin
-        $display("Error opening writes file");
+        $display("Error opening commands file");
         $finish;
     end
 
     while (!$feof(fd)) begin
-        $fscanf(fd,"%h %h",addr,data);
-        casex(addr)
-            32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
-            32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
-            default: $write("Writing to unknown address: %h = %h", addr, data);
-        endcase
-        bus.addr = addr;
-        bus.data_in = data;
-        bus.valid = 1;
-        bus.wen = 1;
-        if(!$feof(fd)) begin
-            while (!bus.ready) begin 
-                #(CLK_PERIOD);
-                $write(".");
+        $fscanf(fd,"%s", command);
+        case(command)
+            "LOAD": begin
+                $fscanf(fd,"%h %h",addr,data);
+                casex(addr)
+                    32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
+                    32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
+                    default: $write("Writing to unknown address: %h = %h", addr, data);
+                endcase
+                bus.addr = addr;
+                bus.data_in = data;
+                bus.valid = 1;
+                bus.wen = 1;
+                if(!$feof(fd)) begin
+                    while (!bus.ready) begin 
+                        #(CLK_PERIOD);
+                        $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    $write("\tDONE\n");
+                    bus.valid = 0;
+                    status_checkup();
+                end
             end
-            #(CLK_PERIOD);
-            $write("\tDONE\n");
-            bus.valid = 0;
-            status_checkup();
-        end
+            "WAITBUSY": begin
+                
+                wait_busy_silent();
+                // track_toeplitz();
+
+            end
+        endcase
     end
 
     $write("\n");
     $display("=========== END OF BUS WRITE LOOP ============");
 
+endtask
+
+task wait_busy_silent();
+    int i;
+    $display("Waiting for QRAcc to be ready", $time);
+    i = 0;
+    do begin
+        bus.addr = 32'h0000_0010; // CSR_REG_MAIN
+        bus.valid = 1;
+        bus.wen = 0;
+        // $display("%h",bus.data_out);
+        while (!bus.ready) begin 
+            #(CLK_PERIOD);
+            i++;
+            // $write(".");
+        end
+        #(CLK_PERIOD);
+        i++;
+    end while (bus.data_out[4] == 1); // QRACC IS BUSY 
+    $display("\nQRAcc is ready after %d cycles", i);
 endtask
 
 task load_weights();
@@ -857,7 +889,7 @@ initial begin
 
     display_config();
 
-    track_toeplitz();
+    // track_toeplitz();
 
     export_ofmap();
 

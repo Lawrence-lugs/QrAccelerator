@@ -183,6 +183,8 @@ always_comb begin : ctrlDecode
             // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE_ANALOG) ? 1 : 0;
         end
         S_COMPUTE_ANALOG: begin
+
+            bus_i.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y * cfg.stride_y + {28'b0, fy_ctr})

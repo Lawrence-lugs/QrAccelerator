@@ -39,10 +39,11 @@ logic kausap_ako;
 logic [31:0] csr_main_read_output;
 
 // Assignments
+
 // Kausap ba ako
 always_comb begin : csrAddressed
     kausap_ako = (bus_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
-    handshake_success = bus_i.valid && bus_i.ready && kausap_ako;
+    handshake_success = bus_i.valid && kausap_ako && bus_i.ready; 
     csr_addr = bus_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
 end
 
@@ -61,6 +62,7 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
                 // Read from CSR
                 case (csr_addr)
                     CSR_REG_MAIN: begin
+                        // $display("CSR_REG_MAIN: csr_main_read_output = %h", csr_main_read_output);
                         csr_rd_data_o <= csr_main_read_output;
                     end
                     CSR_REG_CONFIG: begin
@@ -87,12 +89,12 @@ end
 // CSR Decode
 always_comb begin : csrDecode
     csr_main_read_output = {
-        3'b0, // csr_main_trigger
-        1'b0, // csr_main_clear
-        csr_main_busy, // csr_main_busy
-        3'b0, // free
+        20'b0, // free
         csr_main_internal_state,
-        20'b0 // free
+        3'b0, // free
+        csr_main_busy, // csr_main_busy
+        1'b0, // csr_main_clear
+        3'b0 // csr_main_trigger
     };
 
     // When the bus is trying to write to main, pass it combinationally...

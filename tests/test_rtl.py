@@ -217,17 +217,18 @@ def test_qr_acc_top_single_load(
     #         f.write(f'{key}: {value}\n')
     config_writes = bundle_config_into_write(config_dict, config_write_address)
 
-    writes = config_writes
-    writes += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
-    writes += write_array_to_asm(raw_data['weights']) 
-    writes += write_array_to_asm(raw_data['scales']) 
-    writes += write_array_to_asm(raw_data['biases']) 
-    writes += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
-    writes += write_array_to_asm(raw_data['ifmap'])
-    writes += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
+    commands = config_writes
+    commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
+    commands += write_array_to_asm(raw_data['weights']) 
+    commands += write_array_to_asm(raw_data['scales']) 
+    commands += write_array_to_asm(raw_data['biases']) 
+    commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
+    commands += write_array_to_asm(raw_data['ifmap'])
+    commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
+    commands += [f'WAITBUSY']
 
-    with open(f'{stimulus_output_path}/writes.txt', 'w') as f:
-        for write in writes:
+    with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
+        for write in commands:
             f.write(write + '\n')
 
     # Simulation
