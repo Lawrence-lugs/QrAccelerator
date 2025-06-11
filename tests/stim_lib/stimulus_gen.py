@@ -357,7 +357,7 @@ def generate_hexes(
                                         core_shape=core_shape, 
                                         mm_offset_x=mm_offset_x)
     bias_data_hex = vhex3(bias_data)
-    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=padding,act_zero_point = scaler_params['zp_x'])
+    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=0,act_zero_point = scaler_params['zp_x'])
     ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
 
     raw_data = {

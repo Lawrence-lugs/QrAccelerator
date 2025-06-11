@@ -54,6 +54,9 @@ package qracc_pkg;
         logic output_scaler_shift_w_en;
         logic output_scaler_offset_w_en;
         logic output_bias_w_en;
+
+        logic [15:0] padding_start;
+        logic [15:0] padding_end;
     } qracc_control_t;
 
     // Config that changes per-layer
@@ -95,7 +98,7 @@ package qracc_pkg;
         logic [15:0] mapped_matrix_offset_y;    // 31:16
 
         // CSR 6: Padding Information
-        logic [3:0] padding;                    // 3:0
+        logic [3:0] padding;                    // 3:0 - 1 if zeropad enabled
         logic [7:0] padding_value;              // 11:4
     } qracc_config_t;
 

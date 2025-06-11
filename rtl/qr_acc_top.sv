@@ -98,6 +98,9 @@ logic [globalBufferAddrWidth-1:0] activation_buffer_int_wr_addr;
 logic int_write_queue_valid_out;
 logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 
+// Signals: Feature Loader and Padder
+logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data_padded; 
+
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_output;
@@ -214,6 +217,18 @@ ram_2w2r #(
     .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
 );
 
+// Padder - implements hardware padding
+padder #(
+    .elementWidth    (qrAccInputBits),
+    .numElements     (globalBufferIntInterfaceWidth / qrAccInputBits)
+) u_padder (
+    .data_i          (activation_buffer_rd_data),           
+    .pad_start       (qracc_ctrl.padding_start),        
+    .pad_end         (qracc_ctrl.padding_end),          
+    .pad_value       (cfg.padding_value),        
+    .data_o          (activation_buffer_rd_data_padded)           
+);
+
 // Feature Loader - stages the input data for qrAcc
 feature_loader #(
     .inputWidth        (globalBufferIntInterfaceWidth),
@@ -226,7 +241,7 @@ feature_loader #(
 
     // Interface with buffer
     .addr_i            (qracc_ctrl.feature_loader_addr),  
-    .data_i            (activation_buffer_rd_data),
+    .data_i            (activation_buffer_rd_data_padded), // Padded data from activation buffer
     .wr_en             (qracc_ctrl.feature_loader_wr_en),  
     
     // Interface with QR accelerator
