@@ -306,6 +306,7 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                 padding_end_q <= padding_end_q;
             end else 
             if (cfg.padding > 0) begin
+                // For Y padding cases, pad all read sets
                 if (opix_pos_y + 32'(fy_ctr) == 0) begin
                     padding_start_q <= 0;
                     padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
@@ -317,13 +318,45 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                 end else
                 if (opix_pos_x == 0) begin
                     // Pad first pixel for all windows
-                    padding_start_q <= 0;
-                    padding_end_q <= cfg.num_input_channels;
+                    // If a single read set is larger than the number of input channels, pad the entire read until the remainder is less than a read set count
+                    if ( cfg.num_input_channels < read_set*internalInterfaceElements ) begin
+                        // Don't pad anything- the current read set is past a single pixel
+                        padding_start_q <= 0;
+                        padding_end_q <= 0;
+                    end else begin
+                        // Pad all or up to the remaining channels of the pixel
+                        padding_start_q <= 0;
+                        padding_end_q <= (cfg.num_input_channels - read_set*internalInterfaceElements);
+                    end
+                    // padding_start_q <= 0;
+                    // padding_end_q <= cfg.num_input_channels;
                 end else
                 if (opix_pos_x == 32'(cfg.output_fmap_dimx - 16'b1)) begin
                     // Pad last pixel for all windows
-                    padding_start_q <= cfg.num_input_channels * 16'(cfg.filter_size_x - 4'b1);
-                    padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
+
+                    if ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) >=
+                        (read_set+1)*internalInterfaceElements) begin
+                        // CFx - C > (R_s+1)*W
+                        // Don't pad anything- the end of current read set is before the padded region
+                        padding_start_q <= 0;
+                        padding_end_q <= 0;
+                    end else
+                    if ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) < 
+                        (read_set+1)*internalInterfaceElements ) begin
+                        // CFx - C < R_s*w
+                        // The end of read set is inside padded region
+                        // Start = CFx-C-RsW see Journal 6 June 2025
+                        // End = pad to end
+                        padding_start_q <= ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) ) - read_set*internalInterfaceElements; 
+                        padding_end_q <= internalInterfaceElements;
+                    end else 
+                    begin
+                        // Pad entire thing once we're past the padding point
+                        padding_start_q <= 0;
+                        padding_end_q <= internalInterfaceElements;
+                    end
+                    // padding_start_q <= cfg.num_input_channels * 16'(cfg.filter_size_x - 4'b1);
+                    // padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
                 end else begin
                     // No padding
                     padding_start_q <= 0;
