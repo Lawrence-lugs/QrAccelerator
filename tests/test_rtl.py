@@ -10,6 +10,7 @@ import seaborn as sns
 import pytest
 sns.set_theme()
 from tests.stim_lib.stimulus_gen import *
+from tests.stim_lib.compile import bundle_config_into_write, make_trigger_write, write_array_to_asm
 
 # simulator = 'xrun'
 sim_args = {'vcs':  [
@@ -83,16 +84,17 @@ def write_parameter_definition_file(parameter_list,filepath):
         
 @pytest.mark.parametrize(
     "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y",[
-    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0),           # single-bank test
-    ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0),           # offset 
-    ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38),           # offset 
-    ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0),           # requires multistage write
-    ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           # fits in one bank, multibank
-    ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           # max size matrix for 3x3 kernel
-    ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
-    ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0),           # wide matrix, short vertical
-    ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
-    ('fc_pw_long',      (1,40,16,16),   (32,40,1,1),    (256,256),  1,          1,      0,          0),           # wide matrix, short vertical
+    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0),           
+    ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0),           
+    ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38),          
+    ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),    (256,256),  1,          1,      69,         38),          
+    ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0),           
+    ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           
+    ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           
+    ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           
+    ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0),           
+    ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),     (256,256),  1,          1,      0,          0),           
+    ('fc_pw_long',      (1,40,16,16),  (32,40,1,1),    (256,256),  1,          1,      0,          0),           
 ])
 def test_qr_acc_top_single_load(
     col_symmetric,
@@ -109,10 +111,13 @@ def test_qr_acc_top_single_load(
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
+    soft_padding = False,
     snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
-):  
+): 
     weight_mode = 'bipolar'
     mac_mode = 1 if weight_mode == 'binary' else 0
+
+    config_write_address = '00000010'
 
     # Pointwise convolutions do not pad or stride
     if kernel_shape[2] == 1 and kernel_shape[3] == 1:
@@ -134,7 +139,9 @@ def test_qr_acc_top_single_load(
         '../rtl/output_scaler/output_scaler.sv',
         '../rtl/memory/ram_2w2r.sv',
         '../rtl/feature_loader/feature_loader.sv',
-        '../rtl/control/qracc_controller.sv'
+        '../rtl/feature_loader/padder.sv',
+        '../rtl/control/qracc_csr.sv',
+        '../rtl/control/qracc_controller.sv',
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
@@ -148,23 +155,15 @@ def test_qr_acc_top_single_load(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
-    print('')
-    print(f"stimulus = generate_top_inputs(None,{stride},{ifmap_shape},{ifmap_bits},{kernel_shape},{kernel_bits},{core_shape},{padding},{mm_offset_x},{mm_offset_y})")
-    stimulus = generate_top_inputs(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y)
-    
+    raw_data, stimulus = generate_hexes(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y, soft_padding = soft_padding)
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
-
     ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
     ofmap_dimy = ofmap_dimx
     ofmap_dimc = kernel_shape[0]
     ofmap_shape = (ofmap_dimc,ofmap_dimy,ofmap_dimx)
 
     # Infer optimal ADC reference range shifts
-    first_partials = q.int_to_trit(stimulus['toeplitz'][0],ifmap_bits).T @ stimulus['small_matrix']
-    mean_partial = first_partials.mean()
-    adc_ref_range_shifts = np.ceil(np.log(mean_partial)/np.log(2)) - 3
-    if adc_ref_range_shifts < 0:
-        adc_ref_range_shifts = 0
+    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['small_matrix'], ifmap_bits)
 
     parameter_list = {
         "SRAM_ROWS": core_shape[0],
@@ -176,9 +175,9 @@ def test_qr_acc_top_single_load(
         "FILTER_SIZE_X": kernel_shape[2],
         "FILTER_SIZE_Y": kernel_shape[3],
         "OFMAP_SIZE": np.prod(ofmap_shape),
-        "IFMAP_SIZE": np.prod(ifmap_shape_with_padding),
-        "IFMAP_DIMX": ifmap_shape_with_padding[2],
-        "IFMAP_DIMY": ifmap_shape_with_padding[3],
+        "IFMAP_SIZE": np.prod(ifmap_shape) if not soft_padding else np.prod(ifmap_shape_with_padding),
+        "IFMAP_DIMX": ifmap_shape[2],
+        "IFMAP_DIMY": ifmap_shape[3],
         "OFMAP_DIMX": ofmap_dimx,
         "OFMAP_DIMY": ofmap_dimy,
         "IN_CHANNELS": kernel_shape[1],
@@ -190,16 +189,56 @@ def test_qr_acc_top_single_load(
         "UNSIGNED_ACTS": 1,
         "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }
-
+    
     print(f'Parameter list: {parameter_list}')
-
     write_parameter_definition_file(parameter_list,param_file_path)
+
+    # Config
+    config_dict = {
+        "n_input_bits_cfg": ifmap_bits,
+        "n_output_bits_cfg": ofmap_bits,
+        "unsigned_acts": 1,
+        "binary_cfg": 1,
+        "adc_ref_range_shifts": int(adc_ref_range_shifts),
+        "filter_size_y": kernel_shape[3],
+        "filter_size_x": kernel_shape[2],
+        "input_fmap_dimx": ifmap_shape[2] if not soft_padding else ifmap_shape_with_padding[2],
+        "input_fmap_dimy": ifmap_shape[3] if not soft_padding else ifmap_shape_with_padding[3],
+        "output_fmap_dimx": ofmap_dimx,
+        "output_fmap_dimy": ofmap_dimy,
+        "stride_x": stride,
+        "stride_y": stride,
+        "num_input_channels": kernel_shape[1],
+        "num_output_channels": kernel_shape[0],
+        "mapped_matrix_offset_x": mm_offset_x,
+        "mapped_matrix_offset_y": mm_offset_y,
+        "padding": padding if not soft_padding else 0,  # Use 0 padding for soft padding
+        "padding_value": stimulus["scaler_params"]["zp_x"],  # Padding value for the input feature map
+    }
+    print(f"Config Dict: {config_dict}")
+    config_writes = bundle_config_into_write(config_dict, config_write_address)
+
+    commands = config_writes
+    commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
+    commands += write_array_to_asm(raw_data['weights']) 
+    commands += write_array_to_asm(raw_data['scales']) 
+    commands += write_array_to_asm(raw_data['biases']) 
+    commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
+    commands += write_array_to_asm(raw_data['ifmap'])
+    commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
+    commands += [f'WAITBUSY']
+    commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
+    commands += [f'WAITREAD']
+    commands += ['END']
+
+    with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
+        for write in commands:
+            f.write(write + '\n')
 
     # Simulation
     run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
     # Post-simulation
-
     acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
     result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
@@ -661,8 +700,9 @@ def save_scatter_fig(expected, actual, title, filename):
     lim = [expected.min(),expected.max()]
     sns.lineplot(x=lim,y=lim,color='gray',linestyle='--')
     plt.tight_layout()
-    plt.savefig(f'images/{filename}.svg')
+    # plt.savefig(f'images/{filename}.svg') # Saving scatter plots to SVG is a little too slow
     plt.savefig(f'images/png/{filename}.png')
+    plt.close()
 
 def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
     """

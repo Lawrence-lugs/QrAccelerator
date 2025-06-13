@@ -21,6 +21,16 @@ package qracc_pkg;
     parameter outputBits = `QRACC_OUTPUT_BITS;
     parameter inputBits = `QRACC_INPUT_BITS;
 
+    // Trigger Values
+    typedef enum logic [2:0] {
+        TRIGGER_IDLE                  = 0,
+        TRIGGER_LOAD_ACTIVATION       = 1, 
+        TRIGGER_LOADWEIGHTS_PERIPHS   = 2,
+        TRIGGER_COMPUTE_ANALOG        = 3,
+        TRIGGER_COMPUTE_DIGITAL       = 4,
+        TRIGGER_READ_ACTIVATION       = 5
+    } qracc_trigger_t;
+
     // Control signals for QRAcc
     typedef struct packed {
         // QRAcc
@@ -44,35 +54,52 @@ package qracc_pkg;
         logic output_scaler_shift_w_en;
         logic output_scaler_offset_w_en;
         logic output_bias_w_en;
+
+        logic [15:0] padding_start;
+        logic [15:0] padding_end;
     } qracc_control_t;
 
     // Config that changes per-layer
     typedef struct packed {        
 
-        logic [3:0] n_input_bits_cfg;  
-        logic [3:0] n_output_bits_cfg; // we don't use this yet (it's a parameter atm)
+        // CSR 0: Main
+        // 2:0 - csr_main_trigger
+        // 3 - csr_main_clear
+        // 4 - csr_main_busy = state_q == S_IDLE
+        // 5 - csr_main_inst_write_mode = 1 if writing instructions
+        // 7:5 - free
+        // 11:8 - csr_main_internal_state = state_q of qracc_controller
 
-        logic binary_cfg; // binary or bipolar mode, binary if 1
-        logic unsigned_acts; // unsigned or signed acts
-        logic [2:0] adc_ref_range_shifts; // for analog IMC
+        // CSR 1: Config
+        logic binary_cfg;                       // 0 - binary or bipolar mode, binary if 1
+        logic unsigned_acts;                    // 1 - unsigned or signed acts
+        logic [3:0] adc_ref_range_shifts;       // 7:4
+        logic [3:0] filter_size_y;              // 11:8
+        logic [3:0] filter_size_x;              // 15:12
+        logic [3:0] stride_x;                   // 19:16
+        logic [3:0] stride_y;                   // 23:20
+        logic [3:0] n_input_bits_cfg;           // 27:24 
+        logic [3:0] n_output_bits_cfg;          // 31:28
 
-        logic [3:0] filter_size_y;
-        logic [3:0] filter_size_x;
-        logic [31:0] input_fmap_size;  // H * W * C
-        logic [31:0] output_fmap_size; // in number of elements
-        logic [31:0] input_fmap_dimx;  // W
-        logic [31:0] input_fmap_dimy;  // H
-        logic [9:0] num_input_channels;
-        logic [31:0] output_fmap_dimx; 
-        logic [31:0] output_fmap_dimy;
-        logic [9:0] num_output_channels;
+        // CSR 2: Ifmap Dims
+        logic [15:0] input_fmap_dimx;           // 15:0
+        logic [15:0] input_fmap_dimy;           // 31:16
 
-        logic [3:0] stride_x;
-        logic [3:0] stride_y;
+        // CSR 3: Ofmap Dims
+        logic [15:0] output_fmap_dimx;          // 15:0
+        logic [15:0] output_fmap_dimy;          // 31:16
 
-        logic [9:0] mapped_matrix_offset_x;
-        logic [9:0] mapped_matrix_offset_y;
+        // CSR 4: Channels
+        logic [15:0] num_input_channels;        // 15:0
+        logic [15:0] num_output_channels;       // 31:16
 
+        // CSR 5: Mapped Matrix Offsets
+        logic [15:0] mapped_matrix_offset_x;    // 15:0
+        logic [15:0] mapped_matrix_offset_y;    // 31:16
+
+        // CSR 6: Padding Information
+        logic [3:0] padding;                    // 3:0 - 1 if zeropad enabled
+        logic [7:0] padding_value;              // 11:4
     } qracc_config_t;
 
     typedef struct {

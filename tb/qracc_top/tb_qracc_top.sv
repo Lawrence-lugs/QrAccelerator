@@ -42,8 +42,11 @@ module tb_qracc_top #(
     // Parameters: Feature Loader
     parameter aflDimY = 128,
     parameter aflDimX = 6,
-    parameter aflAddrWidth = 32
+    parameter aflAddrWidth = 32,
 
+    // Parameters: Addresses
+    parameter CSR_REG_MAIN_ADDR = 32'h0000_0010, // CSR base address
+    parameter QRACC_MAIN_ADDR = 32'h0000_0100 // QRAcc main address
 ) (
     
 );
@@ -64,7 +67,7 @@ logic [numBanks-1:0] bank_select;
 
 qracc_config_t cfg;
 logic csr_main_clear;
-logic csr_main_start;
+qracc_trigger_t csr_main_trigger;
 logic csr_main_busy;
 logic csr_main_inst_write_mode;
 
@@ -178,21 +181,12 @@ qr_acc_top #(
     .nrst                           (nrst),
 
     // Control Interface
-    .periph_i                       (periph.slave),
     .bus_i                          (bus.slave), 
 
     // Analog passthrough signals
     .to_analog                      (to_analog),
     .from_analog                    (from_analog),
-    .bank_select                    (bank_select),
-
-    // CSR signals for testing for now
-    .cfg                            (cfg),
-    .csr_main_clear                 (csr_main_clear),
-    .csr_main_start                 (csr_main_start),
-    .csr_main_busy                  (csr_main_busy),
-    .csr_main_inst_write_mode       (csr_main_inst_write_mode)
-
+    .bank_select                    (bank_select)
 );
 
 // Analog test schematic
@@ -232,6 +226,21 @@ ts_qracc_multibank #(
     .CLK(clk)
 );
 
+// Fake L2 Memory
+
+logic [7:0] l2_mem [2**21-1];
+logic [31:0] l2_mem_addr;
+always_ff @( posedge clk or negedge nrst ) begin : l2Mem
+    
+    if(!nrst) l2_mem_addr <= 0;
+    
+    if (bus.rd_data_valid) begin
+        for (int i = 0; i < 32/8; i++) begin
+            l2_mem[l2_mem_addr + i] <= bus.data_out[(32/8-1-i)*8 +: 8];
+        end
+        l2_mem_addr <= l2_mem_addr + 4;
+    end
+end
 
 /////////////
 // TESTING BOILERPLATE
@@ -239,22 +248,22 @@ ts_qracc_multibank #(
 
 static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
 static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/outputs/";
-
 static string tb_name = "tb_qracc_top";
 
-// Waveform dumping
-// `ifdef SYNOPSYS
-// initial begin
-//     $vcdplusfile({tb_name,".vpd"});
-//     $vcdpluson();
-//     $vcdplusmemon();
-//     $dumpvars(0);
-// end
-// `endif
-// initial begin
-//     $dumpfile({tb_name,".vcd"});
-//     $dumpvars(0);
-// end
+// Waveform Dumping
+`ifdef SYNOPSYS
+initial begin
+    $vcdplusfile({tb_name,".vpd"});
+    $vcdpluson();
+    $vcdplusmemon();
+    $dumpvars(0);
+end
+`endif
+initial begin
+    $dumpfile({tb_name,".vcd"});
+    $dumpvars(0);
+end
+
 
 // Clock Generation
 always #(CLK_PERIOD/2) clk = ~clk;
@@ -264,7 +273,7 @@ end
 
 // Watchdog
 initial begin
-    #(100_000_000); // 100 ms
+    #(100_000_0); // 100 ms
     $display("TEST FAILED - WATCHDOG TIMEOUT");
     $finish;
 end
@@ -273,10 +282,8 @@ end
 // FILE THINGS
 /////////////
 
-localparam numFiles = 14;
+localparam numFiles = 13;
 string files[numFiles] = {
-    "flat_output",
-    "flat_output_shape",
     "ifmap",
     "ifmap_shape",
     "matrix_shape",
@@ -288,7 +295,8 @@ string files[numFiles] = {
     "scaler_data_shape",
     "scaler_data",
     "biases",
-    "biases_shape"
+    "biases_shape",
+    "config"
 };
 int file_descriptors[numFiles];
 
@@ -414,6 +422,33 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
 
+task setup_config_from_file(int fd);
+
+    // Read the config file
+    $fscanf(fd,"n_input_bits_cfg: %d\n",cfg.n_input_bits_cfg);
+    $fscanf(fd,"n_output_bits_cfg: %d\n",cfg.n_output_bits_cfg);
+    $fscanf(fd,"unsigned_acts: %d\n",cfg.unsigned_acts);
+    $fscanf(fd,"binary_cfg: %d\n",cfg.binary_cfg);
+    $fscanf(fd,"adc_ref_range_shifts: %d\n",cfg.adc_ref_range_shifts);
+
+    $fscanf(fd,"filter_size_y: %d\n",cfg.filter_size_y);
+    $fscanf(fd,"filter_size_x: %d\n",cfg.filter_size_x);
+    $fscanf(fd,"input_fmap_dimx: %d\n",cfg.input_fmap_dimx);
+    $fscanf(fd,"input_fmap_dimy: %d\n",cfg.input_fmap_dimy);
+    $fscanf(fd,"output_fmap_dimx: %d\n",cfg.output_fmap_dimx);
+    $fscanf(fd,"output_fmap_dimy: %d\n",cfg.output_fmap_dimy);
+
+    $fscanf(fd,"stride_x: %d\n",cfg.stride_x);
+    $fscanf(fd,"stride_y: %d\n",cfg.stride_y);
+
+    $fscanf(fd,"num_input_channels: %d\n",cfg.num_input_channels);
+    $fscanf(fd,"num_output_channels: %d\n",cfg.num_output_channels);
+
+    $fscanf(fd,"mapped_matrix_offset_x: %d\n",cfg.mapped_matrix_offset_x);
+    $fscanf(fd,"mapped_matrix_offset_y: %d\n",cfg.mapped_matrix_offset_y);
+
+endtask
+
 task setup_config();
     cfg.n_input_bits_cfg = `QRACC_INPUT_BITS;
     cfg.n_output_bits_cfg = `QRACC_OUTPUT_BITS;
@@ -424,8 +459,6 @@ task setup_config();
     
     cfg.filter_size_y = `FILTER_SIZE_Y;
     cfg.filter_size_x = `FILTER_SIZE_X;
-    cfg.input_fmap_size = `IFMAP_SIZE;
-    cfg.output_fmap_size = `OFMAP_SIZE;
     cfg.input_fmap_dimx = `IFMAP_DIMX;
     cfg.input_fmap_dimy = `IFMAP_DIMY;
     cfg.output_fmap_dimx = `OFMAP_DIMX;
@@ -441,6 +474,35 @@ task setup_config();
     cfg.mapped_matrix_offset_y = `MAPPED_MATRIX_OFFSET_Y;
 endtask
 
+assign cfg = u_qr_acc_top.cfg;
+
+task display_config();
+
+    $display("=== CONFIGURATION ===");
+    $display("n_input_bits_cfg: %d", u_qr_acc_top.cfg.n_input_bits_cfg);
+    $display("n_output_bits_cfg: %d", u_qr_acc_top.cfg.n_output_bits_cfg);
+    $display("unsigned_acts: %d", u_qr_acc_top.cfg.unsigned_acts);
+    $display("binary_cfg: %d", u_qr_acc_top.cfg.binary_cfg);
+    $display("adc_ref_range_shifts: %d", u_qr_acc_top.cfg.adc_ref_range_shifts);
+
+    $display("filter_size_y: %d", u_qr_acc_top.cfg.filter_size_y);
+    $display("filter_size_x: %d", u_qr_acc_top.cfg.filter_size_x);
+    $display("input_fmap_dimx: %d", u_qr_acc_top.cfg.input_fmap_dimx);
+    $display("input_fmap_dimy: %d", u_qr_acc_top.cfg.input_fmap_dimy);
+    $display("output_fmap_dimx: %d", u_qr_acc_top.cfg.output_fmap_dimx);
+    $display("output_fmap_dimy: %d", u_qr_acc_top.cfg.output_fmap_dimy);
+
+    $display("stride_x: %d", u_qr_acc_top.cfg.stride_x);
+    $display("stride_y: %d", u_qr_acc_top.cfg.stride_y);
+
+    $display("num_input_channels: %d", u_qr_acc_top.cfg.num_input_channels);
+    $display("num_output_channels: %d", u_qr_acc_top.cfg.num_output_channels);
+
+    $display("mapped_matrix_offset_x: %d", u_qr_acc_top.cfg.mapped_matrix_offset_x);
+    $display("mapped_matrix_offset_y: %d", u_qr_acc_top.cfg.mapped_matrix_offset_y);
+
+endtask
+
 task start_sim();
 
     // errcnt = 0;
@@ -451,20 +513,10 @@ task start_sim();
         $finish;
     end
 
-    cfg = 0;
-    csr_main_busy = 0;
-    csr_main_clear = 0;
-    csr_main_inst_write_mode = 0;
-    csr_main_start = 0;
-
     bus.wen = 0;
     bus.valid = 0;
     bus.addr = 0;
     bus.data_in = 0;
-    periph.wen = 0;
-    periph.valid = 0;
-    periph.addr = 0;
-    periph.data = 0;
 
     $display("=============== STARTING SIMULATION ===============");
     nrst = 0;
@@ -473,62 +525,105 @@ task start_sim();
     #(CLK_PERIOD*2);
 endtask
 
-task load_weights();
+task status_checkup();
+    $display("STATE: %s", u_qr_acc_top.u_qracc_controller.state_q.name());
+endtask
 
-    tb_state = S_LOADWEIGHTS;
-    $display("Loading weights at time %t", $time);
-    for (i=0;i<qrAccInputElements*numBanks;i++) begin
-        bus.data_in = weight_matrix.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
+task bus_write_loop();
+
+    int fd;
+    int data;
+    int addr;
+    int i;
+    string command;
+    fd = $fopen({files_path,"commands.txt"},"r");
+    
+    $display("=========== BUS COMMAND LOOP ============");
+    if (fd == 0) begin
+        $display("Error opening commands file");
+        $finish;
     end
+
+    while (!$feof(fd)) begin
+        $fscanf(fd,"%s", command);
+        case(command)
+            "LOAD": begin
+                $fscanf(fd,"%h %h",addr,data);
+                casex(addr)
+                    32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
+                    32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
+                    default: $write("Writing to unknown address: %h = %h", addr, data);
+                endcase
+                bus.addr = addr;
+                bus.data_in = data;
+                bus.valid = 1;
+                bus.wen = 1;
+                if(!$feof(fd)) begin
+                    while (!bus.ready) begin 
+                        #(CLK_PERIOD);
+                        $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    $write("\tDONE\n");
+                    bus.valid = 0;
+                    status_checkup();
+                end
+            end
+            "WAITBUSY": begin
+                
+                // wait_busy_silent(CSR_REG_MAIN_ADDR);
+                track_toeplitz();
+
+            end
+            "WAITREAD": begin
+                // Wait for reads to finish
+                i = 0;
+                for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
+                    bus.addr = QRACC_MAIN_ADDR;
+                    bus.valid = 1;
+                    bus.wen = 0;
+                    while (!bus.ready) begin 
+                        #(CLK_PERIOD);
+                        i++;
+                        $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    i++;
+                end
+                $display("\nQRAcc is ready after %d cycles", i);
+            end
+            "END": begin
+                $write("Ending bus write loop\n");
+                break;
+            end
+        endcase
+    end
+
     $write("\n");
+    $display("=========== END OF BUS WRITE LOOP ============");
 
 endtask
 
-task check_weights();
+task wait_busy_silent();
 
-    // Check weights doesn't work for multibank, because we're trying to access inside.
-
-    // $display("Checking weights at time %t", $time);
-    // for (i=0;i<qrAccInputElements;i++) begin
-    //     if (i%4 == 0) begin
-    //         $write("\n");
-    //         $write("[%d]:\t",i);
-    //     end else begin
-    //         $write("\t");
-    //     end
-
-    //     $write("%h\t",u_ts_qracc.mem[i]);
-    //     if (u_ts_qracc..mem[i] != weight_matrix.array[i]) begin
-    //         $write(" != %h",weight_matrix.array[i]);
-    //         errcnt++;
-    //     end
-    // end
-    // $write("\n");
-
-endtask
-
-task load_acts();
-
-    tb_state = S_LOADACTS;
-
-    $display("Loading activations at time %t", $time);
-    for (i=0;i<ifmap.size;i++) begin
-        bus.data_in = ifmap.array[i];
+    input int addr;
+    int i;
+    $display("Waiting for QRAcc to be ready", $time);
+    i = 0;
+    do begin
+        bus.addr = addr; // CSR_REG_MAIN
         bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
+        bus.wen = 0;
+        // $display("%h",bus.data_out);
+        while (!bus.ready) begin 
+            #(CLK_PERIOD);
+            i++;
+            // $write(".");
+        end
         #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
+        i++;
+    end while (bus.data_out[4] == 1); // QRACC IS BUSY 
+    $display("\nQRAcc is ready after %d cycles", i);
 endtask
 
 // Address by 4-byte word
@@ -573,11 +668,11 @@ task track_toeplitz();
     tb_state = S_COMPUTE;
     errflag = 0;
     trow = 0;
-    tplitz_offset = cfg.mapped_matrix_offset_y;
+    tplitz_offset = {16'b0,cfg.mapped_matrix_offset_y};
     tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
 
     // Track only during compute state
-    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE) begin
+    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE_ANALOG) begin
 
         if (trow >= MAX_TROWS) begin
             $display("ERROR: Reached maximum number of rows (%d). Stopping tracking.", MAX_TROWS);
@@ -603,6 +698,9 @@ task track_toeplitz();
                 end else begin
                     $write("-- ");
                 end
+                if (j % 32 == 31) begin
+                    $write("\n");
+                end
             end
             $write("\n");
 
@@ -616,6 +714,9 @@ task track_toeplitz();
                     end else begin
                         $write("-- ");
                     end
+                    if (j % 32 == 31) begin
+                        $write("\n");
+                    end
                 end
                 $write("\n");
                 errflag=0;
@@ -625,44 +726,6 @@ task track_toeplitz();
 
         #(CLK_PERIOD);
     end
-
-endtask
-
-task load_biases();
-
-    tb_state = S_LOADBIAS;
-
-    $display("Loading biases at time %t", $time);
-    for (i=0;i<biases.size;i++) begin
-        // $display("[%d]:\t",i);
-        bus.data_in = biases.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
-
-endtask
-
-task load_scales();
-
-    tb_state = S_LOADSCALE;
-
-    $display("Loading scaler data at time %t", $time);
-    for (i=0;i<scaler_data.size;i++) begin
-        // $display("[%d]:\t",i);
-        bus.data_in = scaler_data.array[i];
-        bus.valid = 1;
-        bus.wen = 1;
-        while (!bus.ready) #(CLK_PERIOD);
-        #(CLK_PERIOD);
-        $write(".");
-        bus.valid = 0;
-    end
-    $write("\n");
 
 endtask
 
@@ -712,27 +775,52 @@ task end_sim();
     $finish;
 endtask
 
-task export_ofmap();
+task magic_export_ofmap();
+
+    // Magically export of the ofmap without actual readout
 
     int a;
     int fd;
+    int ofmap_size;
+
+    ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
+
     $display("Exporting ofmap at time %t", $time);
 
-    fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
-    for(i=0;i<cfg.output_fmap_size;i++) begin
+    fd = $fopen({output_path,"hw_ofmap_magic",".txt"},"w");
+    for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
         if (cfg.unsigned_acts) begin
-            a = u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i];
+            a = u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ifmap_start_addr + i];
         end else begin
-            a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ofmap_start_addr + i]);
+            a = $signed(u_qr_acc_top.u_activation_buffer.mem[u_qr_acc_top.u_qracc_controller.ifmap_start_addr + i]);
         end
         $fwrite(fd,"%d\n",a);
     end
 
 endtask
 
+task export_l2();
+
+    int a;
+    int fd;
+    int ofmap_size;
+
+    ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
+
+    $display("Exporting ofmap at time %t", $time);
+
+    fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
+    for(i=0;i<ofmap_size;i++) begin
+        $fwrite(fd,"%d\n",l2_mem[i]);
+    end
+
+endtask
+
 initial begin
+    $display("=============== TESTBENCH START ===============");
+
     ifmap = new("ifmap");
     ofmap = new("result");
     weight_matrix = new("matrix");
@@ -740,33 +828,14 @@ initial begin
     scaler_data = new("scaler_data");
     biases = new("biases");
 
-    // Setup monitors
-    // $monitor("[MONITOR] controller state:%d",u_qr_acc_top.u_qracc_controller.state_q);
-
-
     start_sim();
-    
-    setup_config();
 
-    #(CLK_PERIOD*2);
-    csr_main_start = 1;
+    bus_write_loop();
 
-    // weight_matrix.print_array();
+    display_config();
 
-    load_weights();
-    load_acts();
-    load_scales();
-    load_biases();
-    check_weights();
-    check_acts();
-    check_scales();
+    export_l2();
 
-    #(CLK_PERIOD*2);
-
-    track_toeplitz();
-    export_ofmap();
-
-    #(CLK_PERIOD*1000);
     end_sim();
 
     $finish;
