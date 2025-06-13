@@ -592,6 +592,10 @@ task bus_write_loop();
                 end
                 $display("\nQRAcc is ready after %d cycles", i);
             end
+            "END": begin
+                $write("Ending bus write loop\n");
+                break;
+            end
         endcase
     end
 
@@ -694,6 +698,9 @@ task track_toeplitz();
                 end else begin
                     $write("-- ");
                 end
+                if (j % 32 == 31) begin
+                    $write("\n");
+                end
             end
             $write("\n");
 
@@ -706,6 +713,9 @@ task track_toeplitz();
                         $write("%h ",reference[7:0]);
                     end else begin
                         $write("-- ");
+                    end
+                    if (j % 32 == 31) begin
+                        $write("\n");
                     end
                 end
                 $write("\n");

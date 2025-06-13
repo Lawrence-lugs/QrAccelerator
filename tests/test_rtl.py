@@ -111,6 +111,7 @@ def test_qr_acc_top_single_load(
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
+    soft_padding = False,
     snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
 ): 
     weight_mode = 'bipolar'
@@ -138,6 +139,7 @@ def test_qr_acc_top_single_load(
         '../rtl/output_scaler/output_scaler.sv',
         '../rtl/memory/ram_2w2r.sv',
         '../rtl/feature_loader/feature_loader.sv',
+        '../rtl/feature_loader/padder.sv',
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
     ]
@@ -153,8 +155,7 @@ def test_qr_acc_top_single_load(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
-    raw_data, stimulus = generate_hexes(stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y)
-    
+    raw_data, stimulus = generate_hexes(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y, soft_padding = soft_padding)
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
     ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
     ofmap_dimy = ofmap_dimx
@@ -174,9 +175,9 @@ def test_qr_acc_top_single_load(
         "FILTER_SIZE_X": kernel_shape[2],
         "FILTER_SIZE_Y": kernel_shape[3],
         "OFMAP_SIZE": np.prod(ofmap_shape),
-        "IFMAP_SIZE": np.prod(ifmap_shape_with_padding),
-        "IFMAP_DIMX": ifmap_shape_with_padding[2],
-        "IFMAP_DIMY": ifmap_shape_with_padding[3],
+        "IFMAP_SIZE": np.prod(ifmap_shape) if not soft_padding else np.prod(ifmap_shape_with_padding),
+        "IFMAP_DIMX": ifmap_shape[2],
+        "IFMAP_DIMY": ifmap_shape[3],
         "OFMAP_DIMX": ofmap_dimx,
         "OFMAP_DIMY": ofmap_dimy,
         "IN_CHANNELS": kernel_shape[1],
@@ -201,8 +202,8 @@ def test_qr_acc_top_single_load(
         "adc_ref_range_shifts": int(adc_ref_range_shifts),
         "filter_size_y": kernel_shape[3],
         "filter_size_x": kernel_shape[2],
-        "input_fmap_dimx": ifmap_shape_with_padding[2],
-        "input_fmap_dimy": ifmap_shape_with_padding[3],
+        "input_fmap_dimx": ifmap_shape[2] if not soft_padding else ifmap_shape_with_padding[2],
+        "input_fmap_dimy": ifmap_shape[3] if not soft_padding else ifmap_shape_with_padding[3],
         "output_fmap_dimx": ofmap_dimx,
         "output_fmap_dimy": ofmap_dimy,
         "stride_x": stride,
@@ -210,11 +211,11 @@ def test_qr_acc_top_single_load(
         "num_input_channels": kernel_shape[1],
         "num_output_channels": kernel_shape[0],
         "mapped_matrix_offset_x": mm_offset_x,
-        "mapped_matrix_offset_y": mm_offset_y
+        "mapped_matrix_offset_y": mm_offset_y,
+        "padding": padding if not soft_padding else 0,  # Use 0 padding for soft padding
+        "padding_value": stimulus["scaler_params"]["zp_x"],  # Padding value for the input feature map
     }
-    # with open(stimulus_output_path + '/config.txt', 'w') as f:
-    #     for key, value in config_dict.items():
-    #         f.write(f'{key}: {value}\n')
+    print(f"Config Dict: {config_dict}")
     config_writes = bundle_config_into_write(config_dict, config_write_address)
 
     commands = config_writes
@@ -228,6 +229,7 @@ def test_qr_acc_top_single_load(
     commands += [f'WAITBUSY']
     commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
     commands += [f'WAITREAD']
+    commands += ['END']
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
@@ -698,8 +700,9 @@ def save_scatter_fig(expected, actual, title, filename):
     lim = [expected.min(),expected.max()]
     sns.lineplot(x=lim,y=lim,color='gray',linestyle='--')
     plt.tight_layout()
-    plt.savefig(f'images/{filename}.svg')
+    # plt.savefig(f'images/{filename}.svg') # Saving scatter plots to SVG is a little too slow
     plt.savefig(f'images/png/{filename}.png')
+    plt.close()
 
 def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
     """

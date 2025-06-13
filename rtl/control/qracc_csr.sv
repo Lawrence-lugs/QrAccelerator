@@ -29,7 +29,8 @@ typedef enum logic [3:0] {
     CSR_REG_IFMAP_DIMS = 2,
     CSR_REG_OFMAP_DIMS = 3,
     CSR_REG_CHANNELS = 4,
-    CSR_REG_OFFSETS = 5
+    CSR_REG_OFFSETS = 5,
+    CSR_REG_PADDING = 6
 } csr_names_t;
 
 // Signals
@@ -66,20 +67,8 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
                         // $display("CSR_REG_MAIN: csr_main_read_output = %h", csr_main_read_output);
                         csr_rd_data_o <= csr_main_read_output;
                     end
-                    CSR_REG_CONFIG: begin
-                        csr_rd_data_o <= csr_set[CSR_REG_CONFIG];
-                    end
-                    CSR_REG_IFMAP_DIMS: begin
-                        csr_rd_data_o <= csr_set[CSR_REG_IFMAP_DIMS];
-                    end
-                    CSR_REG_OFMAP_DIMS: begin
-                        csr_rd_data_o <= csr_set[CSR_REG_OFMAP_DIMS];
-                    end
-                    CSR_REG_CHANNELS: begin
-                        csr_rd_data_o <= csr_set[CSR_REG_CHANNELS];
-                    end
                     default: begin
-                        csr_rd_data_o <= 32'h0000_0000; // Default case, return zero
+                        csr_rd_data_o <= csr_set[csr_addr]; 
                     end
                 endcase
             end
@@ -131,6 +120,9 @@ always_comb begin : csrDecode
 
     cfg_o.mapped_matrix_offset_x = csr_set[CSR_REG_OFFSETS][15:0];
     cfg_o.mapped_matrix_offset_y = csr_set[CSR_REG_OFFSETS][31:16];    
+
+    cfg_o.padding = csr_set[CSR_REG_PADDING][3:0];
+    cfg_o.padding_value = csr_set[CSR_REG_PADDING][11:4];
 end
 
 endmodule

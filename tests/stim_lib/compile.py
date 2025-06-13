@@ -47,6 +47,7 @@ def bundle_config_into_write(
     CSR_REG_OFMAP_DIMS  = 3
     CSR_REG_CHANNELS    = 4
     CSR_REG_OFFSETS     = 5
+    CSR_REG_PADDING     = 6
 
     base_addr = int(config_write_address, 16)
 
@@ -78,6 +79,10 @@ def bundle_config_into_write(
         ((config_dict['mapped_matrix_offset_y'] & 0xFFFF) << 16) |
         ((config_dict['mapped_matrix_offset_x'] & 0xFFFF) << 0)
     )
+    padding_word = (
+        ((config_dict['padding_value'] & 0xFFFF) << 4) |
+        ((config_dict['padding'] & 0xFFFF) << 0)
+    )
 
     # List of (address, hex_word) for each CSR
     config_writes = [
@@ -86,6 +91,7 @@ def bundle_config_into_write(
         f"LOAD {base_addr + CSR_REG_OFMAP_DIMS:08x} {ofmap_dims_word:08x}",
         f"LOAD {base_addr + CSR_REG_CHANNELS:08x} {channels_word:08x}",
         f"LOAD {base_addr + CSR_REG_OFFSETS:08x} {offsets_word:08x}",
+        f"LOAD {base_addr + CSR_REG_PADDING:08x} {padding_word:08x}"  # Assuming padding is at CSR_REG_PADDING
     ]
     
     return config_writes

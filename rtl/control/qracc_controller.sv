@@ -105,6 +105,11 @@ logic read_acts_out_valid;
 logic [31:0] scaler_ptr;
 logic [31:0] weight_ptr;
 
+// Padding
+logic [31:0] padding_address_offset;
+logic [15:0] padding_start_q;
+logic [15:0] padding_end_q;
+
 ///////////////////
 // Logic
 ///////////////////
@@ -190,9 +195,12 @@ always_comb begin : ctrlDecode
             bus_i.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
             ctrl_o.activation_buffer_int_rd_addr = 
-                    cfg.num_input_channels * cfg.input_fmap_dimx * (opix_pos_y * cfg.stride_y + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * opix_pos_x * cfg.stride_x 
-                +   read_set*internalInterfaceElements // multicycle read if interface width < ifmap window row size
+                    cfg.num_input_channels * 
+                    cfg.input_fmap_dimx * 
+                    ( (opix_pos_y*cfg.stride_y - {28'b0,cfg.padding}) + {28'b0, fy_ctr})
+                +   cfg.num_input_channels * 
+                    (opix_pos_x*cfg.stride_x - {28'b0,cfg.padding}) 
+                +   read_set*internalInterfaceElements
                 ; // h*W*C + w*C + c
         
             ctrl_o.feature_loader_addr = feature_loader_addr_qq;
@@ -205,6 +213,9 @@ always_comb begin : ctrlDecode
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
             ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
+
+            ctrl_o.padding_start = padding_start_q;
+            ctrl_o.padding_end = padding_end_q;
         end
         S_READACTS: begin
             bus_i.ready = 1;
@@ -270,7 +281,7 @@ always_comb begin : stateDecode
             end
         end
         S_READACTS: begin
-            if (act_rd_ptr == output_fmap_size - 1) begin
+            if (act_rd_ptr > output_fmap_size - 1) begin
                 state_d = S_IDLE;
             end else begin
                 state_d = S_READACTS;
@@ -278,6 +289,84 @@ always_comb begin : stateDecode
         end
         default: state_d = state_q;
     endcase
+end
+
+always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
+    
+    if (!nrst) begin
+        padding_start_q <= 0;
+        padding_end_q <= 0;
+    end else begin
+        if (csr_main_clear) begin
+            padding_start_q <= 0;
+            padding_end_q <= 0;
+        end else begin
+            if (feature_loader_valid_out_qq && ~qracc_ready) begin
+                // Stop for stalls
+                padding_start_q <= padding_start_q;
+                padding_end_q <= padding_end_q;
+            end else 
+            if (cfg.padding > 0) begin
+                // For Y padding cases, pad all read sets
+                if (opix_pos_y*cfg.stride_y + 32'(fy_ctr) == 0) begin
+                    padding_start_q <= 0;
+                    padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
+                end else
+                // We only start padding when OY + FY == 18 - 1 (because padding adds 2 rows)
+                if (opix_pos_y*cfg.stride_y + 32'(fy_ctr) == 32'(cfg.input_fmap_dimy + 16'b1)) begin
+                    padding_start_q <= 0;
+                    padding_end_q <= cfg.num_input_channels * cfg.filter_size_x; 
+                end else
+                if (opix_pos_x == 0) begin
+                    // Pad first pixel for all windows
+                    // If a single read set is larger than the number of input channels, pad the entire read until the remainder is less than a read set count
+                    if ( cfg.num_input_channels < read_set*internalInterfaceElements ) begin
+                        // Don't pad anything- the current read set is past a single pixel
+                        padding_start_q <= 0;
+                        padding_end_q <= 0;
+                    end else begin
+                        // Pad all or up to the remaining channels of the pixel
+                        padding_start_q <= 0;
+                        padding_end_q <= (cfg.num_input_channels - read_set*internalInterfaceElements);
+                    end
+                    // padding_start_q <= 0;
+                    // padding_end_q <= cfg.num_input_channels;
+                end else
+                if (opix_pos_x*cfg.stride_x == 32'(cfg.input_fmap_dimx - 16'b1)) begin
+                    // Pad last pixel for all windows
+
+                    if ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) >=
+                        (read_set+1)*internalInterfaceElements) begin
+                        // CFx - C > (R_s+1)*W
+                        // Don't pad anything- the end of current read set is before the padded region
+                        padding_start_q <= 0;
+                        padding_end_q <= 0;
+                    end else
+                    if ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) < 
+                        (read_set+1)*internalInterfaceElements ) begin
+                        // CFx - C < R_s*w
+                        // The end of read set is inside padded region
+                        // Start = CFx-C-RsW see Journal 6 June 2025
+                        // End = pad to end
+                        padding_start_q <= ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) ) - read_set*internalInterfaceElements; 
+                        padding_end_q <= internalInterfaceElements;
+                    end else 
+                    begin
+                        // Pad entire thing once we're past the padding point
+                        padding_start_q <= 0;
+                        padding_end_q <= internalInterfaceElements;
+                    end
+                    
+                    // padding_start_q <= cfg.num_input_channels * 16'(cfg.filter_size_x - 4'b1);
+                    // padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
+                end else begin
+                    // No padding
+                    padding_start_q <= 0;
+                    padding_end_q <= 0;
+                end
+            end
+        end
+    end
 end
 
 always_ff @( posedge clk or negedge nrst ) begin
@@ -399,7 +488,6 @@ always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
 end
 
 // Activation read and write pointers logic (for streamin and streamout of activations)
-
 always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
     if (!nrst) begin
         ofmap_start_addr <= 0;
@@ -477,6 +565,5 @@ always_ff @( posedge clk or negedge nrst ) begin : scalerLogic
         end
     end
 end
-
 
 endmodule
