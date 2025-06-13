@@ -329,7 +329,8 @@ def generate_hexes(
     padding = 1,
     mm_offset_x = 0,
     mm_offset_y = 0,
-    seed = 0
+    seed = 0,
+    soft_padding = False
     ):
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
@@ -357,7 +358,17 @@ def generate_hexes(
                                         core_shape=core_shape, 
                                         mm_offset_x=mm_offset_x)
     bias_data_hex = vhex3(bias_data)
-    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=0,act_zero_point = scaler_params['zp_x'])
+    
+    loaded_ifmap_padding = padding if soft_padding else 0 
+
+    minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=loaded_ifmap_padding ,act_zero_point = scaler_params['zp_x'])
+
+    # print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+    if soft_padding:
+        print(f'[STIM_GEN] Using SOFT padding with {loaded_ifmap_padding} pixels. IFMAP shape: {minorized_padded_ifmap.shape}')
+    else:
+        print(f'[STIM_GEN] Using HARDWARE padding. IFMAP shape: {minorized_padded_ifmap.shape}')
+
     ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
 
     raw_data = {
