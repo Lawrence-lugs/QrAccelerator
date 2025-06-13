@@ -700,8 +700,9 @@ def save_scatter_fig(expected, actual, title, filename):
     lim = [expected.min(),expected.max()]
     sns.lineplot(x=lim,y=lim,color='gray',linestyle='--')
     plt.tight_layout()
-    plt.savefig(f'images/{filename}.svg')
+    # plt.savefig(f'images/{filename}.svg') # Saving scatter plots to SVG is a little too slow
     plt.savefig(f'images/png/{filename}.png')
+    plt.close()
 
 def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
     """

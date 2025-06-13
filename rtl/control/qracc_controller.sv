@@ -197,8 +197,9 @@ always_comb begin : ctrlDecode
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * 
                     cfg.input_fmap_dimx * 
-                    ( (opix_pos_y - {28'b0,cfg.padding} ) * cfg.stride_y + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * (opix_pos_x - {28'b0,cfg.padding}) * cfg.stride_x 
+                    ( (opix_pos_y*cfg.stride_y - {28'b0,cfg.padding}) + {28'b0, fy_ctr})
+                +   cfg.num_input_channels * 
+                    (opix_pos_x*cfg.stride_x - {28'b0,cfg.padding}) 
                 +   read_set*internalInterfaceElements
                 ; // h*W*C + w*C + c
         
@@ -307,14 +308,14 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
             end else 
             if (cfg.padding > 0) begin
                 // For Y padding cases, pad all read sets
-                if (opix_pos_y + 32'(fy_ctr) == 0) begin
+                if (opix_pos_y*cfg.stride_y + 32'(fy_ctr) == 0) begin
                     padding_start_q <= 0;
                     padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
                 end else
                 // We only start padding when OY + FY == 18 - 1 (because padding adds 2 rows)
-                if (opix_pos_y + 32'(fy_ctr) == 32'(cfg.output_fmap_dimy + 16'b1)) begin
+                if (opix_pos_y*cfg.stride_y + 32'(fy_ctr) == 32'(cfg.input_fmap_dimy + 16'b1)) begin
                     padding_start_q <= 0;
-                    padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
+                    padding_end_q <= cfg.num_input_channels * cfg.filter_size_x; 
                 end else
                 if (opix_pos_x == 0) begin
                     // Pad first pixel for all windows
@@ -331,7 +332,7 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                     // padding_start_q <= 0;
                     // padding_end_q <= cfg.num_input_channels;
                 end else
-                if (opix_pos_x == 32'(cfg.output_fmap_dimx - 16'b1)) begin
+                if (opix_pos_x*cfg.stride_x == 32'(cfg.input_fmap_dimx - 16'b1)) begin
                     // Pad last pixel for all windows
 
                     if ( cfg.num_input_channels * (cfg.filter_size_x-4'b1) >=
@@ -355,6 +356,7 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                         padding_start_q <= 0;
                         padding_end_q <= internalInterfaceElements;
                     end
+                    
                     // padding_start_q <= cfg.num_input_channels * 16'(cfg.filter_size_x - 4'b1);
                     // padding_end_q <= cfg.num_input_channels * cfg.filter_size_x;
                 end else begin

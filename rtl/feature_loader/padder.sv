@@ -21,8 +21,8 @@ logic [15:0] pad_low_limit;
 logic [15:0] pad_high_limit;
     
 always_comb begin : padDecode
-    pad_low_limit = numElements > pad_end ? numElements - pad_end : 0;
-    pad_high_limit = numElements > pad_start ? numElements - pad_start : 0;
+    pad_low_limit = numElements > $signed(pad_end) ? numElements - pad_end : 0;
+    pad_high_limit = numElements > $signed(pad_start) ? numElements - pad_start : 0;
     for (int i = 0; i < numElements; i++) begin
         // We pad from the end due to the endianness of the data from actmem
         if (i >= pad_low_limit && i < pad_high_limit) begin
