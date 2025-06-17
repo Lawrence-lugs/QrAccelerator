@@ -44,6 +44,7 @@ module qr_acc_top #(
     parameter aflDimY = 128,
     parameter aflDimX = 6,
     parameter aflAddrWidth = 32,
+    parameter featureLoaderNumElements = 9*32, // We need 32 windows for WSAcc
 
     // Parameters: Addressing
     parameter csrBaseAddr = 32'h0000_0010, // Base address for CSR
@@ -100,6 +101,7 @@ logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 
 // Signals: Feature Loader and Padder
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data_padded; 
+logic [featureLoaderNumElements-1:0][qrAccInputBits-1:0] feature_loader_data_out;
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
@@ -161,6 +163,9 @@ qracc_controller #(
 );
 
 // Main matrix multiplication
+
+assign qracc_mac_data = feature_loader_data_out[qrAccInputElements-1:0]; // Use only the first qrAccInputElements elements
+
 seq_acc #(
     .maxInputBits     (qrAccInputBits),
     .inputElements    (qrAccInputElements),
@@ -234,7 +239,7 @@ feature_loader #(
     .inputWidth        (globalBufferIntInterfaceWidth),
     .addrWidth         (aflAddrWidth),
     .elementWidth      (qrAccInputBits),
-    .numElements       (qrAccInputElements)
+    .numElements       (featureLoaderNumElements)
 ) u_feature_loader (
     .clk               (clk),
     .nrst              (nrst),
@@ -245,7 +250,7 @@ feature_loader #(
     .wr_en             (qracc_ctrl.feature_loader_wr_en),  
     
     // Interface with QR accelerator
-    .data_o            (qracc_mac_data),
+    .data_o            (feature_loader_data_out),
 
     .mask_start        (cfg.mapped_matrix_offset_y),
     .mask_end          (cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels + cfg.mapped_matrix_offset_y)
