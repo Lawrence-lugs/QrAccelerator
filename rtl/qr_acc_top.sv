@@ -44,6 +44,11 @@ module qr_acc_top #(
     parameter aflDimY = 128,
     parameter aflDimX = 6,
     parameter aflAddrWidth = 32,
+    parameter featureLoaderNumElements = 9*32, // We need 32 windows for WSAcc
+
+    // Parameters: WSAcc
+    parameter wsAccNumPes = 32, // Number of PEs in WSAcc
+    parameter wsAccWindowElements = 9, // Number of elements in the WSAcc window
 
     // Parameters: Addressing
     parameter csrBaseAddr = 32'h0000_0010, // Base address for CSR
@@ -100,6 +105,7 @@ logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 
 // Signals: Feature Loader and Padder
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data_padded; 
+logic [featureLoaderNumElements-1:0][qrAccInputBits-1:0] feature_loader_data_out;
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
@@ -148,6 +154,7 @@ qracc_controller #(
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
     .int_write_queue_valid      (int_write_queue_valid_out),
+    .wsacc_output_valid         (wsacc_data_o_valid),
 
     .cfg                        (cfg),
     .csr_main_clear             (csr_main_clear),
@@ -161,6 +168,9 @@ qracc_controller #(
 );
 
 // Main matrix multiplication
+
+assign qracc_mac_data = feature_loader_data_out[qrAccInputElements-1:0]; // Use only the first qrAccInputElements elements
+
 seq_acc #(
     .maxInputBits     (qrAccInputBits),
     .inputElements    (qrAccInputElements),
@@ -185,6 +195,38 @@ seq_acc #(
     .from_analog_i  (from_analog),
     .from_sram      (from_sram),
     .to_sram        (to_sram)
+);
+
+logic wsacc_data_o_valid;
+logic [wsAccNumPes-1:0][qrAccAccumulatorBits-1:0] wsacc_data_o;
+logic [wsAccNumPes-1:0][wsAccWindowElements-1:0][qrAccInputBits-1:0] wsacc_data_i;
+
+always_comb begin : wsAccDataOrientation
+    // Orient the data for the WSAcc PE cluster
+    for (int i = 0; i < wsAccNumPes; i++) begin // Channels
+        for (int j = 0; j < wsAccWindowElements; j++) begin // Window
+            wsacc_data_i[i][j] = feature_loader_data_out[i + j * cfg.num_input_channels];
+        end
+    end
+end
+wsacc_pe_cluster #(
+    .numPes(wsAccNumPes),
+    .windowElements(wsAccWindowElements),
+    .outputWidth(qrAccAccumulatorBits)
+) u_wsacc (
+    .clk(clk),
+    .nrst(nrst),
+    .data_i(wsacc_data_i),
+    .data_i_valid(qracc_ctrl.wsacc_data_i_valid),
+    .data_i_ready('0), // wsacc_pe_cluster will never stall in this system i just added it for fun
+    
+    .weight_itf_i(bus_i.data_in),
+    .weight_itf_i_valid(qracc_ctrl.wsacc_weight_itf_i_valid),
+    .weight_writing_done(),
+
+    .data_o(wsacc_data_o),
+    .data_o_valid(wsacc_data_o_valid),
+    .data_o_ready(data_o_ready)
 );
 
 // Main feature map buffer
@@ -234,7 +276,7 @@ feature_loader #(
     .inputWidth        (globalBufferIntInterfaceWidth),
     .addrWidth         (aflAddrWidth),
     .elementWidth      (qrAccInputBits),
-    .numElements       (qrAccInputElements)
+    .numElements       (featureLoaderNumElements)
 ) u_feature_loader (
     .clk               (clk),
     .nrst              (nrst),
@@ -245,11 +287,22 @@ feature_loader #(
     .wr_en             (qracc_ctrl.feature_loader_wr_en),  
     
     // Interface with QR accelerator
-    .data_o            (qracc_mac_data),
+    .data_o            (feature_loader_data_out),
 
     .mask_start        (cfg.mapped_matrix_offset_y),
     .mask_end          (cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels + cfg.mapped_matrix_offset_y)
 );
+
+logic [qrAccOutputElements-1:0][qrAccAccumulatorBits-1:0] oscaler_input;
+always_comb begin : oscalerMux
+    if (qracc_ctrl.wsacc_active) begin
+        // Use WSAcc output if active
+        oscaler_input = wsacc_data_o;
+    end else begin
+        // Use QRAcc output otherwise
+        oscaler_input = qracc_mac_output;
+    end
+end
 
 // Fixed point scaling from quantization methods in TFLite
 output_scaler_set #(
@@ -262,7 +315,7 @@ output_scaler_set #(
     .clk            (clk),
     .nrst           (nrst),
     
-    .wx_i           (qracc_mac_output),
+    .wx_i           (oscaler_input),
     .y_o            (output_scaler_output),
 
     .scale_w_en_i   (qracc_ctrl.output_scaler_scale_w_en),

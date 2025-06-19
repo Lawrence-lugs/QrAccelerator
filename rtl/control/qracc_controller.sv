@@ -4,10 +4,11 @@
 import qracc_pkg::*;
 
 module qracc_controller #(
-
-    // Instmem
     parameter numScalers = 32,
     parameter numRows = 256,
+    parameter numWsAccWrites = 72, // 32 * 9 / 4
+    // numWsAccWrites changes with the number of channels in a non-analytic way because of the 4-bit packing
+    // but it remains the same for a specific hardware configuration
 
     parameter internalInterfaceWidth = 128,
     parameter dataBusWidth = 32,
@@ -28,6 +29,7 @@ module qracc_controller #(
     // Signals from the people
     input qracc_ready,
     input qracc_output_valid,
+    input wsacc_output_valid,
     input from_sram_t from_sram,
     input int_write_queue_valid,
 
@@ -123,11 +125,13 @@ typedef enum logic [3:0] {
     S_COMPUTE_ANALOG = 4,
     S_READACTS = 5,
     S_LOADBIAS = 6,
-    S_COMPUTE_DIGITAL = 7
+    S_COMPUTE_DIGITAL = 7,
+    S_LOAD_DIGITAL_WEIGHTS = 8
 } state_t;
 
 state_t state_q;
 state_t state_d;
+state_t state_trigger;
 assign csr_main_internal_state = state_q;
 
 always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
@@ -174,6 +178,10 @@ always_comb begin : ctrlDecode
             bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
             bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
+        S_LOAD_DIGITAL_WEIGHTS: begin
+            ctrl_o.wsacc_weight_itf_i_valid = bus_i.valid;
+            bus_i.ready = 1;
+        end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
             ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr;
@@ -190,7 +198,9 @@ always_comb begin : ctrlDecode
             bus_i.ready = 1;
             // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE_ANALOG) ? 1 : 0;
         end
-        S_COMPUTE_ANALOG: begin
+        S_COMPUTE_ANALOG, S_COMPUTE_DIGITAL: begin
+
+            if (state_q == S_COMPUTE_DIGITAL) ctrl_o.wsacc_active = 1;
 
             bus_i.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
@@ -202,16 +212,17 @@ always_comb begin : ctrlDecode
                     (opix_pos_x*cfg.stride_x - {28'b0,cfg.padding}) 
                 +   read_set*internalInterfaceElements
                 ; // h*W*C + w*C + c
-        
+            
             ctrl_o.feature_loader_addr = feature_loader_addr_qq;
             // Do not write to feature loader seq_acc isn't ready yet
             ctrl_o.feature_loader_wr_en = ~(feature_loader_valid_out_qq && ~qracc_ready);
             // Latch output if feature loader isn't accepting writes
             ctrl_o.activation_buffer_int_rd_en = ctrl_o.feature_loader_wr_en; 
-            ctrl_o.qracc_mac_data_valid = feature_loader_valid_out_qq;
+            ctrl_o.qracc_mac_data_valid = feature_loader_valid_out_qq && (state_q == S_COMPUTE_ANALOG);
+            ctrl_o.wsacc_data_i_valid = feature_loader_valid_out_qq && (state_q == S_COMPUTE_DIGITAL);
 
             // OFMAP WRITEBACK
-            ctrl_o.activation_buffer_int_wr_en = qracc_output_valid;
+            ctrl_o.activation_buffer_int_wr_en = qracc_output_valid || wsacc_output_valid;
             ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
 
             ctrl_o.padding_start = padding_start_q;
@@ -231,17 +242,19 @@ always_comb begin : ctrlDecode
 end
 
 always_comb begin : stateDecode
+    case(csr_main_trigger)
+        TRIGGER_IDLE: state_trigger = S_IDLE;
+        TRIGGER_LOAD_ACTIVATION: state_trigger = S_LOADACTS;
+        TRIGGER_LOADWEIGHTS_PERIPHS: state_trigger = S_LOADWEIGHTS;
+        TRIGGER_COMPUTE_ANALOG: state_trigger = S_COMPUTE_ANALOG;
+        TRIGGER_COMPUTE_DIGITAL: state_trigger = S_COMPUTE_DIGITAL;
+        TRIGGER_READ_ACTIVATION: state_trigger = S_READACTS;
+        TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL: state_trigger = S_LOAD_DIGITAL_WEIGHTS;
+        default: state_trigger = S_IDLE;
+    endcase
     case(state_q)
         S_IDLE: begin
-            case(csr_main_trigger)
-                TRIGGER_IDLE: state_d = S_IDLE;
-                TRIGGER_LOAD_ACTIVATION: state_d = S_LOADACTS;
-                TRIGGER_LOADWEIGHTS_PERIPHS: state_d = S_LOADWEIGHTS;
-                TRIGGER_COMPUTE_ANALOG: state_d = S_COMPUTE_ANALOG;
-                TRIGGER_COMPUTE_DIGITAL: state_d = S_COMPUTE_DIGITAL;
-                TRIGGER_READ_ACTIVATION: state_d = S_READACTS;
-                default: state_d = S_IDLE;
-            endcase
+            state_d = state_trigger;
         end
         S_LOADWEIGHTS: begin
             if (weight_ptr < numRows*numBanks) begin
@@ -250,11 +263,18 @@ always_comb begin : stateDecode
                 state_d = S_LOADSCALER;
             end
         end
+        S_LOAD_DIGITAL_WEIGHTS: begin
+            if (weight_ptr < numWsAccWrites-1) begin
+                state_d = S_LOAD_DIGITAL_WEIGHTS;
+            end else begin
+                state_d = S_LOADSCALER;
+            end
+        end
         S_LOADACTS: begin
             if (act_wr_ptr + n_elements_per_word < input_fmap_size) begin
                 state_d = S_LOADACTS;
             end else begin
-                state_d = S_IDLE;
+                state_d = state_trigger;
             end
         end
         S_LOADSCALER: begin
@@ -270,19 +290,26 @@ always_comb begin : stateDecode
             if (scaler_ptr < numScalers-1) begin
                 state_d = S_LOADBIAS;
             end else begin
-                state_d = S_IDLE;
+                state_d = state_trigger;
+            end
+        end
+        S_COMPUTE_DIGITAL: begin
+            if (~feature_loader_valid_out_qq && write_queue_done && last_window) begin
+                state_d = state_trigger;
+            end else begin
+                state_d = state_q;
             end
         end
         S_COMPUTE_ANALOG: begin
             if (~feature_loader_valid_out_qq && qracc_ready && write_queue_done && last_window) begin
-                state_d = S_IDLE;
+                state_d = state_trigger;
             end else begin
-                state_d = S_COMPUTE_ANALOG;
+                state_d = state_q;
             end
         end
         S_READACTS: begin
             if (act_rd_ptr > output_fmap_size - 1) begin
-                state_d = S_IDLE;
+                state_d = state_trigger;
             end else begin
                 state_d = S_READACTS;
             end
@@ -408,9 +435,9 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
             read_set <= 0;
         end else
         
-        if (state_q == S_COMPUTE_ANALOG) begin
+        if (state_q == S_COMPUTE_ANALOG || state_q == S_COMPUTE_DIGITAL) begin
 
-            if (qracc_output_valid) begin
+            if (qracc_output_valid || wsacc_output_valid) begin
                 ofmap_offset_ptr <=  ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
             end
 
@@ -484,6 +511,12 @@ always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
                 weight_ptr <= 0;
             end
         end
+        if (state_q == S_LOAD_DIGITAL_WEIGHTS) begin
+            if (bus_i.valid) weight_ptr <= weight_ptr + 1;
+            if (state_d != S_LOAD_DIGITAL_WEIGHTS) begin 
+                weight_ptr <= 0;
+            end
+        end
     end
 end
 
@@ -539,6 +572,15 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
                 ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
             end
         end
+
+        if (state_q == S_COMPUTE_DIGITAL) begin
+
+            if (state_d != S_COMPUTE_DIGITAL) begin
+                ifmap_start_addr <= ofmap_start_addr;
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+            end
+        end
+
 
     end
 end

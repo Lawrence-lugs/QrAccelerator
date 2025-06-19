@@ -26,6 +26,7 @@ def make_trigger_write(
             'TRIGGER_COMPUTE_ANALOG': 3,
             'TRIGGER_COMPUTE_DIGITAL': 4,
             'TRIGGER_READ_ACTIVATION': 5,
+            'TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL': 6
         }
     if command not in csr_main_trigger_enum:
         raise ValueError(f"Unknown command: {command}")
