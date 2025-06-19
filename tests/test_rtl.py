@@ -83,18 +83,19 @@ def write_parameter_definition_file(parameter_list,filepath):
 
         
 @pytest.mark.parametrize(
-    "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y",[
-    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0),           
-    ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0),           
-    ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38),          
-    ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),    (256,256),  1,          1,      69,         38),          
-    ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0),           
-    ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0),           
-    ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0),           
-    ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0),           
-    ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0),           
-    ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),     (256,256),  1,          1,      0,          0),           
-    ('fc_pw_long',      (1,40,16,16),  (32,40,1,1),    (256,256),  1,          1,      0,          0),           
+    "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y, depthwise",[
+    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
+    ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0,          False),           
+    ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38,         False),          
+    ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),    (256,256),  1,          1,      69,         38,         False),          
+    ('morethan32fload', (1,16,16,16),  (32,16,3,3),    (256,32),   1,          1,      0,          0,          False),           
+    ('fc_smallload',    (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      0,          0,          False),           
+    ('fc_fullload',     (1,27,16,16),  (256,27,3,3),   (256,256),  1,          1,      0,          0,          False),           
+    ('fc_wideload',     (1,3,16,16),   (256,3,3,3),    (256,256),  1,          1,      0,          0,          False),           
+    ('fc_wide_2s',      (1,3,16,16),   (256,3,3,3),    (256,256),  1,          2,      0,          0,          False),           
+    ('fc_pointwise',    (1,3,16,16),   (32,3,1,1),     (256,256),  1,          1,      0,          0,          False),           
+    ('fc_pw_long',      (1,40,16,16),  (32,40,1,1),    (256,256),  1,          1,      0,          0,          False),   
+    ('depthwise',       (1,32,16,16),  (32,1,3,3),     (256,256),  1,          1,      0,          0,          True),
 ])
 def test_qr_acc_top_single_load(
     col_symmetric,
@@ -108,6 +109,7 @@ def test_qr_acc_top_single_load(
     stride,
     mm_offset_x,
     mm_offset_y,
+    depthwise,
     ifmap_bits = 8, 
     kernel_bits = 1,
     ofmap_bits = 8,
@@ -128,6 +130,8 @@ def test_qr_acc_top_single_load(
     rtl_file_list = [ 
         '../rtl/activation_buffer/piso_write_queue.sv',
         '../rtl/activation_buffer/mm_output_aligner.sv',
+        '../rtl/wsacc/wsacc_pe_cluster.sv',
+        '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
@@ -155,7 +159,34 @@ def test_qr_acc_top_single_load(
     os.makedirs(logdir,exist_ok=True)
 
     # Pre-simulation
-    raw_data, stimulus = generate_hexes(stimulus_output_path,stride,ifmap_shape,ifmap_bits,kernel_shape,kernel_bits,core_shape,padding,mm_offset_x,mm_offset_y, soft_padding = soft_padding)
+    print(f'raw_data, stimulus = generate_hexes('
+        f'savepath = None, '
+        f'stride = {stride}, '
+        f'ifmap_shape = {ifmap_shape}, '
+        f'ifmap_bits = {ifmap_bits}, '
+        f'kernel_shape = {kernel_shape}, '
+        f'kernel_bits = {kernel_bits}, '
+        f'core_shape = {core_shape}, '
+        f'padding = {padding}, '
+        f'mm_offset_x = {mm_offset_x}, '
+        f'mm_offset_y = {mm_offset_y}, '
+        f'soft_padding = {soft_padding}, '
+        f'depthwise={depthwise})'
+    )
+    raw_data, stimulus = generate_hexes(
+        savepath = stimulus_output_path,
+        stride = stride,
+        ifmap_shape = ifmap_shape,
+        ifmap_bits = ifmap_bits,
+        kernel_shape = kernel_shape,
+        kernel_bits = kernel_bits,
+        core_shape = core_shape,
+        padding = padding,
+        mm_offset_x = mm_offset_x,
+        mm_offset_y = mm_offset_y, 
+        soft_padding = soft_padding, 
+        depthwise=depthwise
+    )
     ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
     ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
     ofmap_dimy = ofmap_dimx
@@ -163,7 +194,8 @@ def test_qr_acc_top_single_load(
     ofmap_shape = (ofmap_dimc,ofmap_dimy,ofmap_dimx)
 
     # Infer optimal ADC reference range shifts
-    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['small_matrix'], ifmap_bits)
+    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['small_matrix'], ifmap_bits) if not depthwise else 0
+    # no need for adc_ref_range_shifts for depthwise convolutions, since we don't do IMC for that
 
     parameter_list = {
         "SRAM_ROWS": core_shape[0],
@@ -208,7 +240,7 @@ def test_qr_acc_top_single_load(
         "output_fmap_dimy": ofmap_dimy,
         "stride_x": stride,
         "stride_y": stride,
-        "num_input_channels": kernel_shape[1],
+        "num_input_channels": ifmap_shape[1],
         "num_output_channels": kernel_shape[0],
         "mapped_matrix_offset_x": mm_offset_x,
         "mapped_matrix_offset_y": mm_offset_y,
@@ -219,13 +251,19 @@ def test_qr_acc_top_single_load(
     config_writes = bundle_config_into_write(config_dict, config_write_address)
 
     commands = config_writes
-    commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
+    if depthwise:
+        commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
+    else:
+        commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
     commands += write_array_to_asm(raw_data['weights']) 
     commands += write_array_to_asm(raw_data['scales']) 
     commands += write_array_to_asm(raw_data['biases']) 
     commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
     commands += write_array_to_asm(raw_data['ifmap'])
-    commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
+    if depthwise:
+        commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address)
+    else:
+        commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
     commands += [f'WAITBUSY']
     commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
     commands += [f'WAITREAD']

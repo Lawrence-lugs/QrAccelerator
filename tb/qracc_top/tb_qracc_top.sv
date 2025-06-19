@@ -571,12 +571,15 @@ task bus_write_loop();
             end
             "WAITBUSY": begin
                 
+                
+                display_config();
                 // wait_busy_silent(CSR_REG_MAIN_ADDR);
                 track_toeplitz();
 
             end
             "WAITREAD": begin
                 // Wait for reads to finish
+                $display("Waiting for reads to finish...");
                 i = 0;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
                     bus.addr = QRACC_MAIN_ADDR;
@@ -672,23 +675,23 @@ task track_toeplitz();
     tplitz_height = cfg.filter_size_y * cfg.filter_size_x * cfg.num_input_channels;
 
     // Track only during compute state
-    while(u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.S_COMPUTE_ANALOG) begin
+    while( (u_qr_acc_top.u_qracc_controller.state_q == u_qr_acc_top.u_qracc_controller.state_d) ) begin
 
         if (trow >= MAX_TROWS) begin
             $display("ERROR: Reached maximum number of rows (%d). Stopping tracking.", MAX_TROWS);
             $finish;
         end
 
-        // Track only when the MAC input is accepted by the seq_acc
-        if(u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
+        // Track only when the MAC input is accepted by the seq_acc OR the wsacc
+        if((u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) || u_qr_acc_top.qracc_ctrl.wsacc_data_i_valid) begin
             $write("Window [%d][%d,%d]: \n", trow, u_qr_acc_top.u_qracc_controller.opix_pos_x, u_qr_acc_top.u_qracc_controller.opix_pos_y);
             
             // Produces a -- pattern for irrelevant activations
             for (j=0;j<qrAccInputElements;j++) begin
                 if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
                     reference  = toeplitz.index( {trow,j-tplitz_offset} );
-                    $write("%h",u_qr_acc_top.qracc_mac_data[j]);
-                    if (u_qr_acc_top.qracc_mac_data[j] != reference[7:0]) begin
+                    $write("%h",u_qr_acc_top.feature_loader_data_out[j]);
+                    if (u_qr_acc_top.feature_loader_data_out[j] != reference[7:0]) begin
                         $write("!");
                         errflag = 1;
                         errcnt++;
@@ -723,10 +726,9 @@ task track_toeplitz();
             end
             trow++;
         end
-
         #(CLK_PERIOD);
     end
-
+    #(CLK_PERIOD);
 endtask
 
 task check_scales();
@@ -831,8 +833,6 @@ initial begin
     start_sim();
 
     bus_write_loop();
-
-    display_config();
 
     export_l2();
 

@@ -23,12 +23,13 @@ package qracc_pkg;
 
     // Trigger Values
     typedef enum logic [2:0] {
-        TRIGGER_IDLE                  = 0,
-        TRIGGER_LOAD_ACTIVATION       = 1, 
-        TRIGGER_LOADWEIGHTS_PERIPHS   = 2,
-        TRIGGER_COMPUTE_ANALOG        = 3,
-        TRIGGER_COMPUTE_DIGITAL       = 4,
-        TRIGGER_READ_ACTIVATION       = 5
+        TRIGGER_IDLE                        = 0,
+        TRIGGER_LOAD_ACTIVATION             = 1, 
+        TRIGGER_LOADWEIGHTS_PERIPHS         = 2,
+        TRIGGER_COMPUTE_ANALOG              = 3,
+        TRIGGER_COMPUTE_DIGITAL             = 4,
+        TRIGGER_READ_ACTIVATION             = 5,
+        TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL = 6
     } qracc_trigger_t;
 
     // Control signals for QRAcc
@@ -45,6 +46,12 @@ package qracc_pkg;
         logic activation_buffer_int_rd_en;
         logic [31:0] activation_buffer_int_wr_addr;
         logic [31:0] activation_buffer_int_rd_addr;
+
+        // WSAcc
+        logic wsacc_data_i_valid;
+        logic wsacc_data_o_valid;
+        logic wsacc_weight_itf_i_valid;
+        logic wsacc_active;
         
         // Feature loader
         logic [31:0] feature_loader_addr;

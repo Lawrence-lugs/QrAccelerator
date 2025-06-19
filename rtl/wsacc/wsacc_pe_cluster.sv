@@ -1,7 +1,7 @@
 module wsacc_pe_cluster #(
     parameter numPes = 32,
     parameter int windowElements = 9,
-    parameter int outputWidth = 32,
+    parameter int outputWidth = 16,
     parameter int weightInterfaceWidth = 32,
     localparam dataWidth = 8 // We design the cluster for 8-bit data
 ) (
@@ -80,6 +80,8 @@ module wsacc_pe_cluster #(
             if (data_i_valid && data_i_ready) begin
                 data_o_valid <= 1'b1;
                 data_o <= data_o_d;
+            end else begin
+                data_o_valid <= 0;
             end
             // The only case where we can clear data_o_valid is when
             if (data_o_valid && data_o_ready && ~data_i_valid) data_o_valid <= 1'b0;

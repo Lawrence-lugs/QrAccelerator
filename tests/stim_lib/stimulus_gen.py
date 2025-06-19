@@ -10,11 +10,33 @@ import torch
 def _hex_but_no_0x(x):
     return hex(x)[2:]
 
-def _hex3(n):
-    return "%s"%("00000000%x"%(n&0xffffffff))[-8:]
+def _hex3(n,hexits=8):
+    return "%s"%("00000000%x"%(n&0xffffffff))[-hexits:]
 
 hex_but_no_0x = np.vectorize(_hex3)
 vhex3 = np.vectorize(_hex3)
+
+def kernel_to_writes(kernel, channels, hexes=True):
+    '''
+    Packs every 4 elements of the kernel channel dimension (in HWC) into a single 32-bit integer
+    Pads with zeros if the flattened kernel is not a multiple of 4.
+
+    If hexes is True, returns a list of hex strings, otherwise returns a numpy array of integers.
+    ''' 
+    kernel_flat = kernel.reshape(-1, channels)
+    kernel_flat = np.pad(kernel_flat, ((0, 0), (0, 4 - (kernel_flat.shape[1] % 4) if kernel_flat.shape[1] % 4 != 0 else 0)), mode='constant', constant_values=0)
+    kernel_flat = kernel_flat.reshape(-1, 4)
+    if hexes:
+        kernel_packed = vhex3(kernel_flat, hexits=2)
+        kernel_writes = []
+    else:
+        kernel_writes = np.zeros(kernel_flat.shape[0], dtype=np.uint32)
+    for i in range(kernel_flat.shape[0]):
+        if hexes:
+            kernel_writes.append(f'{kernel_packed[i,3]}{kernel_packed[i,2]}{kernel_packed[i,1]}{kernel_packed[i,0]}')
+        else:
+            kernel_writes[i] += (kernel_flat[i,3] & 0xFF) << 24 | (kernel_flat[i,2] & 0xFF) << 16 | (kernel_flat[i,1] & 0xFF) << 8 | (kernel_flat[i,0] & 0xFF)
+    return kernel_writes
 
 def generate_random_torch_conv(
     ifmap_shape,
@@ -88,6 +110,7 @@ def sample_onnx_qlinearconv(
     kernel_dtype,
     pads,
     stride,
+    depthwise = False,
     weight_density = 0.5,
     seed = 0,
     acts_mode = 'random',
@@ -164,6 +187,7 @@ def sample_onnx_qlinearconv(
         outputs=["y"],
         pads = pads,
         strides = (stride, stride),
+        group = 1 if not depthwise else kernel_shape[0],
     )
 
     scale_x = np.array(qa.scale, dtype=np.float32)
@@ -196,14 +220,14 @@ def sample_onnx_qlinearconv(
     cnode_params = {
         'scale_x' : scale_x,
         'zp_x' : zp_x,
-        'scale_w' : np.repeat(scale_w, kernel_shape[0]),
+        'scale_w' : np.repeat(scale_w, kernel_shape[0]) if scale_w.shape[0] != kernel_shape[0] else scale_w,
         'zp_w' : zp_w,
         'scale_y' : scale_y,
         'zp_y' : zp_y,
         'kernel' : qb.quantized_values,
         'biases' : np.zeros((kernel_shape[0],), dtype=np.int32),
         'strides' : stride,
-        'group' : 1
+        'group' : 1 if not depthwise else kernel_shape[0],
     }
     
     cnode = cnodes.from_QLinearConv(None, node, channel_minor=True, qparams = cnode_params)
@@ -222,8 +246,13 @@ def sample_onnx_qlinearconv(
     # Return expected tensor values
     t_kern = qb.quantized_values
     t_ifmap = qa.quantized_values
-    t_matrix = t_kern.transpose(0,2,3,1)
-    t_matrix = t_matrix.reshape(t_kern.shape[0],-1).T
+    
+    if depthwise:
+        t_matrix = t_kern
+    else:
+        t_matrix = t_kern.transpose(0,2,3,1)
+        t_matrix = t_matrix.reshape(t_kern.shape[0],-1).T
+
     t_toeplitz = compute.toeplitzize_input(
         in_tensor=t_ifmap.squeeze(axis=0), 
         ksize=kernel_shape[-1], 
@@ -318,6 +347,11 @@ def pad_bias_data(biases_to_map, core_shape, mm_offset_x):
     biases[mm_offset_x:mm_offset_x+biases_width] = biases_to_map
     return biases
 
+def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols = 32):
+    matrix_map = map_single_matrix(t_matrix, core_shape, x_offset=x_offset, y_offset=y_offset)
+    write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
+    return write_array
+
 def generate_hexes(
     savepath,
     stride,
@@ -326,12 +360,14 @@ def generate_hexes(
     kernel_shape,
     kernel_bits,
     core_shape,
+    depthwise = False,
     padding = 1,
     mm_offset_x = 0,
     mm_offset_y = 0,
     seed = 0,
     soft_padding = False
     ):
+    print(f't_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}, depthwise = {depthwise})')
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
         ifmap_bits=ifmap_bits,
@@ -341,29 +377,31 @@ def generate_hexes(
         pads = (padding,padding,padding,padding),
         stride = stride,
         seed = seed,
+        depthwise = depthwise,
         # weight_density=0.05,
         # acts_mode='counting',
         # weight_mode='spatial'
     )
 
-    matrix_map = map_single_matrix(t_matrix, core_shape, x_offset=mm_offset_x, y_offset=mm_offset_y)
-    write_array = mapped_matrix_to_bank_writes(matrix_map,32)
-    weight_array_hex = vhex3(write_array)
+    if not depthwise:
+        write_array = imc_matrix_to_writes(t_matrix, core_shape, x_offset=mm_offset_x, y_offset=mm_offset_y)
+    else:
+        kernel = t_matrix
+        kernel_hwc = kernel.transpose(1,2,3,0)
+        write_array = kernel_to_writes(kernel_hwc, 32, hexes=False)
+
     scaler_data = pad_scaler_writes(scaler_params['scale'], 
                                         core_shape=core_shape,
                                         output_zero_point=scaler_params['output_zp'],
                                         mm_offset_x=mm_offset_x)
-    scaler_data_hex = vhex3(scaler_data)
     bias_data = pad_bias_data(scaler_params['gph_node'][0].biases, 
                                         core_shape=core_shape, 
                                         mm_offset_x=mm_offset_x)
-    bias_data_hex = vhex3(bias_data)
     
     loaded_ifmap_padding = padding if soft_padding else 0 
 
     minorized_padded_ifmap = minorize_pad_ifmap(t_ifmap, padding=loaded_ifmap_padding ,act_zero_point = scaler_params['zp_x'])
 
-    # print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     if soft_padding:
         print(f'[STIM_GEN] Using SOFT padding with {loaded_ifmap_padding} pixels. IFMAP shape: {minorized_padded_ifmap.shape}')
     else:
@@ -384,8 +422,8 @@ def generate_hexes(
         'ifmap': minorized_padded_ifmap,
         'ifmap_ints': minorized_padded_ifmap,
         'small_matrix': t_matrix,
-        'matrix': write_array,
-        'weights_np': matrix_map, 
+        'matrix': write_array,  
+        'weights_np': t_matrix, 
         'scaler_data': scaler_data,
         'biases': bias_data,
         'scaler_params' : scaler_params
@@ -412,6 +450,7 @@ def generate_top_inputs(
     kernel_shape,
     kernel_bits,
     core_shape,
+    depthwise = False,
     padding = 1,
     mm_offset_x = 0,
     mm_offset_y = 0,
@@ -433,6 +472,7 @@ def generate_top_inputs(
         pads = (padding,padding,padding,padding),
         stride = stride,
         seed = seed,
+        depthwise = depthwise,
         # weight_density=0.05,
         # acts_mode='counting',
         # weight_mode='spatial'
