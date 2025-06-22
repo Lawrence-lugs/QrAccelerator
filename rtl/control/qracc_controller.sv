@@ -580,8 +580,6 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
                 ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
             end
         end
-
-
     end
 end
 

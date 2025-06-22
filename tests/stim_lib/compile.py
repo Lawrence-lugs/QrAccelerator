@@ -1,5 +1,6 @@
 import numpy as np
 from .stimulus_gen import *
+from hwacctools.comp_graph import compute, cgraph, cnodes, core
 
 def make_trigger_write(
     command,
@@ -102,3 +103,56 @@ def write_array_to_asm(write_array, address='00000100'):
     for element in write_array:
         asm.append(f"LOAD {address} {vhex3(element)}")
     return asm
+
+def get_config_from_mapped_node(
+    mapped_node : core.MappedOnnxNode,
+    ifmap_shape : tuple,
+    ifmap_bits = 8,
+    ofmap_bits = 8
+):
+    '''
+    Generate QRAcc configuration for a QLinearConv node.
+    Needs information about the previous ifmap shape.
+    '''
+
+    if ifmap_shape[1] != mapped_node.kernel.shape[1]:
+        raise ValueError("Input feature map channels do not match kernel input channels.")
+
+    kernel_shape = mapped_node.kernel.shape
+    ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*mapped_node.pads[0]) // mapped_node.strides[0]) + 1 #(W-K+2P)/S + 1
+    ofmap_dimy = ((ifmap_shape[3] - kernel_shape[3] + 2*mapped_node.pads[1]) // mapped_node.strides[1]) + 1
+
+    tplitz_window_length = kernel_shape[2] * kernel_shape[3] * ifmap_shape[1] # CFxFy
+
+    tplitz_act_vector = np.random.randint(
+        low=0, high=2**ifmap_bits, size=tplitz_window_length)
+
+    adc_ref_range_shifts = infer_optimal_adc_range_shifts(
+        tplitz_act_vector=tplitz_act_vector,
+        weights=mapped_node.matrix.T,
+        ifmap_bits=ifmap_bits
+    )
+
+    config_dict = {
+        "n_input_bits_cfg": ifmap_bits,
+        "n_output_bits_cfg": ofmap_bits,
+        "unsigned_acts": 1,
+        "binary_cfg": 1,
+        "adc_ref_range_shifts": int(adc_ref_range_shifts),
+        "filter_size_y": kernel_shape[3],
+        "filter_size_x": kernel_shape[2],
+        "input_fmap_dimx": ifmap_shape[2],
+        "input_fmap_dimy": ifmap_shape[3],
+        "output_fmap_dimx": ofmap_dimx,
+        "output_fmap_dimy": ofmap_dimy,
+        "stride_x": mapped_node.strides[0],
+        "stride_y": mapped_node.strides[1],
+        "num_input_channels": ifmap_shape[1],
+        "num_output_channels": kernel_shape[0],
+        "mapped_matrix_offset_x": mapped_node.offset_x,
+        "mapped_matrix_offset_y": mapped_node.offset_y,
+        "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
+        "padding_value": mapped_node.x_zp,  # Padding value for the input feature map
+    }
+
+    return config_dict
