@@ -16,6 +16,7 @@ module ts_qracc_multibank #(
     parameter numBanks = 8
 ) (
 
+    input logic [3:0] adc_ref_range_shifts,
     input logic [numBanks-1:0] bank_select,
 
     // ANALOG INTERFACE : SWITCH MATRIX
@@ -80,6 +81,8 @@ generate
             .numCols(numCols),
             .numAdcBits(numAdcBits)
         ) qracc (
+            .adc_ref_range_shifts(adc_ref_range_shifts),
+
             // ANALOG INTERFACE : SWITCH MATRIX
             .PSM_VDR_SEL(PSM_VDR_SEL),
             .PSM_VDR_SELB(PSM_VDR_SELB),

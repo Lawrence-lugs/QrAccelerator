@@ -79,28 +79,68 @@ def generate_tensor(shape, mode = 'random',seed = 0):
     elif mode == 'linspace':
         return np.linspace(0, 1, num = np.prod(shape)).reshape(shape)
 
-# def test_from_onnx_node(
-#     onnx_node,
-#     input_array,
-#     output_array
-# ):
+def _generate_random_quantized_acts(
+    ifmap_shape,
+    ifmap_bits,
+    acts_mode
+):
     
+    if acts_mode not in ['counting','random']:
+        raise ValueError(f"acts_mode must be 'counting' or 'random', got {acts_mode}")
 
+    qa_proto = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
+    if acts_mode == 'counting':
+        ifmap_size = np.prod(ifmap_shape)
+        a_qvals = np.arange(0,ifmap_size, dtype=np.uint8) % 100
+        a_qvals = a_qvals.reshape(ifmap_shape)
+        qa = quant.QuantizedTensor(quantized_values = a_qvals, scale = qa_proto.scale, zero_point=0) 
+    if acts_mode == 'random':
+        qa = qa_proto   
 
+    qa.quantized_values = qa.quantized_values.astype(np.uint8)
+    return qa
 
-#     # Parse required offsets
-#     scaler_params = {
-#         'scale' : scale_x * scale_w / scale_y,
-#         'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
-#         'output_zp' : zp_y,
-#         'nx_node' : node,
-#         'gph_node' : cnode,
-#         'cnode_params' : cnode_params,
-#         'zp_x' : zp_x,
-#     }
+def _generate_random_quantized_weights(
+    kernel_shape,
+    kernel_bits,
+    kernel_dtype = np.int8,
+    weight_density = 0.5,
+    weight_mode = 'random'
+):
+    
+    if kernel_bits == 1:
+        if weight_mode == 'random':
+            dist = np.random.rand(*kernel_shape)
+            b = (dist < weight_density).astype(int)
+        elif weight_mode == 'spatial':
+            b = np.zeros(kernel_shape)
+            for k in range(kernel_shape[0]):
+                # b[k][0][2][2] = 1
+                b[k][0][k % 3][k % 3] = 1
+        scale = np.random.uniform(0.01,0.2,kernel_shape[0])
+        qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
+    else:
+        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
-#     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
+    qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
 
+    return qb
+
+def infer_ofmap_shape(
+    ifmap_shape,
+    kernel_shape,
+    pads,
+    stride
+):
+    '''
+    Infer the output shape of a convolution operation.
+    '''
+    return (
+        ifmap_shape[0],
+        kernel_shape[0],
+        (ifmap_shape[2] - kernel_shape[2] + 2 * pads[0]) // stride + 1,
+        (ifmap_shape[3] - kernel_shape[3] + 2 * pads[2]) // stride + 1
+    )
 
 def sample_onnx_qlinearconv(
     ifmap_shape,
@@ -119,44 +159,26 @@ def sample_onnx_qlinearconv(
     
     '''
     Generates a sample QLinearConv
-
-    supports precisions < 8
-
-    only uint8 ifmap
-
-    acts_mode can be 'counting' or 'random'
+    * supports precisions < 8
+    * only uint8 ifmap
+    * acts_mode can be 'counting' or 'random'
     '''
 
     np.random.seed(seed)
 
-    if acts_mode not in ['counting','random']:
-        raise ValueError(f"acts_mode must be 'counting' or 'random', got {acts_mode}")
+    qa = _generate_random_quantized_acts(
+        ifmap_shape=ifmap_shape,
+        ifmap_bits=ifmap_bits,
+        acts_mode=acts_mode
+    )
 
-    qa_proto = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
-    if acts_mode == 'counting':
-        ifmap_size = np.prod(ifmap_shape)
-        a_qvals = np.arange(0,ifmap_size, dtype=np.uint8) % 100
-        a_qvals = a_qvals.reshape(ifmap_shape)
-        qa = quant.QuantizedTensor(quantized_values = a_qvals, scale = qa_proto.scale, zero_point=0) 
-    if acts_mode == 'random':
-        qa = qa_proto   
-
-    # 1-bit qb scales and zero point heuristically guessed from
-    # a standard normal distribution 
-    if kernel_bits == 1:
-        # b = np.random.randint(0,2, kernel_shape)
-        if weight_mode == 'random':
-            dist = np.random.rand(*kernel_shape)
-            b = (dist < weight_density).astype(int)
-        elif weight_mode == 'spatial':
-            b = np.zeros(kernel_shape)
-            for k in range(kernel_shape[0]):
-                # b[k][0][2][2] = 1
-                b[k][0][k % 3][k % 3] = 1
-        scale = np.random.uniform(0.01,0.2,kernel_shape[0])
-        qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
-    else:
-        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
+    qb = _generate_random_quantized_weights(
+        kernel_shape=kernel_shape,
+        kernel_bits=kernel_bits,
+        weight_density=weight_density,
+        weight_mode=weight_mode,
+        kernel_dtype=kernel_dtype
+    )
 
     ofmap_shape = (
         ifmap_shape[0],
@@ -167,9 +189,6 @@ def sample_onnx_qlinearconv(
 
     # infer doesn't actually need this
     sample_outs = quant.QuantizedTensor(shape = ofmap_shape, precision = 8, mode='3sigma')
-
-    qa.quantized_values = qa.quantized_values.astype(np.uint8)
-    qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
     sample_outs.quantized_values = sample_outs.quantized_values.astype(np.uint8)
 
     node = onnx.helper.make_node(
@@ -346,6 +365,20 @@ def _empty_directory(directory):
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
+def write_input_files(res_dict, savepath):
+    if savepath is not None:
+        # Empty the savepath directory if it exists
+        _empty_directory(savepath)
+        os.makedirs(savepath, exist_ok=True)
+        for key, value in res_dict.items():
+            if type(value) is dict:
+                continue
+            if value.dtype in ['int32','float64']:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            else:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
+            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+
 def generate_qracc_words(
     savepath,
     stride,
@@ -361,6 +394,7 @@ def generate_qracc_words(
     seed = 0,
     soft_padding = False
     ):
+
     print(f't_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}, depthwise = {depthwise})')
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
@@ -401,8 +435,6 @@ def generate_qracc_words(
     else:
         print(f'[STIM_GEN] Using HARDWARE padding. IFMAP shape: {minorized_padded_ifmap.shape}')
 
-    ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
-
     raw_data = {
         'ifmap':pack_ifmap_to_ints(minorized_padded_ifmap),
         'biases':bias_data,
@@ -414,26 +446,12 @@ def generate_qracc_words(
         'result': t_res,
         'toeplitz': t_toeplitz,
         'ifmap': minorized_padded_ifmap,
-        'matrix_raw': t_matrix,
-        'matrix': write_array,  
+        'matrix_raw': t_matrix, 
         'scaler_data': scaler_data,
         'biases': bias_data,
-        'scaler_params' : scaler_params
+        'scaler_params' : scaler_params # Can be removed later
     }
-
-    # We still need to save the stimuli for toeplitz tracking
-    if savepath is not None:
-        # Empty the savepath directory if it exists
-        _empty_directory(savepath)
-        os.makedirs(savepath, exist_ok=True)
-        for key, value in res_dict.items():
-            if type(value) is dict:
-                continue
-            if value.dtype in ['int32','float64']:
-                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
-            else:
-                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
-            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+    write_input_files(res_dict, savepath)
 
     return raw_data, res_dict
 

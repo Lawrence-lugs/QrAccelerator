@@ -195,33 +195,15 @@ def test_qr_acc_top_single_load(
 
     # Infer optimal ADC reference range shifts
     adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['matrix_raw'], ifmap_bits) if not depthwise else 0
-    # no need for adc_ref_range_shifts for depthwise convolutions, since we don't do IMC for that
 
+    # Parameters are bound to the specific hardware configuration
     parameter_list = {
         "SRAM_ROWS": core_shape[0],
         "SRAM_COLS": core_shape[1],
-        "QRACC_INPUT_BITS": ifmap_bits,
-        "QRACC_OUTPUT_BITS": ofmap_bits,
-        # "GB_INT_IF_WIDTH": max(core_shape[1]*ofmap_bits,core_shape[0]*ifmap_bits),
+        "QRACC_INPUT_BITS": 8,
+        "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
-        "FILTER_SIZE_X": kernel_shape[2],
-        "FILTER_SIZE_Y": kernel_shape[3],
-        "OFMAP_SIZE": np.prod(ofmap_shape),
-        "IFMAP_SIZE": np.prod(ifmap_shape) if not soft_padding else np.prod(ifmap_shape_with_padding),
-        "IFMAP_DIMX": ifmap_shape[2],
-        "IFMAP_DIMY": ifmap_shape[3],
-        "OFMAP_DIMX": ofmap_dimx,
-        "OFMAP_DIMY": ofmap_dimy,
-        "IN_CHANNELS": kernel_shape[1],
-        "OUT_CHANNELS": kernel_shape[0],
-        "MAPPED_MATRIX_OFFSET_X": mm_offset_x,
-        "MAPPED_MATRIX_OFFSET_Y": mm_offset_y,
-        "STRIDE_X": stride,
-        "STRIDE_Y": stride,
-        "UNSIGNED_ACTS": 1,
-        "NUM_ADC_REF_RANGE_SHIFTS": int(adc_ref_range_shifts)
     }
-    
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 
