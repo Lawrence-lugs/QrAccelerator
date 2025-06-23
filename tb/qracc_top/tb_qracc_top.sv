@@ -282,21 +282,16 @@ end
 // FILE THINGS
 /////////////
 
-localparam numFiles = 13;
+localparam numFiles = 8;
 string files[numFiles] = {
     "ifmap",
     "ifmap_shape",
-    "matrix_shape",
-    "matrix",
-    "result_shape",
-    "result",
-    "toeplitz_shape",
     "toeplitz",
-    "scaler_data_shape",
+    "toeplitz_shape",
     "scaler_data",
+    "scaler_data_shape",
     "biases",
-    "biases_shape",
-    "config"
+    "biases_shape"
 };
 int file_descriptors[numFiles];
 
@@ -421,33 +416,6 @@ endclass
 
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
-
-task setup_config_from_file(int fd);
-
-    // Read the config file
-    $fscanf(fd,"n_input_bits_cfg: %d\n",cfg.n_input_bits_cfg);
-    $fscanf(fd,"n_output_bits_cfg: %d\n",cfg.n_output_bits_cfg);
-    $fscanf(fd,"unsigned_acts: %d\n",cfg.unsigned_acts);
-    $fscanf(fd,"binary_cfg: %d\n",cfg.binary_cfg);
-    $fscanf(fd,"adc_ref_range_shifts: %d\n",cfg.adc_ref_range_shifts);
-
-    $fscanf(fd,"filter_size_y: %d\n",cfg.filter_size_y);
-    $fscanf(fd,"filter_size_x: %d\n",cfg.filter_size_x);
-    $fscanf(fd,"input_fmap_dimx: %d\n",cfg.input_fmap_dimx);
-    $fscanf(fd,"input_fmap_dimy: %d\n",cfg.input_fmap_dimy);
-    $fscanf(fd,"output_fmap_dimx: %d\n",cfg.output_fmap_dimx);
-    $fscanf(fd,"output_fmap_dimy: %d\n",cfg.output_fmap_dimy);
-
-    $fscanf(fd,"stride_x: %d\n",cfg.stride_x);
-    $fscanf(fd,"stride_y: %d\n",cfg.stride_y);
-
-    $fscanf(fd,"num_input_channels: %d\n",cfg.num_input_channels);
-    $fscanf(fd,"num_output_channels: %d\n",cfg.num_output_channels);
-
-    $fscanf(fd,"mapped_matrix_offset_x: %d\n",cfg.mapped_matrix_offset_x);
-    $fscanf(fd,"mapped_matrix_offset_y: %d\n",cfg.mapped_matrix_offset_y);
-
-endtask
 
 task setup_config();
     cfg.n_input_bits_cfg = `QRACC_INPUT_BITS;
@@ -656,8 +624,6 @@ task check_acts();
         end
     end
     $write("\n");
-
-
 endtask
 
 localparam MAX_TROWS = 260;
@@ -823,8 +789,8 @@ endtask
 initial begin
     $display("=============== TESTBENCH START ===============");
 
+    // Get files needed for inferring test
     ifmap = new("ifmap");
-    ofmap = new("result");
     weight_matrix = new("matrix");
     toeplitz = new("toeplitz");
     scaler_data = new("scaler_data");

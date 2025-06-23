@@ -281,27 +281,6 @@ def mapped_matrix_to_bank_writes(matrix_map, num_bank_cols = 32):
 
     return write_array
 
-def generate_stimuli_from_packed_cgraph(
-    cgraph: cgraph.Cgraph,
-    cnode_index,
-    savepath,
-    core_shape
-):
-
-    res_dict = {
-        'result': t_res,
-        'toeplitz': t_toeplitz,
-        'ifmap': ifmap_channel_packed_ints,
-        'ifmap_ints': ifmap_channel_minor,
-        'small_matrix': t_matrix,
-        'matrix': write_array,
-        'weights_np': matrix_map, 
-        'scaler_data': scaler_data,
-        'biases': biases,
-    }
-
-    return res_dict
-
 def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits = 8):
     first_partials = quant.int_to_trit(tplitz_act_vector,ifmap_bits).T @ weights
     mean_partial = first_partials.mean()
@@ -352,7 +331,22 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
     write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
     return write_array
 
-def generate_hexes(
+def _empty_directory(directory):
+    """
+    Empty the directory if it exists.
+    """
+    if os.path.exists(directory):
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    os.rmdir(file_path)
+            except Exception as e:
+                print(f'Failed to delete {file_path}. Reason: {e}')
+
+def generate_qracc_words(
     savepath,
     stride,
     ifmap_shape,
@@ -420,10 +414,8 @@ def generate_hexes(
         'result': t_res,
         'toeplitz': t_toeplitz,
         'ifmap': minorized_padded_ifmap,
-        'ifmap_ints': minorized_padded_ifmap,
-        'small_matrix': t_matrix,
+        'matrix_raw': t_matrix,
         'matrix': write_array,  
-        'weights_np': t_matrix, 
         'scaler_data': scaler_data,
         'biases': bias_data,
         'scaler_params' : scaler_params
@@ -431,6 +423,9 @@ def generate_hexes(
 
     # We still need to save the stimuli for toeplitz tracking
     if savepath is not None:
+        # Empty the savepath directory if it exists
+        _empty_directory(savepath)
+        os.makedirs(savepath, exist_ok=True)
         for key, value in res_dict.items():
             if type(value) is dict:
                 continue

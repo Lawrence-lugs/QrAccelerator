@@ -173,7 +173,7 @@ def test_qr_acc_top_single_load(
         f'soft_padding = {soft_padding}, '
         f'depthwise={depthwise})'
     )
-    raw_data, stimulus = generate_hexes(
+    raw_data, stimulus = generate_qracc_words(
         savepath = stimulus_output_path,
         stride = stride,
         ifmap_shape = ifmap_shape,
@@ -194,7 +194,7 @@ def test_qr_acc_top_single_load(
     ofmap_shape = (ofmap_dimc,ofmap_dimy,ofmap_dimx)
 
     # Infer optimal ADC reference range shifts
-    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['small_matrix'], ifmap_bits) if not depthwise else 0
+    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['matrix_raw'], ifmap_bits) if not depthwise else 0
     # no need for adc_ref_range_shifts for depthwise convolutions, since we don't do IMC for that
 
     parameter_list = {
@@ -282,7 +282,7 @@ def test_qr_acc_top_single_load(
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(stimulus['result'], acc_result)
-    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"{stimulus['small_matrix'].shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
+    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"{stimulus['matrix_raw'].shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
     print(acc_result.shape, stimulus['result'].shape)
     # plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
