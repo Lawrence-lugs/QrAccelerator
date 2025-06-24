@@ -1,11 +1,12 @@
 import numpy as np 
 import os
 import hwacctools.quantization.quant as quant
-from hwacctools.comp_graph import compute, cgraph, cnodes
+from hwacctools.comp_graph import compute, cgraph, cnodes, core
 from hwacctools import onnx_utils
 import onnx
 import torch.nn.functional as F
 import torch 
+import rectpack
 
 def _hex_but_no_0x(x):
     return hex(x)[2:]
@@ -79,30 +80,54 @@ def generate_tensor(shape, mode = 'random',seed = 0):
     elif mode == 'linspace':
         return np.linspace(0, 1, num = np.prod(shape)).reshape(shape)
 
-# def test_from_onnx_node(
-#     onnx_node,
-#     input_array,
-#     output_array
-# ):
+def _generate_random_quantized_acts(
+    ifmap_shape,
+    ifmap_bits,
+    acts_mode
+):
     
+    if acts_mode not in ['counting','random']:
+        raise ValueError(f"acts_mode must be 'counting' or 'random', got {acts_mode}")
 
+    qa_proto = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
+    if acts_mode == 'counting':
+        ifmap_size = np.prod(ifmap_shape)
+        a_qvals = np.arange(0,ifmap_size, dtype=np.uint8) % 100
+        a_qvals = a_qvals.reshape(ifmap_shape)
+        qa = quant.QuantizedTensor(quantized_values = a_qvals, scale = qa_proto.scale, zero_point=0) 
+    if acts_mode == 'random':
+        qa = qa_proto   
 
+    qa.quantized_values = qa.quantized_values.astype(np.uint8)
+    return qa
 
-#     # Parse required offsets
-#     scaler_params = {
-#         'scale' : scale_x * scale_w / scale_y,
-#         'ifmap_zp_offset' : zp_x * qb.quantized_values.sum(axis=(1,2,3)),
-#         'output_zp' : zp_y,
-#         'nx_node' : node,
-#         'gph_node' : cnode,
-#         'cnode_params' : cnode_params,
-#         'zp_x' : zp_x,
-#     }
+def _generate_random_quantized_weights(
+    kernel_shape,
+    kernel_bits,
+    kernel_dtype = np.int8,
+    weight_density = 0.5,
+    weight_mode = 'random'
+):
+    
+    if kernel_bits == 1:
+        if weight_mode == 'random':
+            dist = np.random.rand(*kernel_shape)
+            b = (dist < weight_density).astype(int)
+        elif weight_mode == 'spatial':
+            b = np.zeros(kernel_shape)
+            for k in range(kernel_shape[0]):
+                # b[k][0][2][2] = 1
+                b[k][0][k % 3][k % 3] = 1
+        scale = np.random.uniform(0.01,0.2,kernel_shape[0])
+        qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
+    else:
+        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
-#     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
+    qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
 
+    return qb
 
-def sample_onnx_qlinearconv(
+def sample_onnx_qlinearconv_old(
     ifmap_shape,
     ifmap_bits,
     kernel_shape,
@@ -264,6 +289,119 @@ def sample_onnx_qlinearconv(
 
     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
+
+def infer_ofmap_shape(
+    ifmap_shape,
+    kernel_shape,
+    pads,
+    stride
+):
+    '''
+    Infer the output shape of a convolution operation.
+    '''
+    stridex = stride[0]
+    stridey = stride[1]
+    ofmap_shape = (
+        ifmap_shape[0],
+        kernel_shape[0],
+        (ifmap_shape[2] - kernel_shape[2] + 2 * pads[0]) // stridex + 1,
+        (ifmap_shape[3] - kernel_shape[3] + 2 * pads[2]) // stridey + 1
+    )
+    return ofmap_shape
+
+def sample_onnx_qlinearconv(
+    ifmap_shape,
+    ifmap_bits,
+    kernel_shape,
+    kernel_bits,
+    kernel_dtype,
+    pads,
+    stride,
+    depthwise = False,
+    weight_density = 0.5,
+    seed = 0,
+    acts_mode = 'random',
+    weight_mode = 'random'
+):
+    
+    '''
+    Generates a sample QLinearConv
+    * supports precisions < 8
+    * only uint8 ifmap
+    * acts_mode can be 'counting' or 'random'
+    '''
+
+    np.random.seed(seed)
+
+    qa = _generate_random_quantized_acts(
+        ifmap_shape=ifmap_shape,
+        ifmap_bits=ifmap_bits,
+        acts_mode=acts_mode
+    )
+
+    qb = _generate_random_quantized_weights(
+        kernel_shape=kernel_shape,
+        kernel_bits=kernel_bits,
+        weight_density=weight_density,
+        weight_mode=weight_mode,
+        kernel_dtype=kernel_dtype
+    )
+
+    ofmap_shape = infer_ofmap_shape(
+        ifmap_shape=ifmap_shape,
+        kernel_shape=kernel_shape,
+        pads=pads,
+        stride=stride
+    )
+    sample_outs = quant.QuantizedTensor(shape = ofmap_shape, precision = 8, mode='3sigma')
+    sample_outs.quantized_values = sample_outs.quantized_values.astype(np.uint8)
+
+    scale_x = np.array(qa.scale, dtype=np.float32)
+    zp_x = np.array(qa.zero_point, dtype=np.uint8)
+    scale_w = np.array(qb.scale, dtype=np.float32)
+    zp_w = np.array(qb.zero_point, dtype=kernel_dtype)
+    scale_y = np.array(sample_outs.scale, dtype=np.float32)
+    zp_y = np.array(sample_outs.zero_point, dtype=np.uint8)
+
+    node_initializers = {
+        # 'x':qa.quantized_values,
+        'x_scale':scale_x,
+        'x_zero_point':zp_x,
+        'w':qb.quantized_values,
+        'w_scale':scale_w,
+        'w_zero_point':zp_w,
+        'y_scale':scale_y,
+        'y_zero_point':zp_y,
+    }
+
+    nx_node = onnx.helper.make_node(
+        "QLinearConv",
+        inputs=[
+            "x",
+            "x_scale",
+            "x_zero_point",
+            "w",
+            "w_scale",
+            "w_zero_point",
+            "y_scale",
+            "y_zero_point",
+        ],
+        outputs=["y"],
+        pads = pads,
+        strides = stride,
+        group = 1 if not depthwise else kernel_shape[0],
+    )
+
+    nx_model = onnx_utils.make_single_node_model(
+        nx_node = nx_node,
+        initializer_dict = node_initializers,
+        input_names = ['x'],
+        output_names = ['y']
+    )
+    ifmap = qa.quantized_values
+    
+    return nx_node, nx_model, ifmap
+
 def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0, randomize = False):
 
     if randomize:
@@ -280,27 +418,6 @@ def mapped_matrix_to_bank_writes(matrix_map, num_bank_cols = 32):
     write_array = quant.array_bin_to_int(matrix_map_banked.T[::-1].T)
 
     return write_array
-
-def generate_stimuli_from_packed_cgraph(
-    cgraph: cgraph.Cgraph,
-    cnode_index,
-    savepath,
-    core_shape
-):
-
-    res_dict = {
-        'result': t_res,
-        'toeplitz': t_toeplitz,
-        'ifmap': ifmap_channel_packed_ints,
-        'ifmap_ints': ifmap_channel_minor,
-        'small_matrix': t_matrix,
-        'matrix': write_array,
-        'weights_np': matrix_map, 
-        'scaler_data': scaler_data,
-        'biases': biases,
-    }
-
-    return res_dict
 
 def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits = 8):
     first_partials = quant.int_to_trit(tplitz_act_vector,ifmap_bits).T @ weights
@@ -352,7 +469,19 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
     write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
     return write_array
 
-def generate_hexes(
+def write_input_files(res_dict, savepath):
+    if savepath is not None:
+        os.makedirs(savepath, exist_ok=True)
+        for key, value in res_dict.items():
+            if type(value) is dict:
+                continue
+            if value.dtype in ['int32','float64']:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
+            else:
+                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
+            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+
+def generate_qracc_words(
     savepath,
     stride,
     ifmap_shape,
@@ -367,6 +496,7 @@ def generate_hexes(
     seed = 0,
     soft_padding = False
     ):
+
     print(f't_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(ifmap_shape={ifmap_shape},ifmap_bits={ifmap_bits},kernel_shape={kernel_shape},kernel_bits={kernel_bits},kernel_dtype = np.int8,pads = (1,1,1,1),stride = {stride},seed = {seed}, depthwise = {depthwise})')
     t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params = sample_onnx_qlinearconv(
         ifmap_shape=ifmap_shape,
@@ -407,8 +537,6 @@ def generate_hexes(
     else:
         print(f'[STIM_GEN] Using HARDWARE padding. IFMAP shape: {minorized_padded_ifmap.shape}')
 
-    ifmap_hexes = vhex3(pack_ifmap_to_ints(minorized_padded_ifmap))
-
     raw_data = {
         'ifmap':pack_ifmap_to_ints(minorized_padded_ifmap),
         'biases':bias_data,
@@ -420,25 +548,12 @@ def generate_hexes(
         'result': t_res,
         'toeplitz': t_toeplitz,
         'ifmap': minorized_padded_ifmap,
-        'ifmap_ints': minorized_padded_ifmap,
-        'small_matrix': t_matrix,
-        'matrix': write_array,  
-        'weights_np': t_matrix, 
+        'matrix_raw': t_matrix, 
         'scaler_data': scaler_data,
         'biases': bias_data,
-        'scaler_params' : scaler_params
+        'scaler_params' : scaler_params # Can be removed later
     }
-
-    # We still need to save the stimuli for toeplitz tracking
-    if savepath is not None:
-        for key, value in res_dict.items():
-            if type(value) is dict:
-                continue
-            if value.dtype in ['int32','float64']:
-                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%d')
-            else:
-                np.savetxt(f'{savepath}/{key}.txt', value.flatten(), fmt='%s')
-            np.savetxt(f'{savepath}/{key}_shape.txt', value.shape, fmt='%d')
+    write_input_files(res_dict, savepath)
 
     return raw_data, res_dict
 

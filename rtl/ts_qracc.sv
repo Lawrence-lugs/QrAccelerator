@@ -13,6 +13,9 @@ module ts_qracc #(
     parameter numAdcBits = 4,
     localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (
+    // DIGITAL SETTING
+    input [3:0] adc_ref_range_shifts,
+
     // ANALOG INTERFACE : SWITCH MATRIX
     input logic [numRows-1:0] PSM_VDR_SEL,
     input logic [numRows-1:0] PSM_VDR_SELB,
@@ -82,24 +85,28 @@ logic signed [numAdcBits-1:0] adc_out [numCols];
 logic signed [numCols-1:0][compCount-1:0] comp_out;
 logic doiroundup[numCols];
 
-localparam signed maxValue = {1'b0, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b1}}};  // 0111
-localparam signed minValue = {1'b1, {(numAdcBits+`NUM_ADC_REF_RANGE_SHIFTS-1){1'b0}}};  // 1000
+
 localparam signed maxValueAdc = {1'b0, {(numAdcBits-1){1'b1}}};  // 0111
 localparam signed minValueAdc = {1'b1, {(numAdcBits-1){1'b0}}};  // 1000
+// localparam signed maxValue = {1'b0, {(numAdcBits+adc_ref_range_shifts-1){1'b1}}};  // 0111
+// localparam signed minValue = {1'b1, {(numAdcBits+adc_ref_range_shifts-1){1'b0}}};  // 1000
 
+logic signed [31:0] maxValue;
+logic signed [31:0] minValue;
+always_comb begin : maxMinValues
+    // The max and min values are defined by the ADC bits and the reference range shifts
+    maxValue = 2**(numAdcBits+adc_ref_range_shifts-1)-1;
+    minValue = 2**(numAdcBits+adc_ref_range_shifts-1) * -1;
+end
 
 always_comb begin : toMBL
     for (int j = 0; j < numCols; j++) begin
         mbl_value[j] = 0;
         for (int i = 0; i < numRows; i++) begin
             if(mem[i][j] == 1) begin
-                // if it's neither, then VRST is being selected and we add nothing
-                // $display("mem[%d][%d](%d) | PSM:(%d,%d)", i, j, mem[i][j], PSM_VDR_SEL[i],PSM_VSS_SEL[i]);
                 mbl_value[j] += PSM_VDR_SEL[i];
                 mbl_value[j] -= PSM_VSS_SEL[i];
             end else begin 
-                // if it's neither, then VRST is being selected and we add nothing
-                // $display("mem[%d][%d](%d) | NSM:(%d,%d)", i, j, mem[i][j], NSM_VDR_SEL[i],NSM_VSS_SEL[i]);
                 mbl_value[j] += NSM_VDR_SEL[i];
                 mbl_value[j] -= NSM_VSS_SEL[i];
             end
@@ -109,10 +116,10 @@ always_comb begin : toMBL
         // ADC reference voltage range is divided by 2**NUM_ADC_REF_RANGE_SHIFTS
         // to follow the "best resolution"
         // The real circuit doesn't shift, it rounds.e
-        if(`NUM_ADC_REF_RANGE_SHIFTS == 0) begin
+        if(adc_ref_range_shifts == 0) begin
             doiroundup[j] = 0;
         end else begin
-            doiroundup[j] = (mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS-1]);
+            doiroundup[j] = (mbl_value[j][adc_ref_range_shifts-1]);
         end
 
         if (mbl_value[j] > maxValue) begin
@@ -123,12 +130,12 @@ always_comb begin : toMBL
                 // $display("MBL value %d is less than min value %d", mbl_value[j], minValue);
                 adc_out[j] = minValueAdc;
             end else begin
-                if (`NUM_ADC_REF_RANGE_SHIFTS > 1) begin
+                if (adc_ref_range_shifts > 1) begin
                     // $display("MBL value %d is between min %d and max %d", mbl_value[j], minValue, maxValue);
-                    adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits] + doiroundup[j];
+                    adc_out[j] = mbl_value[j][adc_ref_range_shifts +: numAdcBits] + doiroundup[j];
                 end else begin
                     // ties to random
-                    adc_out[j] = mbl_value[j][`NUM_ADC_REF_RANGE_SHIFTS +: numAdcBits];// + $random % (doiroundup[j] + 1);
+                    adc_out[j] = mbl_value[j][adc_ref_range_shifts +: numAdcBits];// + $random % (doiroundup[j] + 1);
                 end
             end
         end
