@@ -1,11 +1,12 @@
 import numpy as np 
 import os
 import hwacctools.quantization.quant as quant
-from hwacctools.comp_graph import compute, cgraph, cnodes
+from hwacctools.comp_graph import compute, cgraph, cnodes, core
 from hwacctools import onnx_utils
 import onnx
 import torch.nn.functional as F
 import torch 
+import rectpack
 
 def _hex_but_no_0x(x):
     return hex(x)[2:]
@@ -126,23 +127,7 @@ def _generate_random_quantized_weights(
 
     return qb
 
-def infer_ofmap_shape(
-    ifmap_shape,
-    kernel_shape,
-    pads,
-    stride
-):
-    '''
-    Infer the output shape of a convolution operation.
-    '''
-    return (
-        ifmap_shape[0],
-        kernel_shape[0],
-        (ifmap_shape[2] - kernel_shape[2] + 2 * pads[0]) // stride + 1,
-        (ifmap_shape[3] - kernel_shape[3] + 2 * pads[2]) // stride + 1
-    )
-
-def sample_onnx_qlinearconv(
+def sample_onnx_qlinearconv_old(
     ifmap_shape,
     ifmap_bits,
     kernel_shape,
@@ -159,26 +144,44 @@ def sample_onnx_qlinearconv(
     
     '''
     Generates a sample QLinearConv
-    * supports precisions < 8
-    * only uint8 ifmap
-    * acts_mode can be 'counting' or 'random'
+
+    supports precisions < 8
+
+    only uint8 ifmap
+
+    acts_mode can be 'counting' or 'random'
     '''
 
     np.random.seed(seed)
 
-    qa = _generate_random_quantized_acts(
-        ifmap_shape=ifmap_shape,
-        ifmap_bits=ifmap_bits,
-        acts_mode=acts_mode
-    )
+    if acts_mode not in ['counting','random']:
+        raise ValueError(f"acts_mode must be 'counting' or 'random', got {acts_mode}")
 
-    qb = _generate_random_quantized_weights(
-        kernel_shape=kernel_shape,
-        kernel_bits=kernel_bits,
-        weight_density=weight_density,
-        weight_mode=weight_mode,
-        kernel_dtype=kernel_dtype
-    )
+    qa_proto = quant.QuantizedTensor(shape = ifmap_shape, precision = ifmap_bits, mode='3sigma')
+    if acts_mode == 'counting':
+        ifmap_size = np.prod(ifmap_shape)
+        a_qvals = np.arange(0,ifmap_size, dtype=np.uint8) % 100
+        a_qvals = a_qvals.reshape(ifmap_shape)
+        qa = quant.QuantizedTensor(quantized_values = a_qvals, scale = qa_proto.scale, zero_point=0) 
+    if acts_mode == 'random':
+        qa = qa_proto   
+
+    # 1-bit qb scales and zero point heuristically guessed from
+    # a standard normal distribution 
+    if kernel_bits == 1:
+        # b = np.random.randint(0,2, kernel_shape)
+        if weight_mode == 'random':
+            dist = np.random.rand(*kernel_shape)
+            b = (dist < weight_density).astype(int)
+        elif weight_mode == 'spatial':
+            b = np.zeros(kernel_shape)
+            for k in range(kernel_shape[0]):
+                # b[k][0][2][2] = 1
+                b[k][0][k % 3][k % 3] = 1
+        scale = np.random.uniform(0.01,0.2,kernel_shape[0])
+        qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
+    else:
+        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
 
     ofmap_shape = (
         ifmap_shape[0],
@@ -189,6 +192,9 @@ def sample_onnx_qlinearconv(
 
     # infer doesn't actually need this
     sample_outs = quant.QuantizedTensor(shape = ofmap_shape, precision = 8, mode='3sigma')
+
+    qa.quantized_values = qa.quantized_values.astype(np.uint8)
+    qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
     sample_outs.quantized_values = sample_outs.quantized_values.astype(np.uint8)
 
     node = onnx.helper.make_node(
@@ -283,6 +289,119 @@ def sample_onnx_qlinearconv(
 
     return t_res, t_matrix, t_ifmap, t_toeplitz, scaler_params
 
+
+def infer_ofmap_shape(
+    ifmap_shape,
+    kernel_shape,
+    pads,
+    stride
+):
+    '''
+    Infer the output shape of a convolution operation.
+    '''
+    stridex = stride[0]
+    stridey = stride[1]
+    ofmap_shape = (
+        ifmap_shape[0],
+        kernel_shape[0],
+        (ifmap_shape[2] - kernel_shape[2] + 2 * pads[0]) // stridex + 1,
+        (ifmap_shape[3] - kernel_shape[3] + 2 * pads[2]) // stridey + 1
+    )
+    return ofmap_shape
+
+def sample_onnx_qlinearconv(
+    ifmap_shape,
+    ifmap_bits,
+    kernel_shape,
+    kernel_bits,
+    kernel_dtype,
+    pads,
+    stride,
+    depthwise = False,
+    weight_density = 0.5,
+    seed = 0,
+    acts_mode = 'random',
+    weight_mode = 'random'
+):
+    
+    '''
+    Generates a sample QLinearConv
+    * supports precisions < 8
+    * only uint8 ifmap
+    * acts_mode can be 'counting' or 'random'
+    '''
+
+    np.random.seed(seed)
+
+    qa = _generate_random_quantized_acts(
+        ifmap_shape=ifmap_shape,
+        ifmap_bits=ifmap_bits,
+        acts_mode=acts_mode
+    )
+
+    qb = _generate_random_quantized_weights(
+        kernel_shape=kernel_shape,
+        kernel_bits=kernel_bits,
+        weight_density=weight_density,
+        weight_mode=weight_mode,
+        kernel_dtype=kernel_dtype
+    )
+
+    ofmap_shape = infer_ofmap_shape(
+        ifmap_shape=ifmap_shape,
+        kernel_shape=kernel_shape,
+        pads=pads,
+        stride=stride
+    )
+    sample_outs = quant.QuantizedTensor(shape = ofmap_shape, precision = 8, mode='3sigma')
+    sample_outs.quantized_values = sample_outs.quantized_values.astype(np.uint8)
+
+    scale_x = np.array(qa.scale, dtype=np.float32)
+    zp_x = np.array(qa.zero_point, dtype=np.uint8)
+    scale_w = np.array(qb.scale, dtype=np.float32)
+    zp_w = np.array(qb.zero_point, dtype=kernel_dtype)
+    scale_y = np.array(sample_outs.scale, dtype=np.float32)
+    zp_y = np.array(sample_outs.zero_point, dtype=np.uint8)
+
+    node_initializers = {
+        # 'x':qa.quantized_values,
+        'x_scale':scale_x,
+        'x_zero_point':zp_x,
+        'w':qb.quantized_values,
+        'w_scale':scale_w,
+        'w_zero_point':zp_w,
+        'y_scale':scale_y,
+        'y_zero_point':zp_y,
+    }
+
+    nx_node = onnx.helper.make_node(
+        "QLinearConv",
+        inputs=[
+            "x",
+            "x_scale",
+            "x_zero_point",
+            "w",
+            "w_scale",
+            "w_zero_point",
+            "y_scale",
+            "y_zero_point",
+        ],
+        outputs=["y"],
+        pads = pads,
+        strides = stride,
+        group = 1 if not depthwise else kernel_shape[0],
+    )
+
+    nx_model = onnx_utils.make_single_node_model(
+        nx_node = nx_node,
+        initializer_dict = node_initializers,
+        input_names = ['x'],
+        output_names = ['y']
+    )
+    ifmap = qa.quantized_values
+    
+    return nx_node, nx_model, ifmap
+
 def map_single_matrix(matrix, core_shape, x_offset = 0, y_offset = 0, randomize = False):
 
     if randomize:
@@ -350,25 +469,8 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
     write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
     return write_array
 
-def _empty_directory(directory):
-    """
-    Empty the directory if it exists.
-    """
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
-            file_path = os.path.join(directory, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    os.rmdir(file_path)
-            except Exception as e:
-                print(f'Failed to delete {file_path}. Reason: {e}')
-
 def write_input_files(res_dict, savepath):
     if savepath is not None:
-        # Empty the savepath directory if it exists
-        _empty_directory(savepath)
         os.makedirs(savepath, exist_ok=True)
         for key, value in res_dict.items():
             if type(value) is dict:

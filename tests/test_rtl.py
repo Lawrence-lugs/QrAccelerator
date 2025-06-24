@@ -10,7 +10,7 @@ import seaborn as sns
 import pytest
 sns.set_theme()
 from tests.stim_lib.stimulus_gen import *
-from tests.stim_lib.compile import bundle_config_into_write, make_trigger_write, write_array_to_asm
+from tests.stim_lib.compile import *
 
 # simulator = 'xrun'
 sim_args = {'vcs':  [
@@ -28,6 +28,21 @@ sim_args = {'vcs':  [
                 '+access+r'
             ]
 }
+
+def _empty_directory(directory):
+    """
+    Empty the directory if it exists.
+    """
+    if os.path.exists(directory):
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    os.rmdir(file_path)
+            except Exception as e:
+                print(f'Failed to delete {file_path}. Reason: {e}')
 
 def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True,top_module=None):
     
@@ -150,6 +165,7 @@ def test_qr_acc_top_single_load(
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
+    _empty_directory(stimulus_output_path)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -157,44 +173,6 @@ def test_qr_acc_top_single_load(
     log_file = f'tests/logs/{tb_name}_{simulator}.log'
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
-
-    # Pre-simulation
-    print(f'raw_data, stimulus = generate_hexes('
-        f'savepath = None, '
-        f'stride = {stride}, '
-        f'ifmap_shape = {ifmap_shape}, '
-        f'ifmap_bits = {ifmap_bits}, '
-        f'kernel_shape = {kernel_shape}, '
-        f'kernel_bits = {kernel_bits}, '
-        f'core_shape = {core_shape}, '
-        f'padding = {padding}, '
-        f'mm_offset_x = {mm_offset_x}, '
-        f'mm_offset_y = {mm_offset_y}, '
-        f'soft_padding = {soft_padding}, '
-        f'depthwise={depthwise})'
-    )
-    raw_data, stimulus = generate_qracc_words(
-        savepath = stimulus_output_path,
-        stride = stride,
-        ifmap_shape = ifmap_shape,
-        ifmap_bits = ifmap_bits,
-        kernel_shape = kernel_shape,
-        kernel_bits = kernel_bits,
-        core_shape = core_shape,
-        padding = padding,
-        mm_offset_x = mm_offset_x,
-        mm_offset_y = mm_offset_y, 
-        soft_padding = soft_padding, 
-        depthwise=depthwise
-    )
-    ifmap_shape_with_padding = (ifmap_shape[0],ifmap_shape[1],ifmap_shape[2]+2*padding,ifmap_shape[3]+2*padding)
-    ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*padding) // stride) + 1 #(W-K+2P)/S + 1
-    ofmap_dimy = ofmap_dimx
-    ofmap_dimc = kernel_shape[0]
-    ofmap_shape = (ofmap_dimc,ofmap_dimy,ofmap_dimx)
-
-    # Infer optimal ADC reference range shifts
-    adc_ref_range_shifts = infer_optimal_adc_range_shifts(stimulus['toeplitz'][0], stimulus['matrix_raw'], ifmap_bits) if not depthwise else 0
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {
@@ -207,53 +185,34 @@ def test_qr_acc_top_single_load(
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 
-    # Config
-    config_dict = {
-        "n_input_bits_cfg": ifmap_bits,
-        "n_output_bits_cfg": ofmap_bits,
-        "unsigned_acts": 1,
-        "binary_cfg": 1,
-        "adc_ref_range_shifts": int(adc_ref_range_shifts),
-        "filter_size_y": kernel_shape[3],
-        "filter_size_x": kernel_shape[2],
-        "input_fmap_dimx": ifmap_shape[2] if not soft_padding else ifmap_shape_with_padding[2],
-        "input_fmap_dimy": ifmap_shape[3] if not soft_padding else ifmap_shape_with_padding[3],
-        "output_fmap_dimx": ofmap_dimx,
-        "output_fmap_dimy": ofmap_dimy,
-        "stride_x": stride,
-        "stride_y": stride,
-        "num_input_channels": ifmap_shape[1],
-        "num_output_channels": kernel_shape[0],
-        "mapped_matrix_offset_x": mm_offset_x,
-        "mapped_matrix_offset_y": mm_offset_y,
-        "padding": padding if not soft_padding else 0,  # Use 0 padding for soft padding
-        "padding_value": stimulus["scaler_params"]["zp_x"],  # Padding value for the input feature map
-    }
-    print(f"Config Dict: {config_dict}")
-    config_writes = bundle_config_into_write(config_dict, config_write_address)
+    print(f'u_code = QrAccNodeCode.produce_single_node_test('
+        f'ifmap_shape = {ifmap_shape}, '
+        f'kernel_shape = {kernel_shape}, '
+        f'offset_x = {mm_offset_x}, '
+        f'offset_y = {mm_offset_y}, '
+        f'core_size = {core_shape}, '
+        f'ws_core_size = 32, '
+        f'pads = ({padding}, {padding}, {padding}, {padding}), '
+        f'stride = ({stride}, {stride}), '
+        f'depthwise = {depthwise})')
 
-    commands = config_writes
-    if depthwise:
-        commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
-    else:
-        commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
-    commands += write_array_to_asm(raw_data['weights']) 
-    commands += write_array_to_asm(raw_data['scales']) 
-    commands += write_array_to_asm(raw_data['biases']) 
-    commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
-    commands += write_array_to_asm(raw_data['ifmap'])
-    if depthwise:
-        commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address)
-    else:
-        commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
-    commands += [f'WAITBUSY']
-    commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
-    commands += [f'WAITREAD']
-    commands += ['END']
+    u_code = QrAccNodeCode.produce_single_node_test(
+        ifmap_shape = ifmap_shape,
+        kernel_shape = kernel_shape,
+        offset_x = mm_offset_x,
+        offset_y = mm_offset_y,
+        core_size = core_shape,
+        ws_core_size = 32,
+        pads = (padding, padding, padding, padding),
+        stride = (stride, stride),
+        depthwise = depthwise,
+    )
 
+    commands = u_code.compile()
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
             f.write(write + '\n')
+    u_code.write_files(stimulus_output_path)
 
     # Simulation
     run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
@@ -263,9 +222,9 @@ def test_qr_acc_top_single_load(
     result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
 
-    rmse, snr = rmse_snr(stimulus['result'], acc_result)
-    save_scatter_fig(expected = stimulus['result'],actual = acc_result, title = f"{stimulus['matrix_raw'].shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
-    print(acc_result.shape, stimulus['result'].shape)
+    rmse, snr = rmse_snr(u_code.reference_output, acc_result)
+    save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
+    print(acc_result.shape, u_code.reference_output.shape)
     # plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 
