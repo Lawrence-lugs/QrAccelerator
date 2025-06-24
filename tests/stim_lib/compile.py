@@ -50,8 +50,9 @@ class QrAccNodeCode(object):
         ifmap_bits = self.ifmap_bits
         ofmap_bits = self.ofmap_bits
 
-        if ifmap_shape[1] != mapped_node.kernel.shape[1]:
-            raise ValueError("Input feature map channels do not match kernel input channels.")
+        if not mapped_node.depthwise:
+            if ifmap_shape[1] != mapped_node.kernel.shape[1]:
+                raise ValueError(f"Input feature map channels {ifmap_shape} do not match kernel input channels {mapped_node.kernel.shape}.")
 
         kernel_shape = mapped_node.kernel.shape
         # ofmap_dimx = ((ifmap_shape[2] - kernel_shape[2] + 2*mapped_node.pads[0]) // mapped_node.strides[0]) + 1 #(W-K+2P)/S + 1
@@ -60,11 +61,12 @@ class QrAccNodeCode(object):
         ofmap_dimx = self.ofmap_shape[2]
         ofmap_dimy = self.ofmap_shape[3]
 
+
         adc_ref_range_shifts = infer_optimal_adc_range_shifts(
             tplitz_act_vector=self.toeplitz[0],
             weights=mapped_node.matrix,
             ifmap_bits=ifmap_bits
-        )
+        ) if not mapped_node.depthwise else 0
 
         config_dict = {
             "n_input_bits_cfg": ifmap_bits,
@@ -131,8 +133,9 @@ class QrAccNodeCode(object):
     
     def _get_weight_data(self):
         if self.mapped_node.depthwise:
-            kernel_hwc = self.mapped_node.kernel.transpose((0, 2, 3, 1))  # Convert to KHWC format
-            return kernel_to_writes(kernel_hwc, channels=self.ws_core_size)
+            kernel_hwc = self.mapped_node.kernel.transpose(1,2,3,0)  # Convert to KHWC format
+            # kernel_hwc = self.mapped_node.kernel 
+            return kernel_to_writes(kernel_hwc, channels=self.ws_core_size, hexes=False)
         else:
             return mapped_matrix_to_bank_writes(self.mapped_bin.weights,32)
         
