@@ -297,7 +297,7 @@ def infer_ofmap_shape(
     stride
 ):
     '''
-    Infer the output shape of a convolution operation.
+    Infer the output shape of a convolution (or matmul) operation.
     '''
     stridex = stride[0]
     stridey = stride[1]

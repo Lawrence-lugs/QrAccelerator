@@ -337,12 +337,12 @@ class NumpyArray;
         end
         this.array = new[this.size];
         read_array(file_name);
-        $display("==== Array ====");
-        $display("%s: %d",file_name,this.size);
-        $display("Shape: ");
-        for (int i=0;i<this.shape.size();i++) begin
-            $display("%d",this.shape[i]);
-        end
+        // $display("==== Array ====");
+        // $display("%s: %d",file_name,this.size);
+        // $display("Shape: ");
+        // for (int i=0;i<this.shape.size();i++) begin
+        //     $display("%d",this.shape[i]);
+        // end
     endfunction
 
     function void read_shape(input string file_name);
@@ -445,6 +445,9 @@ task display_config();
     $display("mapped_matrix_offset_x: %d", u_qr_acc_top.cfg.mapped_matrix_offset_x);
     $display("mapped_matrix_offset_y: %d", u_qr_acc_top.cfg.mapped_matrix_offset_y);
 
+    $display("padding : %d", u_qr_acc_top.cfg.padding);
+    $display("padding_value: %d", u_qr_acc_top.cfg.padding_value);
+
 endtask
 
 task start_sim();
@@ -493,11 +496,11 @@ task bus_write_loop();
         case(command)
             "LOAD": begin
                 $fscanf(fd,"%h %h",addr,data);
-                casex(addr)
-                    32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
-                    32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
-                    default: $write("Writing to unknown address: %h = %h", addr, data);
-                endcase
+                // casex(addr)
+                //     32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
+                //     32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
+                //     default: $write("Writing to unknown address: %h = %h", addr, data);
+                // endcase
                 bus.addr = addr;
                 bus.data_in = data;
                 bus.valid = 1;
@@ -508,9 +511,9 @@ task bus_write_loop();
                         $write(".");
                     end
                     #(CLK_PERIOD);
-                    $write("\tDONE\n");
+                    // $write("\tDONE\n");
                     bus.valid = 0;
-                    status_checkup();
+                    // status_checkup();
                 end
             end
             "WAITBUSY": begin
@@ -598,7 +601,7 @@ task check_acts();
     $write("\n");
 endtask
 
-localparam MAX_TROWS = 260;
+localparam MAX_TROWS = 10000;
 
 task track_toeplitz();
 

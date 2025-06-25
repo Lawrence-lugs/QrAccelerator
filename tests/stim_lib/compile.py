@@ -10,10 +10,11 @@ class QrAccNodeCode(object):
     '''
 
     def __init__(self, mapped_node : core.MappedQRAccNode, mapped_bin : core.MappedBin, ifmap, imc_core_size = (256,256), ws_core_size = 32, ifmap_bits = 8, ofmap_bits = 8, nx_model : onnx.ModelProto = None):
-        
-        self.ifmap = ifmap
+
+        self.ifmap = ifmap if ifmap.ndim != 1 else ifmap.reshape((1, -1, 1, 1))
+
         self.ofmap_shape = infer_ofmap_shape(
-            ifmap_shape=ifmap.shape,  
+            ifmap_shape=self.ifmap.shape,
             kernel_shape=mapped_node.kernel.shape,
             pads=mapped_node.pads,
             stride=mapped_node.strides,
@@ -27,7 +28,20 @@ class QrAccNodeCode(object):
 
         self.mapped_bin = mapped_bin
         self.mapped_node = mapped_node
-        self.reference_output = self._generate_reference_output()[0].transpose((0, 2, 3, 1))  # Convert to NHWC format
+
+        # if nx_model is None:
+        if 0:
+            self.reference_output = self._generate_reference_output()[0].transpose((0, 2, 3, 1))  # Convert to NHWC format
+        else:
+            output_tensor = mapped_node.nx_node.output[0]
+            input_dict = self._get_input_dict()
+            onnx_out = onnx_utils.get_intermediate_tensor_value(nx_model,output_tensor,input_dict=input_dict)
+
+            # We pretend the output is in NCHW if it's a matmul (we treat those like pointwise convs)
+            if len(onnx_out.shape) == 1:
+                onnx_out = onnx_out.reshape((1, -1, 1, 1))
+            self.reference_output = onnx_out.transpose((0, 2, 3, 1))
+        
         self.toeplitz = compute.toeplitzize_input(
             in_tensor = self.ifmap.squeeze(axis=0), # Remove batch dimension for toeplitz
             ksize=mapped_node.kernel.shape[-1],
@@ -39,6 +53,17 @@ class QrAccNodeCode(object):
         # The writable matrix is the kernel for depthwise nodes, because they go into qracc
         self.matrix = mapped_node.matrix if not mapped_node.depthwise else mapped_node.kernel
         return
+    
+    def _get_input_dict(self):
+        if self.mapped_node.type == 'QLinearMatMul':
+            in_tensor = self.ifmap.squeeze()  # Convert to a 1D tensor for matmul
+        else:
+            in_tensor = self.ifmap
+        input_dict = {
+            self.mapped_node.nx_node.input[0]: in_tensor,
+        }
+        return input_dict
+
     
     def config(self):
         '''
@@ -133,9 +158,15 @@ class QrAccNodeCode(object):
     
     def _get_weight_data(self):
         if self.mapped_node.depthwise:
-            kernel_hwc = self.mapped_node.kernel.transpose(1,2,3,0)  # Convert to KHWC format
-            # kernel_hwc = self.mapped_node.kernel 
-            return kernel_to_writes(kernel_hwc, channels=self.ws_core_size, hexes=False)
+
+            if self.mapped_node.kernel.shape[0] < self.ws_core_size:
+                physical_kernel = np.zeros((self.ws_core_size, *self.mapped_node.kernel.shape[1:]), dtype=self.mapped_node.kernel.dtype)
+                physical_kernel[:self.mapped_node.kernel.shape[0]] = self.mapped_node.kernel
+            else:
+                physical_kernel = self.mapped_node.kernel
+
+            physical_kernel_hwc = physical_kernel.transpose(1,2,3,0)  # Convert to KHWC format
+            return kernel_to_writes(physical_kernel_hwc, channels=self.ws_core_size, hexes=False)
         else:
             return mapped_matrix_to_bank_writes(self.mapped_bin.weights,32)
         
@@ -196,33 +227,38 @@ class QrAccNodeCode(object):
             name=self.mapped_node.name,
         )        
     
-    def compile(self, include_ifmap_writes=True, solo=True, config_write_address='00000010'):
+    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010'):
         '''
         Compile the node into a list of assembly instructions for QRAcc.
         include_ifmap_writes: bool, whether to include ifmap writes in the output.
         solo: bool, whether to compile the node as a standalone unit (default True).
         '''
-        print(f"Compiling node {self.mapped_node.name} for QRAcc...")
+        # print(f"Compiling node {self.mapped_node.node_id}:{self.mapped_node.name} for QRAcc...")
 
         config_dict = self.config()
         config_writes = bundle_config_into_write(config_dict, config_write_address)
         commands = config_writes
-        if self.mapped_node.depthwise:
-            commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
-        else:
-            commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
-        commands += write_array_to_asm(self._get_weight_data()) 
-        commands += write_array_to_asm(self._get_scaler_data()) 
-        commands += write_array_to_asm(self._get_bias_data()) 
+        
+        if write_weights:
+            if self.mapped_node.depthwise:
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
+            else:
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
+            commands += write_array_to_asm(self._get_weight_data()) 
+            commands += write_array_to_asm(self._get_scaler_data()) 
+            commands += write_array_to_asm(self._get_bias_data()) 
+        
         if include_ifmap_writes: # If not, the ifmap is assumed to be already in the ACTMEM
             commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
         commands += write_array_to_asm(self._get_ifmap_data())
+
         if self.mapped_node.depthwise:
             commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address)
         else:
             commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
         commands += [f'WAITBUSY']
-        if solo:
+        
+        if add_read:
             commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
             commands += [f'WAITREAD']
             commands += ['END']
