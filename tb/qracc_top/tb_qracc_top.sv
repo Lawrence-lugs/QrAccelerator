@@ -628,7 +628,7 @@ task track_toeplitz();
             $write("Window [%d][%d,%d]: \n", trow, u_qr_acc_top.u_qracc_controller.opix_pos_x, u_qr_acc_top.u_qracc_controller.opix_pos_y);
             
             // Produces a -- pattern for irrelevant activations
-            for (j=0;j<qrAccInputElements;j++) begin
+            for (j=0;j<288;j++) begin
                 if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
                     reference  = toeplitz.index( {trow,j-tplitz_offset} );
                     $write("%h",u_qr_acc_top.feature_loader_data_out[j]);
@@ -651,7 +651,7 @@ task track_toeplitz();
             // If error, print the reference 
             if (errflag) begin
                 $write("===================== WRONG ====================: at time %d\n",$time);
-                for (j=0;j<qrAccInputElements;j++) begin
+                for (j=0;j<288;j++) begin
                     if (j >= tplitz_offset && j < tplitz_offset + tplitz_height) begin
                         reference  = toeplitz.index( {trow,j-tplitz_offset} );
                         $write("%h ",reference[7:0]);
