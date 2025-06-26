@@ -71,6 +71,7 @@ def test_marp_compilation_all_nodes_in_onnx(
         'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
     }
 
+    commands = []
     for mnode_index in range(len(u_nx_mapping.mapped_nodes)):
         node = u_nx_mapping.mapped_nodes[mnode_index]
         node_id = node.node_id
@@ -97,3 +98,63 @@ def test_marp_compilation_all_nodes_in_onnx(
             commands += u_code.compile(include_ifmap_writes=False, add_read=True)
         else:
             commands += u_code.compile(include_ifmap_writes=False, add_read=False)
+
+def test_marp_run_entire_mbv2(
+    nx_model = onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx'),
+    imc_core_size = (256,256),
+    dwc_core_size = 32
+):
+
+    u_nx_mapping = core.NxModelMapping(
+        nx_model,
+        imc_core_size=imc_core_size,
+        dwc_core_size=dwc_core_size
+    )
+
+    input_dict = {
+        'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
+    }
+
+    prev_node = None
+    next_node = None
+    prev_bin_id = None
+    for node_id,nx_node in enumerate(nx_model.graph.node):
+        
+        next_node = nx_model.graph.node[node_id + 1] if node_id + 1 < len(nx_model.graph.node) else None
+
+        if is_nx_node_compilable(nx_node):
+            input_tensor = generate_random_intermediate_tensor(
+                nx_model, node_id, input_dict
+            )
+            u_code = QrAccNodeCode(
+                mapped_node = u_nx_mapping.get_mapped_node_by_id(node_id),
+                mapped_bin = u_nx_mapping.get_bin_of_node_id(node_id),
+                ifmap = input_tensor,
+                imc_core_size = imc_core_size,
+                ws_core_size = dwc_core_size,
+                nx_model = nx_model
+            )
+
+            print('============ Compiling Node ============')
+            if u_code.mapped_node.depthwise:
+                print(f"Compiling {nx_node.name} as depthwise node...")
+            else:
+                if not is_nx_node_compilable(prev_node):
+                    print(f"Compiling {nx_node.name} as first node of set...")
+                elif not is_nx_node_compilable(next_node):
+                    print(f"Compiling {nx_node.name} as last node of set...")
+                if u_code.mapped_node.bin_id != prev_bin_id:
+                    print(f"Rewriting bin {nx_node.name} as bin changed from {prev_bin_id} to {u_code.mapped_node.bin_id}...")
+                else:
+                    print(f'Reusing bin {u_code.mapped_node.bin_id} for {nx_node.name}...')
+
+            u_code.compile(
+                include_ifmap_writes=not is_nx_node_compilable(prev_node),  # If the previous node was not compilable, we need to write the input feature map 
+                write_weights = u_code.mapped_node.bin_id != prev_bin_id,    # We only write weights if the bin has changed
+                add_read = not is_nx_node_compilable(next_node),            # We don't need to readout if the next node can be run by the accelerator
+            )
+            prev_bin_id = u_code.mapped_node.bin_id if not u_code.mapped_node.depthwise else prev_bin_id  # If the node is depthwise, we don't change the bin id, as it will be the same as the previous node
+        else:
+            print(f'Skipping {nx_node.name} as it is not compilable...')
+
+        prev_node = nx_node

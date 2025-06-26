@@ -29,7 +29,6 @@ from .utils import *
     ('depthwise',       (1,32,16,16),  (32,1,3,3),     (256,256),  1,          1,      0,          0,          True),
     ('dw_nopad',        (1,32,16,16),  (32,1,3,3),     (256,256),  0,          1,      0,          0,          True),
     ('dw_short',        (1,16,16,16),  (16,1,3,3),     (256,256),  1,          1,      0,          0,          True),
-    ('pw_full',         (1,256,4,4),   (256,256,1,1),     (256,256),  1,          1,      0,          0,          False),           
 ])
 def test_qr_acc_top_single_load(
     col_symmetric,

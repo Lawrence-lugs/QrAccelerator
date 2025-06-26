@@ -285,6 +285,15 @@ class QrAccNodeCode(object):
                 attr_strs.append(f"{key}={value}")
         return f"QrAccNodeCode(\n\t{',\n\t'.join(attr_strs)})"
 
+def generate_random_intermediate_tensor(
+    nx_model : onnx.ModelProto,
+    node_id : int,
+    input_dict : dict
+):
+    input_tensor_shape = onnx_utils.get_intermediate_tensor_value(
+        nx_model, nx_model.graph.node[node_id].input[0], input_dict=input_dict).shape
+    return np.random.randint(0, 256, input_tensor_shape).astype(np.uint8)
+
 def is_nx_node_compilable(
     nx_node : onnx.NodeProto
 ):
@@ -292,6 +301,8 @@ def is_nx_node_compilable(
     Check if an ONNX node is compilable for QRAcc.
     Currently, only QLinearConv and QLinearMatMul nodes are supported.
     """
+    if nx_node is None:
+        return False
     if nx_node.op_type == 'QLinearConv':
         return True
     elif nx_node.op_type == 'QLinearMatMul':
