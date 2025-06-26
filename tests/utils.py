@@ -131,7 +131,7 @@ def save_scatter_fig(expected, actual, title, filename):
     plt.savefig(f'images/png/{filename}.png')
     plt.close()
  
-def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
+def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8, save=True):
     """
     Plots all channels of the diff tensor in a subplot grid.
 
@@ -140,18 +140,19 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
     - tensor_format: str, format of the tensor ('NCHW' or 'NHWC')
     - bitPrecision: int, bit precision for value range (default 8)
     """
+    diff_2plot = np.abs(diff) 
     if tensor_format == 'NHWC':
-        diff_2plot = diff.transpose(0, 3, 1, 2)  # Convert to NCHW format for plotting
+        diff_2plot = diff_2plot.transpose(0, 3, 1, 2)  # Convert to NCHW format for plotting
 
     num_channels = diff_2plot.shape[1]  # Number of channels in the last dimension
     rows = (num_channels + 7) // 8  # Calculate rows for 8 columns
-    fig, axs = plt.subplots(rows, 8, figsize=(20, 10), dpi=200)
+    fig, axs = plt.subplots(rows, 8, figsize=(20, 10+2.5*(rows-4)), dpi=300)
     axs = axs.flatten()  # Flatten the axes array for easier indexing
     vmin, vmax = 0, 2**bitPrecision - 1
 
     for i in range(num_channels):
         ax = axs[i]
-        im = ax.imshow(diff_2plot[0, i], vmin=vmin, vmax=vmax, cmap='YlOrBr')
+        im = ax.imshow(diff_2plot[0, i], vmin=vmin, vmax=vmax, cmap='CMRmap')
         ax.set_title(f'Channel {i}')
         ax.axis('off')
 
@@ -164,7 +165,9 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
     cbar = fig.colorbar(im, ax=axs, orientation='horizontal')
     cbar.set_label('Difference Value')
     plt.suptitle('Difference between Python and HW Results', fontsize=16)
+    plt.show()
 
-    plt.savefig(f'images/{filename}.svg', bbox_inches='tight')
-    plt.savefig(f'images/png/{filename}.png', bbox_inches='tight')
+    if save:
+        plt.savefig(f'images/{filename}.svg', bbox_inches='tight')
+        plt.savefig(f'images/png/{filename}.png', bbox_inches='tight')
     plt.close()

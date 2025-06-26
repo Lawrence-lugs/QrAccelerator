@@ -29,6 +29,7 @@ from .utils import *
     ('depthwise',       (1,32,16,16),  (32,1,3,3),     (256,256),  1,          1,      0,          0,          True),
     ('dw_nopad',        (1,32,16,16),  (32,1,3,3),     (256,256),  0,          1,      0,          0,          True),
     ('dw_short',        (1,16,16,16),  (16,1,3,3),     (256,256),  1,          1,      0,          0,          True),
+    ('pw_full',         (1,256,4,4),   (256,256,1,1),     (256,256),  1,          1,      0,          0,          False),           
 ])
 def test_qr_acc_top_single_load(
     col_symmetric,
@@ -121,6 +122,8 @@ def test_qr_acc_top_single_load(
         depthwise = depthwise,
     )
 
+    print(u_code)
+
     commands = u_code.compile()
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
@@ -137,7 +140,6 @@ def test_qr_acc_top_single_load(
 
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
     save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
-    print(acc_result.shape, u_code.reference_output.shape)
     plot_diff_channels(acc_result - u_code.reference_output, tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 

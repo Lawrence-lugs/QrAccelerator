@@ -267,6 +267,37 @@ class QrAccNodeCode(object):
             commands += ['END']
 
         return commands
+    
+    def __repr__(self):
+        # Print attributes of the class, showing shapes for arrays
+        attrs = vars(self)
+        attr_strs = []
+        for key, value in attrs.items():
+            if isinstance(value, np.ndarray):
+                attr_strs.append(f"{key}=array(shape={value.shape})")
+            elif key == 'mapped_node':
+                attr_strs.append(f"{key}={value.name} (id={value.node_id})")
+            elif key == 'mapped_bin':
+                attr_strs.append(f"{key}={value.bin_id} (shape={value.weights.shape})")
+            elif key == 'nx_model':
+                attr_strs.append(f"{key}={value.graph.name} (nodes={len(value.graph.node)})")
+            else:
+                attr_strs.append(f"{key}={value}")
+        return f"QrAccNodeCode(\n\t{',\n\t'.join(attr_strs)})"
+
+def is_nx_node_compilable(
+    nx_node : onnx.NodeProto
+):
+    """
+    Check if an ONNX node is compilable for QRAcc.
+    Currently, only QLinearConv and QLinearMatMul nodes are supported.
+    """
+    if nx_node.op_type == 'QLinearConv':
+        return True
+    elif nx_node.op_type == 'QLinearMatMul':
+        return True
+    else:
+        return False
 
 def make_trigger_write(
     command,

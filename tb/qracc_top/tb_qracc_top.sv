@@ -252,6 +252,7 @@ static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/q
 static string tb_name = "tb_qracc_top";
 
 // Waveform Dumping
+`ifndef NODUMP
 `ifdef SYNOPSYS
 initial begin
     $vcdplusfile({tb_name,".vpd"});
@@ -264,6 +265,7 @@ initial begin
     $dumpfile({tb_name,".vcd"});
     $dumpvars(0);
 end
+`endif
 
 
 // Clock Generation
@@ -518,7 +520,11 @@ task bus_write_loop();
             end
             "WAITBUSY": begin
                 display_config();
+                `ifdef NOTPLITZTRACK
+                wait_busy_silent();
+                `else
                 track_toeplitz();
+                `endif
             end
             "WAITREAD": begin
                 // Wait for reads to finish
