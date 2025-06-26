@@ -36,7 +36,7 @@ logic signed [inputWidth-1:0] compareLow;
 
 logic signed [31:0] wx_i_extended;
 logic signed [31:0] wx_i_biased;
-logic signed [31:0] scaled_wx;
+logic signed [47:0] scaled_wx;
 logic signed [31:0] scaled_wx_fpshift;
 logic signed [31:0] scaled_wx_shifted;
 logic signed [31:0] scaled_wx_presat;
@@ -70,12 +70,12 @@ always_comb begin : fpMultComb
     wx_i_extended = { {32-inputWidth{wx_i[inputWidth-1]}}, wx_i };
     wx_i_biased = wx_i_extended + output_bias;
     
-    if (wx_i_biased[inputWidth-1] == 1) begin
+    if (wx_i_biased[31] == 1) begin
         // wx_i_biased is negative
-        scaled_wx = ~(31'( inputWidth'(~wx_i_biased+1) * output_scale)) + 1;
+        scaled_wx = ~(48'( inputWidth'(~wx_i_biased+1) * output_scale)) + 1;
     end else begin
         // wx_i_biased is positive
-        scaled_wx = 31'(wx_i_biased * output_scale);
+        scaled_wx = 48'(wx_i_biased * output_scale);
     end
 
     // It doesn't do arithmetic shift unless $signed for some reason
