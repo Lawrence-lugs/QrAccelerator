@@ -27,6 +27,7 @@ from .utils import *
     ('fc_pw',           (1,3,16,16),   (32,3,1,1),     (256,256),  1,          1,      0,          0,          False),           
     ('fc_pw_long',      (1,40,16,16),  (32,40,1,1),    (256,256),  1,          1,      0,          0,          False),   
     ('depthwise',       (1,32,16,16),  (32,1,3,3),     (256,256),  1,          1,      0,          0,          True),
+    ('dw_nopad',        (1,32,16,16),  (32,1,3,3),     (256,256),  0,          1,      0,          0,          True),
     ('dw_short',        (1,16,16,16),  (16,1,3,3),     (256,256),  1,          1,      0,          0,          True),
 ])
 def test_qr_acc_top_single_load(
@@ -137,7 +138,7 @@ def test_qr_acc_top_single_load(
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
     save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
     print(acc_result.shape, u_code.reference_output.shape)
-    # plot_diff_channels(acc_result - stimulus['result'], tensor_format='NHWC', filename=f'{test_name}_channels')
+    plot_diff_channels(acc_result - u_code.reference_output, tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 
     return

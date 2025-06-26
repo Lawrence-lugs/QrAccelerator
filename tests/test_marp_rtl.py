@@ -35,6 +35,9 @@ def get_single_node_marp_code(
         nx_model, nx_model.graph.node[node_id].input[0], input_dict=input_dict).shape
     input_tensor = np.random.randint(0, 256, input_tensor_shape).astype(np.uint8)
 
+    print(node)
+    print(bin)
+
     u_code = QrAccNodeCode(
         mapped_node = node,
         mapped_bin = bin,

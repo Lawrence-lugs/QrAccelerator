@@ -116,8 +116,8 @@ def save_scatter_fig(expected, actual, title, filename):
     fig, ax = plt.subplots()
     plt.figure(figsize=(4,4))
     ax = sns.scatterplot(
-        x=expected.flatten(), 
-        y=actual.flatten(),
+        x=actual.flatten(), 
+        y=expected.flatten(),
         size=1,
         legend=False
     )
@@ -130,7 +130,7 @@ def save_scatter_fig(expected, actual, title, filename):
     # plt.savefig(f'images/{filename}.svg') # Saving scatter plots to SVG is a little too slow
     plt.savefig(f'images/png/{filename}.png')
     plt.close()
-
+ 
 def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8):
     """
     Plots all channels of the diff tensor in a subplot grid.

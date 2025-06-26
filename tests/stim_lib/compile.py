@@ -50,6 +50,9 @@ class QrAccNodeCode(object):
             zero_point=mapped_node.x_zp,
             channel_minor=True
         )
+
+        self.nx_model = nx_model
+
         # The writable matrix is the kernel for depthwise nodes, because they go into qracc
         self.matrix = mapped_node.matrix if not mapped_node.depthwise else mapped_node.kernel
         return
