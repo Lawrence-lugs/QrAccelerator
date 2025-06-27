@@ -166,6 +166,7 @@ always_comb begin : ctrlDecode
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_IDLE: begin
+            
             bus_i.ready = 1; // CSR is always ready to take data
             bus_i.rd_data_valid = csr_rd_data_valid;
         end

@@ -55,6 +55,10 @@ class QrAccNodeCode(object):
 
         # The writable matrix is the kernel for depthwise nodes, because they go into qracc
         self.matrix = mapped_node.matrix if not mapped_node.depthwise else mapped_node.kernel
+
+        self.inputs = self.mapped_node.get_true_inputs()  # Non-initializer inputs of the node
+        self.outputs = self.mapped_node.nx_node.output
+
         return
     
     def _get_input_dict(self):
@@ -230,7 +234,7 @@ class QrAccNodeCode(object):
             name=self.mapped_node.name,
         )        
     
-    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010'):
+    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010', end=True):
         '''
         Compile the node into a list of assembly instructions for QRAcc.
         include_ifmap_writes: bool, whether to include ifmap writes in the output.
@@ -267,7 +271,8 @@ class QrAccNodeCode(object):
         if add_read:
             commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
             commands += [f'WAITREAD']
-            commands += ['END']
+            if end:
+                commands += ['END']
 
         return commands
     
@@ -280,7 +285,7 @@ class QrAccNodeCode(object):
                 attr_strs.append(f"{key}=array(shape={value.shape})")
             elif key == 'mapped_node':
                 attr_strs.append(f"{key}={value.name} (id={value.node_id})")
-            elif key == 'mapped_bin':
+            elif key == 'mapped_bin' and value is not None:
                 attr_strs.append(f"{key}={value.bin_id} (shape={value.weights.shape})")
             elif key == 'nx_model':
                 attr_strs.append(f"{key}={value.graph.name} (nodes={len(value.graph.node)})")
@@ -466,3 +471,97 @@ def get_config_from_mapped_node(
     }
 
     return config_dict
+
+def traverse_and_compile_nx_graph(
+    nx_model     : onnx.ModelProto,
+    input_dict   : dict,
+    imc_core_size: tuple = (256, 256),
+    dwc_core_size: int = 32,
+    until        : int = 50,
+):
+    u_nx_mapping = core.NxModelMapping(
+        nx_model,
+        imc_core_size=imc_core_size,
+        dwc_core_size=dwc_core_size
+    )
+
+    next_node = None
+    prev_bin_id = None
+    current_loaded_ifmap_name = None
+    commands = []
+    for node_id,nx_node in enumerate(nx_model.graph.node[:until]):
+        
+        next_node = nx_model.graph.node[node_id + 1] if node_id + 1 < len(nx_model.graph.node) else None
+
+        if is_nx_node_compilable(nx_node):
+            input_tensor = generate_random_intermediate_tensor(
+                nx_model, node_id, input_dict
+            )
+            u_code = QrAccNodeCode(
+                mapped_node   = u_nx_mapping.get_mapped_node_by_id(node_id),
+                mapped_bin    = u_nx_mapping.get_bin_of_node_id(node_id),
+                ifmap         = input_tensor,
+                imc_core_size = imc_core_size,
+                ws_core_size  = dwc_core_size,
+                nx_model      = nx_model
+            )
+
+            commands += ['INFO']
+
+            commands += [f'Current loaded ifmap: {current_loaded_ifmap_name}']
+
+            print('============ Compiling Node ============')
+            if u_code.mapped_node.depthwise:
+                print(f"Compiling {nx_node.name} as depthwise node...")
+            else:
+                if (u_code.inputs[0] != current_loaded_ifmap_name):
+                    print(f"Compiling {nx_node.name} as first node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({u_code.inputs[0]}) from external memory']
+                else:
+                    print(f"Compiling {nx_node.name} as middle node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap from ACTMEM']
+
+                if not is_nx_node_compilable(next_node):
+                    print(f"Compiling {nx_node.name} as last node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will write ofmap into external memory']
+
+                if u_code.mapped_node.bin_id != prev_bin_id:
+                    print(f"Rewriting bin {nx_node.name} as bin changed from {prev_bin_id} to {u_code.mapped_node.bin_id}...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will rewrite the bin from {prev_bin_id} to {u_code.mapped_node.bin_id}']
+                else:
+                    print(f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) BIN COMBO!!! Reusing bin {u_code.mapped_node.bin_id}.')
+                    commands += [f'This node will reuse the bin {u_code.mapped_node.bin_id} from the previous node']
+                    
+            commands += [u_code.__repr__()]
+            commands += ['ENDINFO']
+
+            commands += u_code.compile(
+                include_ifmap_writes= (u_code.inputs[0] != current_loaded_ifmap_name),
+                write_weights = u_code.mapped_node.bin_id != prev_bin_id,    
+                add_read = not is_nx_node_compilable(next_node),            
+                end = False,
+            )
+
+            prev_bin_id = u_code.mapped_node.bin_id if not u_code.mapped_node.depthwise else prev_bin_id  # If the node is depthwise, we don't change the bin id, as it will be the same as the previous node
+        
+            current_loaded_ifmap_name = u_code.outputs[0]
+
+        else:
+            print(f'Skipping {nx_node.name} as it is not compilable...')
+
+    commands += ['END'] 
+    prev_node = nx_node
+
+    return commands
+
+def get_info_command(u_code):
+
+    """
+    Generate an INFO command for the QRAcc testbench.
+    This command is used to print information about the node.
+    """
+    commands = []
+    commands += ['INFO']
+    commands += [u_code.__repr__()]
+    commands += ['ENDINFO']
+    return commands

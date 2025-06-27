@@ -95,7 +95,8 @@ def test_qr_acc_top_single_load(
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "NODUMP": 1,  # Disable dumping of VPD and VCD
-        "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
+        # "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
+        # "NOIOFILES": 1, # Disable file I/O
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
@@ -129,12 +130,17 @@ def test_qr_acc_top_single_load(
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
             f.write(write + '\n')
-    u_code.write_files(stimulus_output_path)
+
+    if 'NOIOFILES' not in parameter_list.keys():
+        u_code.write_files(stimulus_output_path)
 
     # Simulation
     run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
     # Post-simulation
+    if 'NOIOFILES' in parameter_list.keys():
+        print('Skipping output file check')
+        return
     acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
     result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)

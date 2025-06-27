@@ -140,13 +140,16 @@ def test_qracc_with_onnx_single_node(
 
     return
 
-@pytest.mark.skip
 def test_qracc_with_all_onnx_single_node(
     simulator,
     modelpath = 'onnx_models/mbv2_cifar10_int8_binary.onnx',
     imc_core_size = (256, 256),
     dwc_core_size = 32,
-):    
+):  
+    '''
+    Runs all nodes in the model and compares the output to the expected output.
+    This tests single node runs in the entire model without packing, and produces an SNR list.
+    '''  
     
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
@@ -225,3 +228,84 @@ def test_qracc_with_all_onnx_single_node(
         
         snrs[mnode_index] = snr
         rmses[mnode_index] = rmse
+
+    # Save CSV of SNRs and RMSEs
+    snr_df = pd.DataFrame({
+        'node_id': range(len(snrs)),
+        'snr': snrs,
+        'rmse': rmses
+    })
+    snr_df.to_csv('snr_results.csv', index=False)
+
+def test_qracc_run_mbv2(
+    simulator,
+    nx_model = onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx'),
+    imc_core_size = (256,256),
+    dwc_core_size = 32,
+    until = 20        ,
+):    
+    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    rtl_file_list = [ 
+        '../rtl/activation_buffer/piso_write_queue.sv',
+        '../rtl/activation_buffer/mm_output_aligner.sv',
+        '../rtl/wsacc/wsacc_pe_cluster.sv',
+        '../rtl/wsacc/wsacc_pe.sv',
+        '../rtl/qr_acc_wrapper.sv',
+        '../rtl/seq_acc.sv',
+        '../rtl/ts_qracc.sv',
+        '../rtl/wr_controller.sv',
+        '../rtl/twos_to_bipolar.sv',
+        '../rtl/ts_qracc_multibank.sv',
+        '../rtl/qr_acc_top.sv',
+        '../rtl/output_scaler/output_scaler_set.sv',
+        '../rtl/output_scaler/output_scaler.sv',
+        '../rtl/memory/ram_2w2r.sv',
+        '../rtl/feature_loader/feature_loader.sv',
+        '../rtl/feature_loader/padder.sv',
+        '../rtl/control/qracc_csr.sv',
+        '../rtl/control/qracc_controller.sv',
+    ]
+    tb_name = 'tb_qracc_top'
+    tb_path = 'qracc_top'
+    stimulus_output_path = f'tb/{tb_path}/inputs'
+    empty_directory(stimulus_output_path)
+    param_file_path = 'rtl/qracc_params.svh'
+
+    # Setup log paths
+    tb_file = f'../tb/{tb_path}/{tb_name}.sv'
+    log_file = f'tests/logs/{tb_name}_{simulator}.log'
+    logdir = os.path.dirname(log_file)
+    os.makedirs(logdir,exist_ok=True)
+
+    # Parameters are bound to the specific hardware configuration
+    parameter_list = {
+        "SRAM_ROWS": imc_core_size[0],
+        "SRAM_COLS": imc_core_size[1],
+        "QRACC_INPUT_BITS": 8,
+        "QRACC_OUTPUT_BITS": 8,
+        "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
+        "NODUMP": 1,  # Disable dumping of VPD and VCD
+        "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
+        "NOIOFILES": 1, # Disable file I/O
+    }
+    print(f'Parameter list: {parameter_list}')
+    write_parameter_definition_file(parameter_list,param_file_path)
+
+    input_dict = {
+        'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
+    }
+
+    commands = traverse_and_compile_nx_graph(
+        nx_model = nx_model,
+        input_dict = input_dict,
+        imc_core_size = imc_core_size,
+        dwc_core_size = dwc_core_size,
+        until = until
+    )  
+
+    with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
+        for write in commands:
+            f.write(write + '\n')
+
+    # Simulation
+    run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)

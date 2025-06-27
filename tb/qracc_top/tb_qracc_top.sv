@@ -277,8 +277,8 @@ end
 
 // Watchdog
 initial begin
-    #(100_000_0); // 100 ms
-    $display("TEST FAILED - WATCHDOG TIMEOUT");
+    #(100_000_000); // 100 ms
+    $display("TEST FAILED - WATCHDOG TIMEOUT, time: ", $time);
     $finish;
 end
 
@@ -299,6 +299,7 @@ string files[numFiles] = {
 };
 int file_descriptors[numFiles];
 
+`ifndef NOIOFILES
 initial begin
     $display("=== FILE LIST ===");
     foreach (files[i]) begin
@@ -310,6 +311,7 @@ initial begin
         end
     end
 end
+`endif // NOIOFILES
 
 function int get_index_of_file(input string file_name);
     int i;
@@ -485,6 +487,7 @@ task bus_write_loop();
     int data;
     int addr;
     int i;
+    qracc_trigger_t trigger_type;
     string command;
     fd = $fopen({files_path,"commands.txt"},"r");
     
@@ -497,8 +500,25 @@ task bus_write_loop();
     while (!$feof(fd)) begin
         $fscanf(fd,"%s", command);
         case(command)
+            "INFO": begin
+                $display("=== NODE INFORMATION ===");
+                do begin
+                    $fgets(command, fd);
+                    $write("%s ", command);
+                end while (command != "ENDINFO\n");
+                $display("=== END OF NODE INFORMATION ===");
+            end
             "LOAD": begin
                 $fscanf(fd,"%h %h",addr,data);
+
+                trigger_type = qracc_trigger_t'(data[2:0]);
+
+                if ((addr & 32'hFFFF_FFF0)== 32'h0000_0010) begin
+                    if (data[2:0] != TRIGGER_IDLE) begin
+                        $display("Triggering QRAcc with command: %s", trigger_type.name());
+                    end
+                end
+
                 // casex(addr)
                 //     32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
                 //     32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
@@ -511,7 +531,7 @@ task bus_write_loop();
                 if(!$feof(fd)) begin
                     while (!bus.ready) begin 
                         #(CLK_PERIOD);
-                        $write(".");
+                        // $write(".");
                     end
                     #(CLK_PERIOD);
                     // $write("\tDONE\n");
@@ -521,6 +541,8 @@ task bus_write_loop();
             end
             "WAITBUSY": begin
                 display_config();
+                $display("Waiting for QRAcc Computation, time:", $time);
+                $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
                 `ifdef NOTPLITZTRACK
                 wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
                 `else
@@ -529,7 +551,8 @@ task bus_write_loop();
             end
             "WAITREAD": begin
                 // Wait for reads to finish
-                $display("Waiting for reads to finish...");
+                $display("Waiting for QRAcc Readout, time:", $time);
+                $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
                 i = 0;
                 l2_mem_enable = 1;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
@@ -545,7 +568,7 @@ task bus_write_loop();
                     i++;
                 end
                 l2_mem_enable = 0;
-                $display("\nQRAcc is ready after %d cycles", i);
+                $display("\nQRAcc is ready after %d cycles, time: ", i, $time);
             end
             "END": begin
                 $write("Ending bus write loop\n");
@@ -563,7 +586,7 @@ task wait_busy_silent();
 
     input int addr;
     int i;
-    $display("Waiting for QRAcc to be ready", $time);
+    $display("Waiting for QRAcc to be ready, time:", $time);
     i = 0;
     do begin
         bus.addr = addr; // CSR_REG_MAIN
@@ -578,7 +601,7 @@ task wait_busy_silent();
         #(CLK_PERIOD);
         i++;
     end while (bus.data_out[4] == 1); // QRACC IS BUSY 
-    $display("\nQRAcc is ready after %d cycles", i);
+    $display("\nQRAcc is ready after %d cycles, time:", i,$time);
 endtask
 
 // Address by 4-byte word
@@ -774,17 +797,21 @@ initial begin
     $display("=============== TESTBENCH START ===============");
 
     // Get files needed for inferring test
+    `ifndef NOIOFILES
     ifmap = new("ifmap");
     weight_matrix = new("matrix");
     toeplitz = new("toeplitz");
     scaler_data = new("scaler_data");
     biases = new("biases");
+    `endif // NOIOFILES
 
     start_sim();
 
     bus_write_loop();
 
+    `ifndef NOIOFILES
     export_l2();
+    `endif // NOIOFILES
 
     end_sim();
 
