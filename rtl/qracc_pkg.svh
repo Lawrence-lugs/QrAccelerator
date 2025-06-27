@@ -201,7 +201,96 @@ package qracc_pkg;
         I_WRITE_CONFIG = 4'b0011
     } qracc_inst_t; // NEEDS OVERHAUL FOR MICROCODE LOOP
 
+    // STATISTICS BROKERS
 
+    typedef struct packed {
+        int statActmemExtPortReads;
+        int statActmemExtPortWrites;
+        int statActmemIntPortReads;
+        int statActmemIntPortWrites;
+
+        int statFLReads;
+        int statFLWrites;
+
+        int statSeqAccWeightWrites;
+        int statSeqAccOperations;
+
+        int statWQWrites;
+        int statWQReads;
+    } qracc_statistics_t;
+
+    `ifdef TRACK_STATISTICS
+    qracc_statistics_t stats;
+
+    task reset_statistics();
+        stats = 0;
+    endtask
+    
+    // Task to write statistics to file
+    task write_stats_to_file(string filename);
+        int file_handle;
+        file_handle = $fopen(filename, "w");
+        if (file_handle) begin
+            $fwrite(file_handle, "QRAcc Statistics Report\n");
+            $fwrite(file_handle, "========================\n");
+            $fwrite(file_handle, "Activation Memory Statistics:\n");
+            $fwrite(file_handle, "  External Port Reads:  %0d\n", stats.statActmemExtPortReads);
+            $fwrite(file_handle, "  External Port Writes: %0d\n", stats.statActmemExtPortWrites);
+            $fwrite(file_handle, "  Internal Port Reads:  %0d\n", stats.statActmemIntPortReads);
+            $fwrite(file_handle, "  Internal Port Writes: %0d\n", stats.statActmemIntPortWrites);
+            $fwrite(file_handle, "\nFeature Loader Statistics:\n");
+            $fwrite(file_handle, "  FL Reads:  %0d\n", stats.statFLReads);
+            $fwrite(file_handle, "  FL Writes: %0d\n", stats.statFLWrites);
+            $fwrite(file_handle, "\nSequential Accelerator Statistics:\n");
+            $fwrite(file_handle, "  Weight Writes: %0d\n", stats.statSeqAccWeightWrites);
+            $fwrite(file_handle, "  Operations:    %0d\n", stats.statSeqAccOperations);
+            $fwrite(file_handle, "\nWeight Queue Statistics:\n");
+            $fwrite(file_handle, "  WQ Writes: %0d\n", stats.statWQWrites);
+            $fwrite(file_handle, "  WQ Reads:  %0d\n", stats.statWQReads);
+            $fclose(file_handle);
+            $display("Statistics written to file: %s", filename);
+        end else begin
+            $error("Could not open file %s for writing", filename);
+        end
+    endtask
+    
+    // Task to append statistics to CSV file for analysis
+    task append_stats_to_csv(string filename, string event_name);
+        int file_handle;
+        static bit header_written = 0;
+        
+        if (!header_written) begin
+            file_handle = $fopen(filename, "w");
+            if (file_handle) begin
+                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,WQWrites,WQReads\n");
+                $fclose(file_handle);
+                header_written = 1;
+            end
+        end
+        
+        file_handle = $fopen(filename, "a");
+        if (file_handle) begin
+            $fwrite(file_handle, "%s,%0t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
+                    event_name, 
+                    $time,
+                    stats.statActmemExtPortReads,
+                    stats.statActmemExtPortWrites,
+                    stats.statActmemIntPortReads,
+                    stats.statActmemIntPortWrites,
+                    stats.statFLReads,
+                    stats.statFLWrites,
+                    stats.statSeqAccWeightWrites,
+                    stats.statSeqAccOperations,
+                    stats.statWQWrites,
+                    stats.statWQReads);
+            $fclose(file_handle);
+        end else begin
+            $error("Could not open file %s for appending", filename);
+        end
+    endtask
+    `endif
+
+    // END STATISTICS BROKERS
 
 endpackage
 

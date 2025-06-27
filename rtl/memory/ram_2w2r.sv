@@ -4,6 +4,8 @@
 
 `timescale 1ns/1ps
 
+import qracc_pkg::*;
+
 module ram_2w2r #(
     parameter addrWidth = 32,
     parameter dataSize = 8,
@@ -41,22 +43,34 @@ always_ff @(posedge clk, negedge nrst) begin
         rd_data_2_o <= 0;
     end else begin
         if (wr_en_1_i) begin
+            `ifdef TRACK_STATISTICS
+            stats.statActmemExtPortWrites++;
+            `endif
             for (int i = 0; i < interfaceWidth1/dataSize; i++) begin
                 mem[wr_addr_1_i + i] <= wr_data_1_i[(interfaceWidth1/dataSize-1-i)*dataSize +: dataSize];
             end
         end
         if (wr_en_2_i) begin
+            `ifdef TRACK_STATISTICS
+            stats.statActmemIntPortWrites++;
+            `endif
             for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
                 // mem[wr_addr_2_i + i] <= wr_data_2_i[(interfaceWidth2/dataSize-1-i)*dataSize +: dataSize];
                 mem[wr_addr_2_i + i] <= wr_data_2_i[(i)*dataSize +: dataSize];
             end
         end
         if (rd_en_1_i) begin
+            `ifdef TRACK_STATISTICS
+            stats.statActmemExtPortReads++;
+            `endif
             for (int i = 0; i < interfaceWidth1/dataSize; i++) begin
                 rd_data_1_o[i*dataSize +: dataSize] <= mem[rd_addr_1_i + (interfaceWidth1/dataSize-1-i)];
             end
         end
         if (rd_en_2_i) begin
+            `ifdef TRACK_STATISTICS
+            stats.statActmemIntPortReads++;
+            `endif
             for (int i = 0; i < interfaceWidth2/dataSize; i++) begin
                 rd_data_2_o[i*dataSize +: dataSize] <= mem[rd_addr_2_i + (interfaceWidth2/dataSize-1-i)];
             end

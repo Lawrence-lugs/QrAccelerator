@@ -555,6 +555,9 @@ task bus_write_loop();
                 `ifdef SNOOP_OFMAP
                 magic_export_ofmap(node_name);
                 `endif
+                `ifdef TRACK_STATISTICS
+                append_stats_to_csv({output_path,"qracc_statistics",".csv"},node_name);
+                `endif
             end
             "WAITREAD": begin
                 // Wait for reads to finish
@@ -800,6 +803,36 @@ task export_l2();
     end
 
 endtask
+
+
+// ========================= STATISTICS TRACKING SECTION =========================
+
+// This function is accessed by the other tasks, so it's outside the `ifdef TRACK_STATISTICS block
+task export_statistics();
+
+    int fd;
+    fd = $fopen({output_path,"statistics.txt"},"w");
+    
+    if (fd == 0) begin
+        $display("Error opening statistics file");
+        return;
+    end
+
+    // Write the statistics to the file
+    
+    $fclose(fd);
+endtask
+
+`ifdef TRACK_STATISTICS
+
+// A bunch of watcher modules to track the statistics
+initial begin
+    reset_statistics();
+end
+
+`endif
+
+// ========================= STATISTICS TRACKING SECTION =========================
 
 initial begin
     $display("=============== TESTBENCH START ===============");

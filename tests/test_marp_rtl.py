@@ -193,6 +193,7 @@ def test_qracc_with_all_onnx_single_node(
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "NODUMP": 1,  # Disable dumping of VPD and VCD
         "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
+        "TRACK_STATISTICS": 1, # Enable tracking of statistics
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
@@ -291,6 +292,7 @@ def test_qracc_run_mbv2(
         "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         "NOIOFILES": 1, # Disable file I/O
         "SNOOP_OFMAP": 1, # Enable snooping of the output feature map
+        "TRACK_STATISTICS": 1, # Enable tracking of statistics
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
