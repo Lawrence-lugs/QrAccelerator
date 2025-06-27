@@ -540,12 +540,12 @@ task bus_write_loop();
                 end
             end
             "WAITBUSY": begin
-                display_config();
                 $display("Waiting for QRAcc Computation, time:", $time);
                 $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
                 `ifdef NOTPLITZTRACK
                 wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
                 `else
+                display_config();
                 track_toeplitz();
                 `endif
             end

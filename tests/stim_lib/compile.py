@@ -234,7 +234,7 @@ class QrAccNodeCode(object):
             name=self.mapped_node.name,
         )        
     
-    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010', end=True):
+    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010', end=True, preserve_ifmap=False):
         '''
         Compile the node into a list of assembly instructions for QRAcc.
         include_ifmap_writes: bool, whether to include ifmap writes in the output.
@@ -263,9 +263,9 @@ class QrAccNodeCode(object):
         commands += write_array_to_asm(self._get_ifmap_data())
 
         if self.mapped_node.depthwise:
-            commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address)
+            commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address, preserve_ifmap=preserve_ifmap)
         else:
-            commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
+            commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address, preserve_ifmap=preserve_ifmap)
         commands += [f'WAITBUSY']
         
         if add_read:
@@ -323,7 +323,8 @@ def make_trigger_write(
     clear=0,
     inst_write_mode=0,
     csr_main_trigger_enum=None,
-    write_address='00000010'  # Default CSR base address for MAIN
+    write_address='00000010',  # Default CSR base address for MAIN
+    preserve_ifmap=False  # Used for successive nodes that use the same ifmap
 ):
     """
     command: string, one of possible triggers in qracc_pkg.svh
@@ -350,8 +351,9 @@ def make_trigger_write(
     trigger_val = csr_main_trigger_enum[command] & 0x7
     clear_val = (clear & 0x1) << 3
     inst_write_mode_val = (inst_write_mode & 0x1) << 5
+    preserve_ifmap_val = (preserve_ifmap & 0x1) << 12  # Preserve ifmap bit
 
-    word = trigger_val | clear_val | inst_write_mode_val
+    word = trigger_val | clear_val | inst_write_mode_val | preserve_ifmap_val
     return [f'LOAD {write_address} {word:08x}']
 
 def bundle_config_into_write(
@@ -472,25 +474,44 @@ def get_config_from_mapped_node(
 
     return config_dict
 
+def check_if_any_consumers_are_noncompilable(
+    nx_model : onnx.ModelProto,
+    nx_node : int
+):
+    """
+    Check if any consumers of the given node are non-compilable.
+    Returns True if any consumer is non-compilable, False otherwise.
+    """
+    for output in nx_node.output:
+        for node in nx_model.graph.node:
+            if output in node.input and not is_nx_node_compilable(node):
+                return True
+    return False
+
 def traverse_and_compile_nx_graph(
     nx_model     : onnx.ModelProto,
     input_dict   : dict,
     imc_core_size: tuple = (256, 256),
     dwc_core_size: int = 32,
-    until        : int = 50,
+    until        : int = None,
+    starting     : int = 0
 ):
+    
     u_nx_mapping = core.NxModelMapping(
         nx_model,
         imc_core_size=imc_core_size,
         dwc_core_size=dwc_core_size
     )
 
-    next_node = None
+    if until is None:
+        until = len(nx_model.graph.node)
+    commands = []
+
     prev_bin_id = None
     current_loaded_ifmap_name = None
-    commands = []
-    for node_id,nx_node in enumerate(nx_model.graph.node[:until]):
+    for node_id,nx_node in enumerate(nx_model.graph.node[starting:until]):
         
+        readout = check_if_any_consumers_are_noncompilable(nx_model, nx_node)
         next_node = nx_model.graph.node[node_id + 1] if node_id + 1 < len(nx_model.graph.node) else None
 
         if is_nx_node_compilable(nx_node):
@@ -506,45 +527,57 @@ def traverse_and_compile_nx_graph(
                 nx_model      = nx_model
             )
 
-            commands += ['INFO']
+            preserve_ifmap = False
+            if is_nx_node_compilable(next_node) and next_node.input[0] == u_code.inputs[0]:
+                preserve_ifmap = True
 
+            commands += ['INFO']
+            commands += [f'{nx_node.name}'] # The tb will later parse this as the node name
             commands += [f'Current loaded ifmap: {current_loaded_ifmap_name}']
 
             print('============ Compiling Node ============')
+
             if u_code.mapped_node.depthwise:
                 print(f"Compiling {nx_node.name} as depthwise node...")
+            
+            if (u_code.inputs[0] != current_loaded_ifmap_name):
+                print(f"Compiling {nx_node.name} as first node of set...")
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({u_code.inputs[0]}) from external memory']
             else:
-                if (u_code.inputs[0] != current_loaded_ifmap_name):
-                    print(f"Compiling {nx_node.name} as first node of set...")
-                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({u_code.inputs[0]}) from external memory']
-                else:
-                    print(f"Compiling {nx_node.name} as middle node of set...")
-                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap from ACTMEM']
+                print(f"Compiling {nx_node.name} as middle node of set...")
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap ({u_code.inputs[0]}) from ACTMEM']
 
-                if not is_nx_node_compilable(next_node):
-                    print(f"Compiling {nx_node.name} as last node of set...")
-                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will write ofmap into external memory']
+            if readout:
+                print(f"{nx_node.name} is followed by a non-compilable node, so it will write the ofmap to external memory.")
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will write ofmap ({u_code.outputs[0]}) into external memory']
 
+            if u_code.mapped_node.bin_id is not None:
                 if u_code.mapped_node.bin_id != prev_bin_id:
                     print(f"Rewriting bin {nx_node.name} as bin changed from {prev_bin_id} to {u_code.mapped_node.bin_id}...")
                     commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will rewrite the bin from {prev_bin_id} to {u_code.mapped_node.bin_id}']
                 else:
                     print(f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) BIN COMBO!!! Reusing bin {u_code.mapped_node.bin_id}.')
                     commands += [f'This node will reuse the bin {u_code.mapped_node.bin_id} from the previous node']
-                    
-            commands += [u_code.__repr__()]
-            commands += ['ENDINFO']
+            else:
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) is a depthwise node. Loaded bin ({prev_bin_id}) is preserved.']
 
+            if preserve_ifmap:
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will preserve the ifmap ({u_code.inputs[0]}) in ACTMEM for the next node.']
+                    
+            # commands += [u_code.__repr__()]
+            commands += ['ENDINFO']
             commands += u_code.compile(
-                include_ifmap_writes= (u_code.inputs[0] != current_loaded_ifmap_name),
-                write_weights = u_code.mapped_node.bin_id != prev_bin_id,    
-                add_read = not is_nx_node_compilable(next_node),            
-                end = False,
+                include_ifmap_writes = (u_code.inputs[0] != current_loaded_ifmap_name) ,
+                write_weights        = u_code.mapped_node.bin_id                       != prev_bin_id,
+                add_read             = readout,
+                end                  = False ,
+                preserve_ifmap       = preserve_ifmap ,
             )
 
             prev_bin_id = u_code.mapped_node.bin_id if not u_code.mapped_node.depthwise else prev_bin_id  # If the node is depthwise, we don't change the bin id, as it will be the same as the previous node
         
-            current_loaded_ifmap_name = u_code.outputs[0]
+            if not preserve_ifmap:
+                current_loaded_ifmap_name = u_code.outputs[0]
 
         else:
             print(f'Skipping {nx_node.name} as it is not compilable...')

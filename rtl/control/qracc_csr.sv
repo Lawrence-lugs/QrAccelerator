@@ -83,7 +83,8 @@ end
 // CSR Decode
 always_comb begin : csrDecode
     csr_main_read_output = {
-        20'b0, // free
+        19'b0, // free
+        1'b0, // preserve_ifmap
         csr_main_internal_state,
         3'b0, // free
         csr_main_busy, // csr_main_busy
@@ -103,29 +104,31 @@ always_comb begin : csrDecode
     end
 
     // Assign configuration output
-    cfg_o.binary_cfg          = csr_set[CSR_REG_CONFIG][0];
-    cfg_o.unsigned_acts       = csr_set[CSR_REG_CONFIG][1];
-    cfg_o.adc_ref_range_shifts= csr_set[CSR_REG_CONFIG][7:4];
-    cfg_o.filter_size_y       = csr_set[CSR_REG_CONFIG][11:8];
-    cfg_o.filter_size_x       = csr_set[CSR_REG_CONFIG][15:12];
-    cfg_o.stride_x            = csr_set[CSR_REG_CONFIG][19:16];
-    cfg_o.stride_y            = csr_set[CSR_REG_CONFIG][23:20];
-    cfg_o.n_input_bits_cfg    = csr_set[CSR_REG_CONFIG][27:24];
-    cfg_o.n_output_bits_cfg   = csr_set[CSR_REG_CONFIG][31:28];
+    cfg_o.preserve_ifmap = csr_set[CSR_REG_MAIN][12];
 
-    cfg_o.input_fmap_dimx     = csr_set[CSR_REG_IFMAP_DIMS][15:0];
-    cfg_o.input_fmap_dimy     = csr_set[CSR_REG_IFMAP_DIMS][31:16];
+    cfg_o.binary_cfg           = csr_set[CSR_REG_CONFIG][0];
+    cfg_o.unsigned_acts        = csr_set[CSR_REG_CONFIG][1];
+    cfg_o.adc_ref_range_shifts = csr_set[CSR_REG_CONFIG][7:4];
+    cfg_o.filter_size_y        = csr_set[CSR_REG_CONFIG][11:8];
+    cfg_o.filter_size_x        = csr_set[CSR_REG_CONFIG][15:12];
+    cfg_o.stride_x             = csr_set[CSR_REG_CONFIG][19:16];
+    cfg_o.stride_y             = csr_set[CSR_REG_CONFIG][23:20];
+    cfg_o.n_input_bits_cfg     = csr_set[CSR_REG_CONFIG][27:24];
+    cfg_o.n_output_bits_cfg    = csr_set[CSR_REG_CONFIG][31:28];
 
-    cfg_o.output_fmap_dimx    = csr_set[CSR_REG_OFMAP_DIMS][15:0];
-    cfg_o.output_fmap_dimy    = csr_set[CSR_REG_OFMAP_DIMS][31:16];
+    cfg_o.input_fmap_dimx = csr_set[CSR_REG_IFMAP_DIMS][15:0];
+    cfg_o.input_fmap_dimy = csr_set[CSR_REG_IFMAP_DIMS][31:16];
+
+    cfg_o.output_fmap_dimx = csr_set[CSR_REG_OFMAP_DIMS][15:0];
+    cfg_o.output_fmap_dimy = csr_set[CSR_REG_OFMAP_DIMS][31:16];
 
     cfg_o.num_input_channels  = csr_set[CSR_REG_CHANNELS][15:0];
     cfg_o.num_output_channels = csr_set[CSR_REG_CHANNELS][31:16];
 
     cfg_o.mapped_matrix_offset_x = csr_set[CSR_REG_OFFSETS][15:0];
-    cfg_o.mapped_matrix_offset_y = csr_set[CSR_REG_OFFSETS][31:16];    
+    cfg_o.mapped_matrix_offset_y = csr_set[CSR_REG_OFFSETS][31:16];
 
-    cfg_o.padding = csr_set[CSR_REG_PADDING][3:0];
+    cfg_o.padding       = csr_set[CSR_REG_PADDING][3:0];
     cfg_o.padding_value = csr_set[CSR_REG_PADDING][11:4];
 end
 

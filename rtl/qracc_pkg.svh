@@ -77,6 +77,7 @@ package qracc_pkg;
         // 5 - csr_main_inst_write_mode = 1 if writing instructions
         // 7:5 - free
         // 11:8 - csr_main_internal_state = state_q of qracc_controller
+        logic preserve_ifmap; // 12
 
         // CSR 1: Config
         logic binary_cfg;                       // 0 - binary or bipolar mode, binary if 1

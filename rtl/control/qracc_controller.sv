@@ -166,7 +166,6 @@ always_comb begin : ctrlDecode
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_IDLE: begin
-            
             bus_i.ready = 1; // CSR is always ready to take data
             bus_i.rd_data_valid = csr_rd_data_valid;
         end
@@ -569,18 +568,20 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         end
 
         if (state_q == S_COMPUTE_ANALOG) begin
-
             if (state_d != S_COMPUTE_ANALOG) begin
-                ifmap_start_addr <= ofmap_start_addr;
-                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                if (!cfg.preserve_ifmap) begin
+                    ifmap_start_addr <= ofmap_start_addr;
+                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                end
             end
         end
 
         if (state_q == S_COMPUTE_DIGITAL) begin
-
             if (state_d != S_COMPUTE_DIGITAL) begin
-                ifmap_start_addr <= ofmap_start_addr;
-                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                if (!cfg.preserve_ifmap) begin
+                    ifmap_start_addr <= ofmap_start_addr;
+                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                end            
             end
         end
     end

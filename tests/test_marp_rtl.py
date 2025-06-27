@@ -242,7 +242,8 @@ def test_qracc_run_mbv2(
     nx_model = onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx'),
     imc_core_size = (256,256),
     dwc_core_size = 32,
-    until = 20        ,
+    until = None      ,
+    starting = 0      ,
 ):    
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
@@ -296,11 +297,12 @@ def test_qracc_run_mbv2(
     }
 
     commands = traverse_and_compile_nx_graph(
-        nx_model = nx_model,
-        input_dict = input_dict,
+        nx_model      = nx_model,
+        input_dict    = input_dict,
         imc_core_size = imc_core_size,
         dwc_core_size = dwc_core_size,
-        until = until
+        until         = until,
+        starting      = starting,
     )  
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
