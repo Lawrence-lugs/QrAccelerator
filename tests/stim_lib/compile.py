@@ -532,7 +532,7 @@ def traverse_and_compile_nx_graph(
                 preserve_ifmap = True
 
             commands += ['INFO']
-            commands += [f'{nx_node.name}'] # The tb will later parse this as the node name
+            commands += [f'{sanitize_name(nx_node.name)}'] # The tb will later parse this as the node name
             commands += [f'Current loaded ifmap: {current_loaded_ifmap_name}']
 
             print('============ Compiling Node ============')
@@ -598,3 +598,22 @@ def get_info_command(u_code):
     commands += [u_code.__repr__()]
     commands += ['ENDINFO']
     return commands
+
+def sanitize_name(name):
+    """
+    Sanitize a node name to be used as filenames in the QRAcc testbench.
+    Removes special characters and directory traversal attempts.
+    Returns a safe string that can be used as a filename.
+    """
+    # Replace any chars that could be problematic in filenames
+    safe_chars = name.replace(' ', '_')
+    safe_chars = ''.join(c for c in safe_chars if c.isalnum() or c in '_-')
+    
+    # Prevent directory traversal attempts
+    safe_name = safe_chars.replace('..', '')
+    
+    # Avoid empty names
+    if not safe_name:
+        safe_name = 'node'
+        
+    return safe_name

@@ -10,4 +10,5 @@
 `define NODUMP 1
 `define NOTPLITZTRACK 1
 `define NOIOFILES 1
+`define SNOOP_OFMAP 1
 `endif // PARAMETERS_FILE

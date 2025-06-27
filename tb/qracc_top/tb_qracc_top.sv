@@ -487,6 +487,7 @@ task bus_write_loop();
     int data;
     int addr;
     int i;
+    string node_name;
     qracc_trigger_t trigger_type;
     string command;
     fd = $fopen({files_path,"commands.txt"},"r");
@@ -502,6 +503,9 @@ task bus_write_loop();
         case(command)
             "INFO": begin
                 $display("=== NODE INFORMATION ===");
+                $fscanf(fd,"\n%s", node_name);
+                // $fgets(node_name, fd);
+                $display("Node Name: %s", node_name);
                 do begin
                     $fgets(command, fd);
                     $write("%s ", command);
@@ -547,6 +551,9 @@ task bus_write_loop();
                 `else
                 display_config();
                 track_toeplitz();
+                `endif
+                `ifdef SNOOP_OFMAP
+                magic_export_ofmap(node_name);
                 `endif
             end
             "WAITREAD": begin
@@ -753,6 +760,7 @@ endtask
 task magic_export_ofmap();
 
     // Magically export of the ofmap without actual readout
+    input string output_file_name;
 
     int a;
     int fd;
@@ -760,9 +768,9 @@ task magic_export_ofmap();
 
     ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
 
-    $display("Exporting ofmap at time %t", $time);
+    $display("Exporting ofmap to file %s at time %t", {output_path,output_file_name,".txt"}, $time);
 
-    fd = $fopen({output_path,"hw_ofmap_magic",".txt"},"w");
+    fd = $fopen({output_path,output_file_name,".txt"},"w");
     for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.

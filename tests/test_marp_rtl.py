@@ -269,7 +269,9 @@ def test_qracc_run_mbv2(
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
+    hw_output_path = f'tb/{tb_path}/outputs'
     empty_directory(stimulus_output_path)
+    empty_directory(hw_output_path)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -288,6 +290,7 @@ def test_qracc_run_mbv2(
         "NODUMP": 1,  # Disable dumping of VPD and VCD
         "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         "NOIOFILES": 1, # Disable file I/O
+        "SNOOP_OFMAP": 1, # Enable snooping of the output feature map
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
