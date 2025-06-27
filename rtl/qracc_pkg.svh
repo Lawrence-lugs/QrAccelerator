@@ -9,27 +9,28 @@ package qracc_pkg;
 
     // QRAcc Parameters
     parameter numRows = `SRAM_ROWS;
-    parameter numCols = 32;
-    parameter numAdcBits = 4; 
-    parameter compCount = (2**numAdcBits)-1;
+    parameter numCols    = 32;
+    parameter numAdcBits = 4;
+    parameter compCount  = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
-    parameter numBanks = `SRAM_COLS/numCols;
+    parameter numBanks   = `SRAM_COLS/numCols;
     parameter outputElements = `SRAM_COLS;
     
-    // Output Scaler Parameters
+      // Output Scaler Parameters
     parameter accumulatorBits = 16;
-    parameter outputBits = `QRACC_OUTPUT_BITS;
-    parameter inputBits = `QRACC_INPUT_BITS;
+    parameter outputBits      = `QRACC_OUTPUT_BITS;
+    parameter inputBits       = `QRACC_INPUT_BITS;
 
     // Trigger Values
     typedef enum logic [2:0] {
-        TRIGGER_IDLE                        = 0,
-        TRIGGER_LOAD_ACTIVATION             = 1, 
-        TRIGGER_LOADWEIGHTS_PERIPHS         = 2,
-        TRIGGER_COMPUTE_ANALOG              = 3,
-        TRIGGER_COMPUTE_DIGITAL             = 4,
-        TRIGGER_READ_ACTIVATION             = 5,
-        TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL = 6
+        TRIGGER_IDLE                = 0,
+        TRIGGER_LOAD_ACTIVATION     = 1,
+        TRIGGER_LOADWEIGHTS         = 2,
+        TRIGGER_COMPUTE_ANALOG      = 3,
+        TRIGGER_COMPUTE_DIGITAL     = 4,
+        TRIGGER_READ_ACTIVATION     = 5,
+        TRIGGER_LOADWEIGHTS_DIGITAL = 6,
+        TRIGGER_LOAD_SCALER         = 7
     } qracc_trigger_t;
 
     // Control signals for QRAcc

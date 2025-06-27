@@ -166,6 +166,7 @@ always_comb begin : ctrlDecode
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_IDLE: begin
+            
             bus_i.ready = 1; // CSR is always ready to take data
             bus_i.rd_data_valid = csr_rd_data_valid;
         end
@@ -243,14 +244,15 @@ end
 
 always_comb begin : stateDecode
     case(csr_main_trigger)
-        TRIGGER_IDLE: state_trigger = S_IDLE;
-        TRIGGER_LOAD_ACTIVATION: state_trigger = S_LOADACTS;
-        TRIGGER_LOADWEIGHTS_PERIPHS: state_trigger = S_LOADWEIGHTS;
-        TRIGGER_COMPUTE_ANALOG: state_trigger = S_COMPUTE_ANALOG;
-        TRIGGER_COMPUTE_DIGITAL: state_trigger = S_COMPUTE_DIGITAL;
-        TRIGGER_READ_ACTIVATION: state_trigger = S_READACTS;
-        TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL: state_trigger = S_LOAD_DIGITAL_WEIGHTS;
-        default: state_trigger = S_IDLE;
+        TRIGGER_IDLE               : state_trigger = S_IDLE;
+        TRIGGER_LOAD_ACTIVATION    : state_trigger = S_LOADACTS;
+        TRIGGER_LOADWEIGHTS        : state_trigger = S_LOADWEIGHTS;
+        TRIGGER_COMPUTE_ANALOG     : state_trigger = S_COMPUTE_ANALOG;
+        TRIGGER_COMPUTE_DIGITAL    : state_trigger = S_COMPUTE_DIGITAL;
+        TRIGGER_READ_ACTIVATION    : state_trigger = S_READACTS;
+        TRIGGER_LOADWEIGHTS_DIGITAL: state_trigger = S_LOAD_DIGITAL_WEIGHTS;
+        TRIGGER_LOAD_SCALER        : state_trigger = S_LOADSCALER;
+        default                    : state_trigger = S_IDLE;
     endcase
     case(state_q)
         S_IDLE: begin
@@ -260,14 +262,14 @@ always_comb begin : stateDecode
             if (weight_ptr < numRows*numBanks) begin
                 state_d = S_LOADWEIGHTS;
             end else begin
-                state_d = S_LOADSCALER;
+                state_d = S_IDLE;
             end
         end
         S_LOAD_DIGITAL_WEIGHTS: begin
             if (weight_ptr < numWsAccWrites-1) begin
                 state_d = S_LOAD_DIGITAL_WEIGHTS;
             end else begin
-                state_d = S_LOADSCALER;
+                state_d = state_trigger;
             end
         end
         S_LOADACTS: begin
@@ -527,6 +529,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         ifmap_start_addr <= 0;
         act_wr_ptr <= 0;
         act_rd_ptr <= 0;
+        read_acts_out_valid <= 0;
     end else begin
         if (csr_main_clear) begin
             ofmap_start_addr <= 0;

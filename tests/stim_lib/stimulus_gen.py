@@ -121,7 +121,7 @@ def _generate_random_quantized_weights(
         scale = np.random.uniform(0.01,0.2,kernel_shape[0])
         qb = quant.QuantizedTensor(quantized_values = b, scale = scale, zero_point=0)
     else:
-        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='3sigma')
+        qb = quant.QuantizedTensor(shape = kernel_shape, precision = kernel_bits, mode='maxmin')
 
     qb.quantized_values = qb.quantized_values.astype(kernel_dtype)
 
@@ -297,7 +297,7 @@ def infer_ofmap_shape(
     stride
 ):
     '''
-    Infer the output shape of a convolution operation.
+    Infer the output shape of a convolution (or matmul) operation.
     '''
     stridex = stride[0]
     stridey = stride[1]
@@ -332,6 +332,8 @@ def sample_onnx_qlinearconv(
     '''
 
     np.random.seed(seed)
+
+    kernel_bits = 7 if depthwise else 1
 
     qa = _generate_random_quantized_acts(
         ifmap_shape=ifmap_shape,

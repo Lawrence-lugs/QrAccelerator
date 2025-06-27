@@ -55,6 +55,7 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
         for(int i = 0; i < numCsr; i++) begin
             csr_set[i] <= 0;
         end
+        csr_rd_data_valid_o <= 0;
     end else begin
         if (handshake_success) begin
             // Write to CSR
@@ -72,6 +73,9 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
                     end
                 endcase
             end
+        end else begin
+            csr_rd_data_valid_o <= 1'b0; // No handshake, so no valid read data
+            csr_rd_data_o <= 32'b0; // Default value when not addressed
         end
     end
 end

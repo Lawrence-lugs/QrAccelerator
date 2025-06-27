@@ -10,10 +10,11 @@ class QrAccNodeCode(object):
     '''
 
     def __init__(self, mapped_node : core.MappedQRAccNode, mapped_bin : core.MappedBin, ifmap, imc_core_size = (256,256), ws_core_size = 32, ifmap_bits = 8, ofmap_bits = 8, nx_model : onnx.ModelProto = None):
-        
-        self.ifmap = ifmap
+
+        self.ifmap = ifmap if ifmap.ndim != 1 else ifmap.reshape((1, -1, 1, 1))
+
         self.ofmap_shape = infer_ofmap_shape(
-            ifmap_shape=ifmap.shape,  
+            ifmap_shape=self.ifmap.shape,
             kernel_shape=mapped_node.kernel.shape,
             pads=mapped_node.pads,
             stride=mapped_node.strides,
@@ -27,7 +28,20 @@ class QrAccNodeCode(object):
 
         self.mapped_bin = mapped_bin
         self.mapped_node = mapped_node
-        self.reference_output = self._generate_reference_output()[0].transpose((0, 2, 3, 1))  # Convert to NHWC format
+
+        # if nx_model is None:
+        if 0:
+            self.reference_output = self._generate_reference_output()[0].transpose((0, 2, 3, 1))  # Convert to NHWC format
+        else:
+            output_tensor = mapped_node.nx_node.output[0]
+            input_dict = self._get_input_dict()
+            onnx_out = onnx_utils.get_intermediate_tensor_value(nx_model,output_tensor,input_dict=input_dict)
+
+            # We pretend the output is in NCHW if it's a matmul (we treat those like pointwise convs)
+            if len(onnx_out.shape) == 1:
+                onnx_out = onnx_out.reshape((1, -1, 1, 1))
+            self.reference_output = onnx_out.transpose((0, 2, 3, 1))
+        
         self.toeplitz = compute.toeplitzize_input(
             in_tensor = self.ifmap.squeeze(axis=0), # Remove batch dimension for toeplitz
             ksize=mapped_node.kernel.shape[-1],
@@ -36,9 +50,27 @@ class QrAccNodeCode(object):
             zero_point=mapped_node.x_zp,
             channel_minor=True
         )
+
+        self.nx_model = nx_model
+
         # The writable matrix is the kernel for depthwise nodes, because they go into qracc
         self.matrix = mapped_node.matrix if not mapped_node.depthwise else mapped_node.kernel
+
+        self.inputs = self.mapped_node.get_true_inputs()  # Non-initializer inputs of the node
+        self.outputs = self.mapped_node.nx_node.output
+
         return
+    
+    def _get_input_dict(self):
+        if self.mapped_node.type == 'QLinearMatMul':
+            in_tensor = self.ifmap.squeeze()  # Convert to a 1D tensor for matmul
+        else:
+            in_tensor = self.ifmap
+        input_dict = {
+            self.mapped_node.nx_node.input[0]: in_tensor,
+        }
+        return input_dict
+
     
     def config(self):
         '''
@@ -133,9 +165,15 @@ class QrAccNodeCode(object):
     
     def _get_weight_data(self):
         if self.mapped_node.depthwise:
-            kernel_hwc = self.mapped_node.kernel.transpose(1,2,3,0)  # Convert to KHWC format
-            # kernel_hwc = self.mapped_node.kernel 
-            return kernel_to_writes(kernel_hwc, channels=self.ws_core_size, hexes=False)
+
+            if self.mapped_node.kernel.shape[0] < self.ws_core_size:
+                physical_kernel = np.zeros((self.ws_core_size, *self.mapped_node.kernel.shape[1:]), dtype=self.mapped_node.kernel.dtype)
+                physical_kernel[:self.mapped_node.kernel.shape[0]] = self.mapped_node.kernel
+            else:
+                physical_kernel = self.mapped_node.kernel
+
+            physical_kernel_hwc = physical_kernel.transpose(1,2,3,0)  # Convert to KHWC format
+            return kernel_to_writes(physical_kernel_hwc, channels=self.ws_core_size, hexes=False)
         else:
             return mapped_matrix_to_bank_writes(self.mapped_bin.weights,32)
         
@@ -196,38 +234,89 @@ class QrAccNodeCode(object):
             name=self.mapped_node.name,
         )        
     
-    def compile(self, include_ifmap_writes=True, solo=True, config_write_address='00000010'):
+    def compile(self, include_ifmap_writes=True, write_weights=True, add_read=True, config_write_address='00000010', end=True):
         '''
         Compile the node into a list of assembly instructions for QRAcc.
         include_ifmap_writes: bool, whether to include ifmap writes in the output.
         solo: bool, whether to compile the node as a standalone unit (default True).
         '''
-        print(f"Compiling node {self.mapped_node.name} for QRAcc...")
+        # print(f"Compiling node {self.mapped_node.node_id}:{self.mapped_node.name} for QRAcc...")
 
         config_dict = self.config()
         config_writes = bundle_config_into_write(config_dict, config_write_address)
         commands = config_writes
-        if self.mapped_node.depthwise:
-            commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
-        else:
-            commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
-        commands += write_array_to_asm(self._get_weight_data()) 
+        
+        if write_weights:
+            if self.mapped_node.depthwise:
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_DIGITAL', write_address=config_write_address)
+            else:
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS', write_address=config_write_address)
+            commands += write_array_to_asm(self._get_weight_data()) 
+        
+        # Writing to the scaler is not optional
+        commands += make_trigger_write('TRIGGER_LOAD_SCALER', write_address=config_write_address)
         commands += write_array_to_asm(self._get_scaler_data()) 
         commands += write_array_to_asm(self._get_bias_data()) 
+        
         if include_ifmap_writes: # If not, the ifmap is assumed to be already in the ACTMEM
             commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
         commands += write_array_to_asm(self._get_ifmap_data())
+
         if self.mapped_node.depthwise:
             commands += make_trigger_write('TRIGGER_COMPUTE_DIGITAL', write_address=config_write_address)
         else:
             commands += make_trigger_write('TRIGGER_COMPUTE_ANALOG', write_address=config_write_address)
         commands += [f'WAITBUSY']
-        if solo:
+        
+        if add_read:
             commands += make_trigger_write('TRIGGER_READ_ACTIVATION', write_address=config_write_address)
             commands += [f'WAITREAD']
-            commands += ['END']
+            if end:
+                commands += ['END']
 
         return commands
+    
+    def __repr__(self):
+        # Print attributes of the class, showing shapes for arrays
+        attrs = vars(self)
+        attr_strs = []
+        for key, value in attrs.items():
+            if isinstance(value, np.ndarray):
+                attr_strs.append(f"{key}=array(shape={value.shape})")
+            elif key == 'mapped_node':
+                attr_strs.append(f"{key}={value.name} (id={value.node_id})")
+            elif key == 'mapped_bin' and value is not None:
+                attr_strs.append(f"{key}={value.bin_id} (shape={value.weights.shape})")
+            elif key == 'nx_model':
+                attr_strs.append(f"{key}={value.graph.name} (nodes={len(value.graph.node)})")
+            else:
+                attr_strs.append(f"{key}={value}")
+        return f"QrAccNodeCode(\n\t{',\n\t'.join(attr_strs)})"
+
+def generate_random_intermediate_tensor(
+    nx_model : onnx.ModelProto,
+    node_id : int,
+    input_dict : dict
+):
+    input_tensor_shape = onnx_utils.get_intermediate_tensor_value(
+        nx_model, nx_model.graph.node[node_id].input[0], input_dict=input_dict).shape
+    return np.random.randint(0, 256, input_tensor_shape).astype(np.uint8)
+
+def is_nx_node_compilable(
+    nx_node : onnx.NodeProto
+):
+    """
+    Check if an ONNX node is compilable for QRAcc.
+    Currently, only QLinearConv and QLinearMatMul nodes are supported.
+    """
+    if nx_node is None:
+        return False
+    if nx_node.op_type == 'QLinearConv':
+        return True
+    elif nx_node.op_type == 'QLinearMatMul':
+        return True
+    else:
+        return False
 
 def make_trigger_write(
     command,
@@ -237,9 +326,7 @@ def make_trigger_write(
     write_address='00000010'  # Default CSR base address for MAIN
 ):
     """
-    command: string, one of:
-        'TRIGGER_IDLE', 'TRIGGER_LOAD_ACTIVATION', 'TRIGGER_LOADWEIGHTS_PERIPHS',
-        'TRIGGER_COMPUTE_ANALOG', 'TRIGGER_COMPUTE_DIGITAL', 'TRIGGER_READ_ACTIVATION'
+    command: string, one of possible triggers in qracc_pkg.svh
     clear: 0 or 1, sets the clear bit
     inst_write_mode: 0 or 1, sets the inst_write_mode bit
     csr_main_trigger_enum: optional dict mapping string to value, otherwise uses default mapping
@@ -250,11 +337,12 @@ def make_trigger_write(
         csr_main_trigger_enum = {
             'TRIGGER_IDLE': 0,
             'TRIGGER_LOAD_ACTIVATION': 1,
-            'TRIGGER_LOADWEIGHTS_PERIPHS': 2,
+            'TRIGGER_LOADWEIGHTS': 2,
             'TRIGGER_COMPUTE_ANALOG': 3,
             'TRIGGER_COMPUTE_DIGITAL': 4,
             'TRIGGER_READ_ACTIVATION': 5,
-            'TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL': 6
+            'TRIGGER_LOADWEIGHTS_DIGITAL': 6,
+            'TRIGGER_LOAD_SCALER': 7
         }
     if command not in csr_main_trigger_enum:
         raise ValueError(f"Unknown command: {command}")
@@ -383,3 +471,97 @@ def get_config_from_mapped_node(
     }
 
     return config_dict
+
+def traverse_and_compile_nx_graph(
+    nx_model     : onnx.ModelProto,
+    input_dict   : dict,
+    imc_core_size: tuple = (256, 256),
+    dwc_core_size: int = 32,
+    until        : int = 50,
+):
+    u_nx_mapping = core.NxModelMapping(
+        nx_model,
+        imc_core_size=imc_core_size,
+        dwc_core_size=dwc_core_size
+    )
+
+    next_node = None
+    prev_bin_id = None
+    current_loaded_ifmap_name = None
+    commands = []
+    for node_id,nx_node in enumerate(nx_model.graph.node[:until]):
+        
+        next_node = nx_model.graph.node[node_id + 1] if node_id + 1 < len(nx_model.graph.node) else None
+
+        if is_nx_node_compilable(nx_node):
+            input_tensor = generate_random_intermediate_tensor(
+                nx_model, node_id, input_dict
+            )
+            u_code = QrAccNodeCode(
+                mapped_node   = u_nx_mapping.get_mapped_node_by_id(node_id),
+                mapped_bin    = u_nx_mapping.get_bin_of_node_id(node_id),
+                ifmap         = input_tensor,
+                imc_core_size = imc_core_size,
+                ws_core_size  = dwc_core_size,
+                nx_model      = nx_model
+            )
+
+            commands += ['INFO']
+
+            commands += [f'Current loaded ifmap: {current_loaded_ifmap_name}']
+
+            print('============ Compiling Node ============')
+            if u_code.mapped_node.depthwise:
+                print(f"Compiling {nx_node.name} as depthwise node...")
+            else:
+                if (u_code.inputs[0] != current_loaded_ifmap_name):
+                    print(f"Compiling {nx_node.name} as first node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({u_code.inputs[0]}) from external memory']
+                else:
+                    print(f"Compiling {nx_node.name} as middle node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap from ACTMEM']
+
+                if not is_nx_node_compilable(next_node):
+                    print(f"Compiling {nx_node.name} as last node of set...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will write ofmap into external memory']
+
+                if u_code.mapped_node.bin_id != prev_bin_id:
+                    print(f"Rewriting bin {nx_node.name} as bin changed from {prev_bin_id} to {u_code.mapped_node.bin_id}...")
+                    commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will rewrite the bin from {prev_bin_id} to {u_code.mapped_node.bin_id}']
+                else:
+                    print(f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) BIN COMBO!!! Reusing bin {u_code.mapped_node.bin_id}.')
+                    commands += [f'This node will reuse the bin {u_code.mapped_node.bin_id} from the previous node']
+                    
+            commands += [u_code.__repr__()]
+            commands += ['ENDINFO']
+
+            commands += u_code.compile(
+                include_ifmap_writes= (u_code.inputs[0] != current_loaded_ifmap_name),
+                write_weights = u_code.mapped_node.bin_id != prev_bin_id,    
+                add_read = not is_nx_node_compilable(next_node),            
+                end = False,
+            )
+
+            prev_bin_id = u_code.mapped_node.bin_id if not u_code.mapped_node.depthwise else prev_bin_id  # If the node is depthwise, we don't change the bin id, as it will be the same as the previous node
+        
+            current_loaded_ifmap_name = u_code.outputs[0]
+
+        else:
+            print(f'Skipping {nx_node.name} as it is not compilable...')
+
+    commands += ['END'] 
+    prev_node = nx_node
+
+    return commands
+
+def get_info_command(u_code):
+
+    """
+    Generate an INFO command for the QRAcc testbench.
+    This command is used to print information about the node.
+    """
+    commands = []
+    commands += ['INFO']
+    commands += [u_code.__repr__()]
+    commands += ['ENDINFO']
+    return commands

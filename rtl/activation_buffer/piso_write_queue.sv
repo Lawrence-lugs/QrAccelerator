@@ -6,7 +6,8 @@ module piso_write_queue #(
     parameter writeInterfaceWidth = 32,
     parameter queueDepth = 8,
     parameter maxBits = 8,
-    parameter writeAddrWidth = 16
+    parameter writeAddrWidth = 16,
+    localparam queueAddrBits = $clog2(queueDepth)
 ) (
     input clk, nrst,
     input logic [numParallelIn-1:0][writeInterfaceWidth-1:0] data_in,
@@ -58,8 +59,8 @@ module piso_write_queue #(
             if (|valid_in && !queue_full) begin
                 for (int i = 0 ; i < numParallelIn ; i++) begin
                     if (valid_in[i]) begin
-                        data_queue[write_ptr+i] <= data_in[i];
-                        addr_queue[write_ptr+i] <= addr_in[i];
+                        data_queue[(write_ptr+i) % queueDepth] <= data_in[i];
+                        addr_queue[(write_ptr+i) % queueDepth] <= addr_in[i];
                     end
                 end
                 write_ptr <= (write_ptr + num_valids_this_cycle) % queueDepth;

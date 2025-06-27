@@ -31,7 +31,9 @@ module wsacc_pe #(
     always_comb begin : multiplyAccumulate
         data_o_d = 0;
         for (int i = 0; i < windowElements; i++) begin
-            data_o_d += $signed(weight[i]) * data_i[i]; // Assume unsigned activations for compliance
+            // For signed multiplication, both must be signed. But, in reality, we want data_i to be unsigned.
+            // So we sign-extend data_i to match the signed weight.
+            data_o_d += $signed(weight[i]) * $signed({1'b0,data_i[i]}); // Assume unsigned activations for compliance
         end
     end
 
