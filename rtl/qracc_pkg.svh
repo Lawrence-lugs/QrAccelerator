@@ -214,6 +214,7 @@ package qracc_pkg;
 
         int statSeqAccWeightWrites;
         int statSeqAccOperations;
+        int statSeqAccMacs;
 
         int statWQWrites;
         int statWQReads;
@@ -262,7 +263,7 @@ package qracc_pkg;
         if (!header_written) begin
             file_handle = $fopen(filename, "w");
             if (file_handle) begin
-                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,WQWrites,WQReads\n");
+                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,SeqAccMacs,WQWrites,WQReads\n");
                 $fclose(file_handle);
                 header_written = 1;
             end
@@ -270,17 +271,18 @@ package qracc_pkg;
         
         file_handle = $fopen(filename, "a");
         if (file_handle) begin
-            $fwrite(file_handle, "%s,%0t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
+            $fwrite(file_handle, "%s,%t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
                     event_name, 
                     $time,
                     stats.statActmemExtPortReads,
                     stats.statActmemExtPortWrites,
                     stats.statActmemIntPortReads,
                     stats.statActmemIntPortWrites,
-                    stats.statFLReads,
+                    stats.statFLReads, // There's actually no such thing
                     stats.statFLWrites,
                     stats.statSeqAccWeightWrites,
                     stats.statSeqAccOperations,
+                    stats.statSeqAccMacs,
                     stats.statWQWrites,
                     stats.statWQReads);
             $fclose(file_handle);

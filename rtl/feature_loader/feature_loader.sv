@@ -2,6 +2,8 @@
 // Actually just a regfile
 `timescale 1ns/1ps
 
+import qracc_pkg::*;
+
 module feature_loader #(
     parameter inputWidth    = 256   ,
     parameter addrWidth     = 8     , 
@@ -29,6 +31,9 @@ always_ff @( posedge clk or negedge nrst ) begin : writeDecode
         end
     end else begin
         if (wr_en) begin            
+            `ifdef TRACK_STATISTICS
+            stats.statFLWrites++;
+            `endif
             for (int i = 0; i < inputWidth/elementWidth; i++) begin
                 staging_register[addr_i + i] <= data_i[(inputWidth/elementWidth-1-i)*elementWidth +: elementWidth];
             end

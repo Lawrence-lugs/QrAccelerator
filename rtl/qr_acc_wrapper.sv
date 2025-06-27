@@ -127,6 +127,17 @@ wr_controller #(
     .c3sram_wl_o           (to_analog_o.WL)
 );
 
+`ifdef TRACK_STATISTICS
+
+always_ff @( posedge clk ) begin : statisticsTracker
+    // If mac is enabled, the ADCs and the array performs MAC no matter what
+    if (mac_en_i) stats.statSeqAccMacs++;
+    if (wc_write) stats.statSeqAccWeightWrites++;
+    // currently we don't track reads, I mean who needs to for an IMC accelerator?
+end
+
+`endif
+
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
         from_sram.rd_data_o <= 0;

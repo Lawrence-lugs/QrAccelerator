@@ -107,6 +107,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
         piso_buffer_p_q <= '0;
     end else begin
         if (mac_valid_i && ready_o) begin
+            `ifdef TRACK_STATISTICS
+            stats.statSeqAccOperations++;
+            `endif
             piso_buffer_n_q <= piso_buffer_n_d;
             piso_buffer_p_q <= piso_buffer_p_d;
         end else begin
