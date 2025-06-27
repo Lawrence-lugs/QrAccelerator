@@ -231,11 +231,12 @@ ts_qracc_multibank #(
 
 logic [7:0] l2_mem [2**21-1];
 logic [31:0] l2_mem_addr;
+logic l2_mem_enable;
 always_ff @( posedge clk or negedge nrst ) begin : l2Mem
     
     if(!nrst) l2_mem_addr <= 0;
     
-    if (bus.rd_data_valid) begin
+    if (bus.rd_data_valid && l2_mem_enable) begin
         for (int i = 0; i < 32/8; i++) begin
             l2_mem[l2_mem_addr + i] <= bus.data_out[(32/8-1-i)*8 +: 8];
         end
@@ -521,7 +522,7 @@ task bus_write_loop();
             "WAITBUSY": begin
                 display_config();
                 `ifdef NOTPLITZTRACK
-                wait_busy_silent();
+                wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
                 `else
                 track_toeplitz();
                 `endif
@@ -530,6 +531,7 @@ task bus_write_loop();
                 // Wait for reads to finish
                 $display("Waiting for reads to finish...");
                 i = 0;
+                l2_mem_enable = 1;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
                     bus.addr = QRACC_MAIN_ADDR;
                     bus.valid = 1;
@@ -542,6 +544,7 @@ task bus_write_loop();
                     #(CLK_PERIOD);
                     i++;
                 end
+                l2_mem_enable = 0;
                 $display("\nQRAcc is ready after %d cycles", i);
             end
             "END": begin

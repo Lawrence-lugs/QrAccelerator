@@ -528,6 +528,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         ifmap_start_addr <= 0;
         act_wr_ptr <= 0;
         act_rd_ptr <= 0;
+        read_acts_out_valid <= 0;
     end else begin
         if (csr_main_clear) begin
             ofmap_start_addr <= 0;

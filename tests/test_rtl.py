@@ -94,6 +94,8 @@ def test_qr_acc_top_single_load(
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
+        "NODUMP": 1,  # Disable dumping of VPD and VCD
+        "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
