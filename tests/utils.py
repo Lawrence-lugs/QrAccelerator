@@ -165,7 +165,6 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
     cbar = fig.colorbar(im, ax=axs, orientation='horizontal')
     cbar.set_label('Difference Value')
     plt.suptitle('Difference between Python and HW Results', fontsize=16)
-    plt.show()
 
     if save:
         plt.savefig(f'images/{filename}.svg', bbox_inches='tight')

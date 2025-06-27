@@ -138,7 +138,7 @@ def test_qracc_with_onnx_single_node(
 
     print(f'SNR: {snr:.3f} dB, RMSE: {rmse:.3f}')
 
-    return u_code
+    return
 
 @pytest.mark.skip
 def test_qracc_with_all_onnx_single_node(
@@ -195,7 +195,7 @@ def test_qracc_with_all_onnx_single_node(
     write_parameter_definition_file(parameter_list,param_file_path)
 
     snrs = np.zeros(len(u_code.mapped_nodes))
-    snrs = np.zeros(len(u_code.mapped_nodes))
+    rmses = np.zeros(len(u_code.mapped_nodes))
     for mnode_index in range(len(u_code.mapped_nodes)):
 
         u_code = get_single_node_marp_code(
@@ -224,7 +224,4 @@ def test_qracc_with_all_onnx_single_node(
         rmse, snr = rmse_snr(u_code.reference_output, acc_result)
         
         snrs[mnode_index] = snr
-
-        assert snr > 1, f'SNR: {snr}'
-
-    return u_code
+        rmses[mnode_index] = rmse

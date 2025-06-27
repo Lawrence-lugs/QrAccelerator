@@ -244,12 +244,15 @@ class QrAccNodeCode(object):
         
         if write_weights:
             if self.mapped_node.depthwise:
-                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL', write_address=config_write_address)
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_DIGITAL', write_address=config_write_address)
             else:
-                commands += make_trigger_write('TRIGGER_LOADWEIGHTS_PERIPHS', write_address=config_write_address)
+                commands += make_trigger_write('TRIGGER_LOADWEIGHTS', write_address=config_write_address)
             commands += write_array_to_asm(self._get_weight_data()) 
-            commands += write_array_to_asm(self._get_scaler_data()) 
-            commands += write_array_to_asm(self._get_bias_data()) 
+        
+        # Writing to the scaler is not optional
+        commands += make_trigger_write('TRIGGER_LOAD_SCALER', write_address=config_write_address)
+        commands += write_array_to_asm(self._get_scaler_data()) 
+        commands += write_array_to_asm(self._get_bias_data()) 
         
         if include_ifmap_writes: # If not, the ifmap is assumed to be already in the ACTMEM
             commands += make_trigger_write('TRIGGER_LOAD_ACTIVATION', write_address=config_write_address)
@@ -318,9 +321,7 @@ def make_trigger_write(
     write_address='00000010'  # Default CSR base address for MAIN
 ):
     """
-    command: string, one of:
-        'TRIGGER_IDLE', 'TRIGGER_LOAD_ACTIVATION', 'TRIGGER_LOADWEIGHTS_PERIPHS',
-        'TRIGGER_COMPUTE_ANALOG', 'TRIGGER_COMPUTE_DIGITAL', 'TRIGGER_READ_ACTIVATION'
+    command: string, one of possible triggers in qracc_pkg.svh
     clear: 0 or 1, sets the clear bit
     inst_write_mode: 0 or 1, sets the inst_write_mode bit
     csr_main_trigger_enum: optional dict mapping string to value, otherwise uses default mapping
@@ -331,11 +332,12 @@ def make_trigger_write(
         csr_main_trigger_enum = {
             'TRIGGER_IDLE': 0,
             'TRIGGER_LOAD_ACTIVATION': 1,
-            'TRIGGER_LOADWEIGHTS_PERIPHS': 2,
+            'TRIGGER_LOADWEIGHTS': 2,
             'TRIGGER_COMPUTE_ANALOG': 3,
             'TRIGGER_COMPUTE_DIGITAL': 4,
             'TRIGGER_READ_ACTIVATION': 5,
-            'TRIGGER_LOADWEIGHTS_PERIPHS_DIGITAL': 6
+            'TRIGGER_LOADWEIGHTS_DIGITAL': 6,
+            'TRIGGER_LOAD_SCALER': 7
         }
     if command not in csr_main_trigger_enum:
         raise ValueError(f"Unknown command: {command}")
