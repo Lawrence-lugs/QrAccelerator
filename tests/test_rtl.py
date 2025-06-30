@@ -47,15 +47,18 @@ def test_qr_acc_top_single_load(
     kernel_bits = 1,
     ofmap_bits = 8,
     soft_padding = False,
-    snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
+    snr_limit = 1, # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
+    model_mem = False,
+    post_synth = False
 ): 
     # Pointwise convolutions do not pad or stride
     if kernel_shape[2] == 1 and kernel_shape[3] == 1:
         padding = 0
         stride = 1
   
-    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
-    rtl_file_list = [ 
+    lib_list = [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if not (model_mem or post_synth) else []
+    package_list = lib_list + ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    rtl_file_list = [
         '../rtl/activation_buffer/piso_write_queue.sv',
         '../rtl/activation_buffer/mm_output_aligner.sv',
         '../rtl/wsacc/wsacc_pe_cluster.sv',
@@ -75,6 +78,10 @@ def test_qr_acc_top_single_load(
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
     ]
+    if not model_mem:
+        rtl_file_list += [
+        '../rtl/activation_buffer/activation_buffer.sv','../rtl/activation_buffer/sram_32bank_8b.sv']
+
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
@@ -94,10 +101,15 @@ def test_qr_acc_top_single_load(
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
-        "NODUMP": 1,  # Disable dumping of VPD and VCD
+        # "NODUMP": 1,  # Disable dumping of VPD and VCD
         # "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         # "NOIOFILES": 1, # Disable file I/O
     }
+    if model_mem:
+        parameter_list['MODEL_MEM'] = 1
+    if post_synth:
+        parameter_list['POST_SYNTH'] = 1
+
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 

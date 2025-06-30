@@ -615,6 +615,7 @@ task wait_busy_silent();
 endtask
 
 // Address by 4-byte word
+`ifdef MODEL_MEM
 task check_acts();
     int ptr;
     int word;
@@ -642,6 +643,7 @@ task check_acts();
     end
     $write("\n");
 endtask
+`endif // MODEL_MEM
 
 localparam MAX_TROWS = 10000;
 
@@ -760,6 +762,7 @@ task end_sim();
     $finish;
 endtask
 
+`ifdef MODEL_MEM
 task magic_export_ofmap();
 
     // Magically export of the ofmap without actual readout
@@ -786,6 +789,7 @@ task magic_export_ofmap();
     end
 
 endtask
+`endif // MODEL_MEM
 
 task export_l2();
 

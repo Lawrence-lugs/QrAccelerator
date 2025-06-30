@@ -232,6 +232,9 @@ wsacc_pe_cluster #(
 // Main feature map buffer
 localparam oscalerOutputSize = qrAccOutputBits*qrAccOutputElements;
 localparam oscalerExtendBits = globalBufferIntInterfaceWidth - oscalerOutputSize;
+logic activation_buffer_wr_ready;
+
+`ifdef MODEL_MEM
 ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
@@ -258,6 +261,37 @@ ram_2w2r #(
     .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
     .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
 );
+assign activation_buffer_wr_ready = 1;
+`else
+activation_buffer #(
+    .dataSize           (globalBufferDataSize),
+    .depth              (globalBufferDepth),
+    .addrWidth          (globalBufferAddrWidth),
+    .interfaceWidth1    (globalBufferExtInterfaceWidth),
+    .interfaceWidth2    (globalBufferIntInterfaceWidth)
+) u_activation_buffer (
+    .clk                (clk),
+    .nrst               (nrst),
+    
+    // External Interface
+    .wr_data_1_i        (bus_i.data_in),
+    .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
+    .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
+    .rd_data_1_o        (abuf_rd_data),
+    .rd_addr_1_i        (qracc_ctrl.activation_buffer_ext_rd_addr),
+    .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
+
+    // Internal Interface
+    .wr_data_2_i       (activation_buffer_int_wr_data),
+    .wr_en_2_i         (int_write_queue_valid_out),
+    .wr_addr_2_i       (activation_buffer_int_wr_addr),
+    .rd_data_2_o       (activation_buffer_rd_data),
+    .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
+    .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en),
+
+    .wr_ready_o        (activation_buffer_wr_ready) // Ready signal for external interface
+);
+`endif // MODEL_MEM
 
 // Padder - implements hardware padding
 padder #(
@@ -369,7 +403,7 @@ piso_write_queue #(
     .data_in        (aligned_output_scaler_output), // must always be equal to numBanks * oscalerOutputSize
     .addr_in        (piso_write_queue_addr_in),
     .valid_in       (piso_write_queue_valid_in),
-    .ready_out      (), // Not connected since writing to internal interface
+    .ready_out      (activation_buffer_wr_ready),
 
     .addr_out       (activation_buffer_int_wr_addr), // Writing to internal interface
     .data_out       (activation_buffer_int_wr_data), // Writing to internal interface

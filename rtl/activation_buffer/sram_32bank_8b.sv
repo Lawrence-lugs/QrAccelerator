@@ -1,0 +1,1 @@
+/home/lquizon/lawrence-workspace/sram_interface/rtl/sram_32bank_8b.sv
