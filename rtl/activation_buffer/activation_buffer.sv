@@ -78,6 +78,16 @@ end
 
 assign sram_rd_data_latched = rd_en_q ? sram_rd_data : sram_rd_data_q;
 
+
+logic [interfaceWidth1-1:0] wr_data_1_i_flipped;
+
+always_comb begin : wrData1Flip // The endianness of the compiler is wrong
+    wr_data_1_i_flipped = '0;
+    for (int i = 0; i < interfaceWidth1; i += 8) begin
+        wr_data_1_i_flipped[i +: 8] = wr_data_1_i[(interfaceWidth1 - 8 - i) +: 8];
+    end
+end
+
 always_comb begin : readPrioritization
     // Default values
     wr_ready_o = 1'b0;
@@ -94,13 +104,11 @@ always_comb begin : readPrioritization
         wr_ready_o = 1'b1; // Use to acknowledge writes
         sram_wr_en = 1'b1;
         sram_addr = wr_en_1_i ? wr_addr_1_i : wr_addr_2_i;
-        sram_wr_data = wr_en_1_i ? {wr_data_1_i,224'b0} : wr_data_2_i;
+        sram_wr_data = wr_en_1_i ? wr_data_1_i_flipped : wr_data_2_i;
         bank_mask = wr_en_1_i ? 32'h0000_000F : 32'hFFFF_FFFF;
     end
-    rd_data_1_o = sram_rd_data_latched[interfaceWidth1-1:0];
+    rd_data_1_o = sram_rd_data_latched[256-1 -: interfaceWidth1];
     rd_data_2_o = sram_rd_data_latched[interfaceWidth2-1:0]; 
 end
-
-
 
 endmodule
