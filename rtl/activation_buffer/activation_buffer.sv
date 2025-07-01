@@ -39,6 +39,9 @@ module activation_buffer #(
 logic [17:0] sram_addr;
 logic [interfaceWidth2-1:0] sram_wr_data;
 logic [interfaceWidth2-1:0] sram_rd_data;
+logic [interfaceWidth2-1:0] sram_rd_data_q;
+logic rd_en_q;
+logic [interfaceWidth2-1:0] sram_rd_data_latched;
 logic sram_wr_en;
 logic [numBanks-1:0] bank_mask; // Mask for which banks to write to
 logic rd_select;
@@ -61,6 +64,20 @@ sram_32bank_8b #(
     .wr_en_i(sram_wr_en)
 );
 
+always_ff @( posedge clk or negedge nrst ) begin : readDataRegister
+    if (!nrst) begin
+        sram_rd_data_q <= '0;
+        rd_en_q <= 1'b0;
+    end else begin
+        rd_en_q <= rd_en_1_i | rd_en_2_i; // Capture read enable state
+        if (rd_en_q) begin
+            sram_rd_data_q <= sram_rd_data; // Latch read data on read request
+        end
+    end
+end
+
+assign sram_rd_data_latched = rd_en_q ? sram_rd_data : sram_rd_data_q;
+
 always_comb begin : readPrioritization
     // Default values
     wr_ready_o = 1'b0;
@@ -80,8 +97,8 @@ always_comb begin : readPrioritization
         sram_wr_data = wr_en_1_i ? {wr_data_1_i,224'b0} : wr_data_2_i;
         bank_mask = wr_en_1_i ? 32'h0000_000F : 32'hFFFF_FFFF;
     end
-    rd_data_1_o = sram_rd_data[interfaceWidth1-1:0];
-    rd_data_2_o = sram_rd_data[interfaceWidth2-1:0]; 
+    rd_data_1_o = sram_rd_data_latched[interfaceWidth1-1:0];
+    rd_data_2_o = sram_rd_data_latched[interfaceWidth2-1:0]; 
 end
 
 

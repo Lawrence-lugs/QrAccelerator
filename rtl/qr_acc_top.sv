@@ -234,14 +234,13 @@ localparam oscalerOutputSize = qrAccOutputBits*qrAccOutputElements;
 localparam oscalerExtendBits = globalBufferIntInterfaceWidth - oscalerOutputSize;
 logic activation_buffer_wr_ready;
 
-`ifdef MODEL_MEM
 ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
     .addrWidth          (globalBufferAddrWidth),
     .interfaceWidth1    (globalBufferExtInterfaceWidth),
     .interfaceWidth2    (globalBufferIntInterfaceWidth)
-) u_activation_buffer (
+) u_activation_buffer_model (
     .clk                (clk),
     .nrst               (nrst),
     
@@ -249,7 +248,7 @@ ram_2w2r #(
     .wr_data_1_i        (bus_i.data_in),
     .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
     .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
-    .rd_data_1_o        (abuf_rd_data),
+    .rd_data_1_o        (),
     .rd_addr_1_i        (qracc_ctrl.activation_buffer_ext_rd_addr),
     .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
 
@@ -257,12 +256,12 @@ ram_2w2r #(
     .wr_data_2_i       (activation_buffer_int_wr_data),
     .wr_en_2_i         (int_write_queue_valid_out),
     .wr_addr_2_i       (activation_buffer_int_wr_addr),
-    .rd_data_2_o       (activation_buffer_rd_data),
+    .rd_data_2_o       (),
     .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
     .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
 );
-assign activation_buffer_wr_ready = 1;
-`else
+// assign activation_buffer_wr_ready = 1;
+
 activation_buffer #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
@@ -291,7 +290,7 @@ activation_buffer #(
 
     .wr_ready_o        (activation_buffer_wr_ready) // Ready signal for external interface
 );
-`endif // MODEL_MEM
+// `endif // MODEL_MEM
 
 // Padder - implements hardware padding
 padder #(

@@ -291,7 +291,8 @@ class QrAccNodeCode(object):
                 attr_strs.append(f"{key}={value.graph.name} (nodes={len(value.graph.node)})")
             else:
                 attr_strs.append(f"{key}={value}")
-        return f"QrAccNodeCode(\n\t{',\n\t'.join(attr_strs)})"
+        attr_list = ',\n\t'.join(attr_strs)
+        return f"QrAccNodeCode(\n\t{attr_list})"
 
 def generate_random_intermediate_tensor(
     nx_model : onnx.ModelProto,
