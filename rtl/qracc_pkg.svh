@@ -4,6 +4,8 @@
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
+`endif
+
 
 package qracc_pkg;
 
@@ -290,90 +292,22 @@ package qracc_pkg;
             $error("Could not open file %s for appending", filename);
         end
     endtask
-    `endif
+    `endif // TRACK STATISTICS
 
     // END STATISTICS BROKERS
 
+    // Bus Interface Structs
+    typedef struct packed {
+        logic [31:0] data_in;
+        logic [31:0] addr;
+        logic wen;
+        logic valid;
+    } bus_req_t;
+
+    typedef struct packed {
+        logic ready;
+        logic [31:0] data_out;
+        logic rd_data_valid;
+    } bus_resp_t;
+
 endpackage
-
-interface qracc_ctrl_interface #( // Generic control interface
-);    
-
-    logic [31:0] data;
-    logic [31:0] read_data;
-    logic [31:0] addr;
-    logic wen;
-    logic valid;
-    logic ready;
-
-    modport slave (
-        input data, addr, wen, valid,
-        output ready, read_data
-    );
-
-    modport master (
-        output data, addr, wen, valid,
-        input ready, read_data
-    );
-
-endinterface // qracc_ctrl_interface
-
-interface qracc_data_interface #( // Generic data interface
-);
-
-    logic [31:0] data_in;
-    logic [31:0] data_out;
-    logic [31:0] addr;
-    logic wen;
-    logic valid;
-    logic rd_data_valid;
-    logic ready;
-
-    modport slave (
-        input data_in, addr, wen, valid,
-        output ready, data_out, rd_data_valid
-    );
-
-    modport master (
-        output data_in, addr, wen, valid,
-        input ready, data_out, rd_data_valid
-    );
-
-endinterface // qracc_data_interface
-
-interface sram_itf #(
-    parameter numRows = 128,
-    parameter numCols = 32
-);
-    // DIGITAL INTERFACE: SRAM
-    logic rq_wr_i; // write or read request
-    logic rq_valid_i; // request is valid
-    logic rq_ready_o; // if ready and valid; request is taken
-    logic rd_valid_o; // once asserted; rdata is valid for read requests
-    logic [numCols-1:0] rd_data_o;
-    logic [numCols-1:0] wr_data_i;
-    logic [$clog2(numRows)-1:0] addr_i;
-
-    modport slave (
-        input rq_wr_i, // write or read request
-        input rq_valid_i, // request is valid
-        output rq_ready_o, // if ready and valid; request is taken
-        output rd_valid_o, // once asserted; rdata is valid for read requests
-        output rd_data_o,
-        input wr_data_i,
-        input addr_i
-    );
-
-    modport master (
-        output rq_wr_i, // write or read request
-        output rq_valid_i, // request is valid
-        input rq_ready_o, // if ready and valid; request is taken
-        input rd_valid_o, // once asserted; rdata is valid for read requests
-        input rd_data_o,
-        output wr_data_i,
-        output addr_i
-    );
-
-endinterface //sram_itf
-
-`endif

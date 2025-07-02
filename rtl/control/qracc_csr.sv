@@ -8,8 +8,8 @@ module qracc_csr #(
 ) (
     input clk, nrst,
 
-    qracc_data_interface bus_i,
-    output logic [31:0] csr_rd_data_o, // CSR read data output
+    input bus_req_t bus_req_i,
+    output bus_resp_t bus_resp_o,
     output logic csr_rd_data_valid_o,
 
     // CSR signals
@@ -44,9 +44,9 @@ logic [31:0] csr_main_read_output;
 
 // Kausap ba ako
 always_comb begin : csrAddressed
-    kausap_ako = (bus_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
-    handshake_success = bus_i.valid && kausap_ako && bus_i.ready; 
-    csr_addr = bus_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
+    kausap_ako = (bus_req_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
+    handshake_success = bus_req_i.valid && kausap_ako; 
+    csr_addr = bus_req_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
 end
 
 // CSR Write & Reads
@@ -59,23 +59,23 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
     end else begin
         if (handshake_success) begin
             // Write to CSR
-            if (bus_i.wen) begin
-                csr_set[csr_addr] <= bus_i.data_in;
+            if (bus_req_i.wen) begin
+                csr_set[csr_addr] <= bus_req_i.data_in;
             end else begin
                 csr_rd_data_valid_o <= 1'b1;
                 case (csr_addr)
                     CSR_REG_MAIN: begin
                         // $display("CSR_REG_MAIN: csr_main_read_output = %h", csr_main_read_output);
-                        csr_rd_data_o <= csr_main_read_output;
+                        bus_resp_o.data_out <= csr_main_read_output;
                     end
                     default: begin
-                        csr_rd_data_o <= csr_set[csr_addr]; 
+                        bus_resp_o.data_out <= csr_set[csr_addr]; 
                     end
                 endcase
             end
         end else begin
             csr_rd_data_valid_o <= 1'b0; // No handshake, so no valid read data
-            csr_rd_data_o <= 32'b0; // Default value when not addressed
+            bus_resp_o.data_out <= 32'b0; // Default value when not addressed
         end
     end
 end
@@ -93,10 +93,10 @@ always_comb begin : csrDecode
     };
 
     // When the bus is trying to write to main, pass it combinationally...
-    if (handshake_success && bus_i.wen && (csr_addr == CSR_REG_MAIN)) begin
-        csr_main_trigger = qracc_trigger_t'(bus_i.data_in[2:0]);
-        csr_main_clear = bus_i.data_in[3]; 
-        csr_main_inst_write_mode = bus_i.data_in[5];
+    if (handshake_success && bus_req_i.wen && (csr_addr == CSR_REG_MAIN)) begin
+        csr_main_trigger = qracc_trigger_t'(bus_req_i.data_in[2:0]);
+        csr_main_clear = bus_req_i.data_in[3]; 
+        csr_main_inst_write_mode = bus_req_i.data_in[5];
     end else begin
         csr_main_trigger = TRIGGER_IDLE;
         csr_main_clear = 1'b0;

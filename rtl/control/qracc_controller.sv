@@ -19,7 +19,8 @@ module qracc_controller #(
 ) (
     input clk, nrst,
 
-    qracc_data_interface bus_i,
+    input bus_req_t bus_req_i,
+    output bus_resp_t bus_resp_o,
 
     // Signals to the people
     output qracc_control_t ctrl_o,
@@ -67,9 +68,9 @@ assign output_fmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_
 logic data_handshake;
 logic data_read;
 logic data_write;
-assign data_handshake = bus_i.valid && bus_i.ready;
-assign data_read      = data_handshake && !bus_i.wen;
-assign data_write     = data_handshake && bus_i.wen;
+assign data_handshake = bus_req_i.valid && bus_resp_o.ready;
+assign data_read      = data_handshake && !bus_req_i.wen;
+assign data_write     = data_handshake && bus_req_i.wen;
 
 // Configuration Calculation signals
 logic [31:0] n_elements_per_word;
@@ -146,7 +147,7 @@ end
 always_ff @( posedge clk or negedge nrst ) begin
     if (!nrst) begin
         write_queue_done <= 0;
-        int_write_queue_valid_q <= int_write_queue_valid;
+        int_write_queue_valid_q <= 0;
     end else begin
         int_write_queue_valid_q <= int_write_queue_valid;
         write_queue_done <= ~int_write_queue_valid && int_write_queue_valid_q; // 1->0 transition
@@ -159,50 +160,50 @@ always_comb begin : ctrlDecode
     to_sram.rq_valid_i = 0;
     to_sram.wr_data_i = 0;
     to_sram.addr_i = 0;
-    bus_i.ready = 0;
-    bus_i.rd_data_valid = 0;
+    bus_resp_o.ready = 0;
+    bus_resp_o.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_IDLE: begin
-            bus_i.ready = 1; // CSR is always ready to take data
-            bus_i.rd_data_valid = csr_rd_data_valid;
+            bus_resp_o.ready = 1; // CSR is always ready to take data
+            bus_resp_o.rd_data_valid = csr_rd_data_valid;
         end
         S_LOADWEIGHTS: begin
             to_sram.rq_wr_i = data_write;
-            to_sram.rq_valid_i = bus_i.valid;
+            to_sram.rq_valid_i = bus_req_i.valid;
             to_sram.addr_i = weight_ptr[$clog2(numBanks)+:addrBits];
-            to_sram.wr_data_i = bus_i.data_in;
-            bus_i.ready = from_sram.rq_ready_o;
+            to_sram.wr_data_i = bus_req_i.data_in;
+            bus_resp_o.ready = from_sram.rq_ready_o;
             bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
             bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
         S_LOAD_DIGITAL_WEIGHTS: begin
-            ctrl_o.wsacc_weight_itf_i_valid = bus_i.valid;
-            bus_i.ready = 1;
+            ctrl_o.wsacc_weight_itf_i_valid = bus_req_i.valid;
+            bus_resp_o.ready = 1;
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
             ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
         end
         S_LOADSCALER: begin
             ctrl_o.output_scaler_scale_w_en = data_write;
             ctrl_o.output_scaler_shift_w_en = data_write;
             ctrl_o.output_scaler_offset_w_en = data_write;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
         end
         S_LOADBIAS: begin
             ctrl_o.output_bias_w_en = data_write;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
             // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE_ANALOG) ? 1 : 0;
         end
         S_COMPUTE_ANALOG, S_COMPUTE_DIGITAL: begin
 
             if (state_q == S_COMPUTE_DIGITAL) ctrl_o.wsacc_active = 1;
 
-            bus_i.ready = 1; // Ready to be read (all extern WRENs are deasserted)
+            bus_resp_o.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * 
@@ -229,11 +230,11 @@ always_comb begin : ctrlDecode
             ctrl_o.padding_end = padding_end_q;
         end
         S_READACTS: begin
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
             ctrl_o.activation_buffer_ext_rd_en = 1;
             // Due to the ifmap->ofmap swapping, the ofmap is now in the ifmap_start_addr
             ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ifmap_start_addr;
-            bus_i.rd_data_valid = read_acts_out_valid;
+            bus_resp_o.rd_data_valid = read_acts_out_valid;
         end
         default: begin
             ctrl_o = 0;
@@ -513,7 +514,7 @@ always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
             end
         end
         if (state_q == S_LOAD_DIGITAL_WEIGHTS) begin
-            if (bus_i.valid) weight_ptr <= weight_ptr + 1;
+            if (bus_req_i.valid) weight_ptr <= weight_ptr + 1;
             if (state_d != S_LOAD_DIGITAL_WEIGHTS) begin 
                 weight_ptr <= 0;
             end

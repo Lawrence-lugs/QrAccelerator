@@ -15,7 +15,7 @@ from .utils import *
 
 @pytest.mark.parametrize(
     "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y, depthwise",[
-    ('singlebank',      (1,3,32,32),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
+    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
     ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0,          False),           
     ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38,         False),          
     ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),    (256,256),  1,          1,      69,         38,         False),          
@@ -48,7 +48,7 @@ def test_qr_acc_top_single_load(
     ofmap_bits = 8,
     soft_padding = False,
     snr_limit = 1, # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
-    model_mem = False,
+    model_mem = True,
     post_synth = False
 ): 
     # Pointwise convolutions do not pad or stride
@@ -104,6 +104,7 @@ def test_qr_acc_top_single_load(
         # "NODUMP": 1,  # Disable dumping of VPD and VCD
         # "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         # "NOIOFILES": 1, # Disable file I/O
+        "MODEL_MEM": 1 if model_mem else 0, # Use model memory
     }
     if model_mem:
         parameter_list['MODEL_MEM'] = 1

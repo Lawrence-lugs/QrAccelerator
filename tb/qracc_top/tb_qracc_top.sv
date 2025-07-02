@@ -58,8 +58,8 @@ module tb_qracc_top #(
 logic clk;
 logic nrst;
 
-qracc_ctrl_interface periph();
-qracc_data_interface bus();
+bus_req_t bus_req;
+bus_resp_t bus_resp;
 
 to_analog_t to_analog;
 from_analog_t from_analog;
@@ -181,7 +181,8 @@ qr_acc_top #(
     .nrst                           (nrst),
 
     // Control Interface
-    .bus_i                          (bus.slave), 
+    .bus_req_i                      (bus_req),
+    .bus_resp_o                     (bus_resp),
 
     // Analog passthrough signals
     .to_analog                      (to_analog),
@@ -236,9 +237,9 @@ always_ff @( posedge clk or negedge nrst ) begin : l2Mem
     
     if(!nrst) l2_mem_addr <= 0;
     
-    if (bus.rd_data_valid && l2_mem_enable) begin
+    if (bus_resp.rd_data_valid && l2_mem_enable) begin
         for (int i = 0; i < 32/8; i++) begin
-            l2_mem[l2_mem_addr + i] <= bus.data_out[(32/8-1-i)*8 +: 8];
+            l2_mem[l2_mem_addr + i] <= bus_resp.data_out[(32/8-1-i)*8 +: 8];
         end
         l2_mem_addr <= l2_mem_addr + 4;
     end
@@ -465,10 +466,10 @@ task start_sim();
         $finish;
     end
 
-    bus.wen = 0;
-    bus.valid = 0;
-    bus.addr = 0;
-    bus.data_in = 0;
+    bus_req.wen = 0;
+    bus_req.valid = 0;
+    bus_req.addr = 0;
+    bus_req.data_in = 0;
 
     $display("=============== STARTING SIMULATION ===============");
     nrst = 0;
@@ -528,18 +529,18 @@ task bus_write_loop();
                 //     32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
                 //     default: $write("Writing to unknown address: %h = %h", addr, data);
                 // endcase
-                bus.addr = addr;
-                bus.data_in = data;
-                bus.valid = 1;
-                bus.wen = 1;
+                bus_req.addr = addr;
+                bus_req.data_in = data;
+                bus_req.valid = 1;
+                bus_req.wen = 1;
                 if(!$feof(fd)) begin
-                    while (!bus.ready) begin 
+                    while (!bus_resp.ready) begin 
                         #(CLK_PERIOD);
                         // $write(".");
                     end
                     #(CLK_PERIOD);
                     // $write("\tDONE\n");
-                    bus.valid = 0;
+                    bus_req.valid = 0;
                     // status_checkup();
                 end
             end
@@ -566,10 +567,10 @@ task bus_write_loop();
                 i = 0;
                 l2_mem_enable = 1;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
-                    bus.addr = QRACC_MAIN_ADDR;
-                    bus.valid = 1;
-                    bus.wen = 0;
-                    while (!bus.ready) begin 
+                    bus_req.addr = QRACC_MAIN_ADDR;
+                    bus_req.valid = 1;
+                    bus_req.wen = 0;
+                    while (!bus_resp.ready) begin 
                         #(CLK_PERIOD);
                         i++;
                         $write(".");
@@ -599,18 +600,18 @@ task wait_busy_silent();
     $display("Waiting for QRAcc to be ready, time:", $time);
     i = 0;
     do begin
-        bus.addr = addr; // CSR_REG_MAIN
-        bus.valid = 1;
-        bus.wen = 0;
-        // $display("%h",bus.data_out);
-        while (!bus.ready) begin 
+        bus_req.addr = addr; // CSR_REG_MAIN
+        bus_req.valid = 1;
+        bus_req.wen = 0;
+        // $display("%h",bus_resp.data_out);
+        while (!bus_resp.ready) begin 
             #(CLK_PERIOD);
             i++;
             // $write(".");
         end
         #(CLK_PERIOD);
         i++;
-    end while (bus.data_out[4] == 1); // QRACC IS BUSY 
+    end while (bus_resp.data_out[4] == 1); // QRACC IS BUSY 
     $display("\nQRAcc is ready after %d cycles, time:", i,$time);
 endtask
 
@@ -853,6 +854,8 @@ initial begin
     start_sim();
 
     bus_write_loop();
+    
+    check_scales();
 
     `ifndef NOIOFILES
     export_l2();
