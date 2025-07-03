@@ -55,8 +55,12 @@ def test_qr_acc_top_single_load(
     if kernel_shape[2] == 1 and kernel_shape[3] == 1:
         padding = 0
         stride = 1
+
+    if post_synth: model_mem = False # Post-synthesis does not support model memory
+
+    add_libs = not model_mem or post_synth
   
-    lib_list = [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if not (model_mem or post_synth) else []
+    lib_list = [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if add_libs else []
     package_list = lib_list + ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [
         '../rtl/activation_buffer/piso_write_queue.sv',
@@ -77,7 +81,13 @@ def test_qr_acc_top_single_load(
         '../rtl/feature_loader/padder.sv',
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
+    ] if not post_synth else [
+        '../rtl/ts_qracc.sv',
+        '../rtl/ts_qracc_multibank.sv',
+        '../rtl/wr_controller.sv',
+        '../synth/mapped/mapped_qr_acc_top.v'
     ]
+
     if not model_mem:
         rtl_file_list += [
         '../rtl/activation_buffer/activation_buffer.sv','../rtl/activation_buffer/sram_32bank_8b.sv']
@@ -101,10 +111,9 @@ def test_qr_acc_top_single_load(
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
-        # "NODUMP": 1,  # Disable dumping of VPD and VCD
+        "NODUMP": 1,  # Disable dumping of VPD and VCD
         # "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         # "NOIOFILES": 1, # Disable file I/O
-        "MODEL_MEM": 1 if model_mem else 0, # Use model memory
     }
     if model_mem:
         parameter_list['MODEL_MEM'] = 1

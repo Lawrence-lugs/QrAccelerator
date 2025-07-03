@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-`include "qracc_params.svh"
+// `include "qracc_params.svh"
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
@@ -22,6 +22,20 @@ package qracc_pkg;
     parameter accumulatorBits = 16;
     parameter outputBits      = `QRACC_OUTPUT_BITS;
     parameter inputBits       = `QRACC_INPUT_BITS;
+
+    // // QRAcc Parameters
+    // parameter numRows = 128;
+    // parameter numCols    = 32;
+    // parameter numAdcBits = 4;
+    // parameter compCount  = (2**numAdcBits)-1;
+    // parameter numCfgBits = 8;
+    // parameter numBanks   = 32/numCols;
+    // parameter outputElements = 32;
+    
+    //   // Output Scaler Parameters
+    // parameter accumulatorBits = 16;
+    // parameter outputBits      = 8;
+    // parameter inputBits       = 8;
 
     // Trigger Values
     typedef enum logic [2:0] {

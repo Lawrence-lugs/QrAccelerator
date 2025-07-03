@@ -98,6 +98,7 @@ logic qracc_output_valid;
 logic [qrAccOutputElements-1:0][qrAccAccumulatorBits-1:0] qracc_mac_output;
 logic qracc_ready;
 to_sram_t to_sram;
+
 from_sram_t from_sram; // no need to touch this for now, can use it later to read from sram
 
 // Signals : Activation Buffer
