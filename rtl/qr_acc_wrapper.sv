@@ -26,8 +26,14 @@ module qr_acc_wrapper #(
     input [numRows-1:0] data_p_i,
     input [numRows-1:0] data_n_i,
     
-    output from_sram_t from_sram,
-    input to_sram_t to_sram
+    // SRAM signals
+    input to_sram_rq_wr,
+    input to_sram_rq_valid,
+    input [numCols-1:0] to_sram_wr_data,
+    input [$clog2(numRows)-1:0] to_sram_addr,
+    output logic from_sram_rq_ready,
+    output logic from_sram_rd_valid,
+    output logic [numCols-1:0] from_sram_rd_data
 );
 
 logic wc_write;
@@ -96,12 +102,12 @@ end
 
 // SRAM WRITES AND READS 
 always_comb begin : WcSignals
-    wc_write = to_sram.rq_wr_i && to_sram.rq_valid_i;
-    wc_read = ~to_sram.rq_wr_i && to_sram.rq_valid_i;
+    wc_write = to_sram_rq_wr && to_sram_rq_valid;
+    wc_read = ~to_sram_rq_wr && to_sram_rq_valid;
 end
 
 logic wr_controller_ready;
-assign from_sram.rq_ready_o = wr_controller_ready;
+assign from_sram_rq_ready = wr_controller_ready;
 
 wr_controller #(
     .numRows                (numRows),
@@ -112,11 +118,11 @@ wr_controller #(
 
     .write_i                (wc_write),    
     .read_i                 (wc_read),     
-    .addr_i                 (to_sram.addr_i),     
+    .addr_i                 (to_sram_addr),     
     .done                   (wc_done),  
     .ready                  (wr_controller_ready), 
 
-    .wr_data_i              (to_sram.wr_data_i),
+    .wr_data_i              (to_sram_wr_data),
     .wr_data_q              (to_analog_o.WR_DATA),
     
     // SRAM interface signals
@@ -140,11 +146,11 @@ end
 
 always_ff @( posedge clk or negedge nrst ) begin : RdDataHandler
     if (!nrst) begin
-        from_sram.rd_data_o <= 0;
-        from_sram.rd_valid_o <= 0;
+        from_sram_rd_data <= 0;
+        from_sram_rd_valid <= 0;
     end else begin
-        from_sram.rd_data_o <= from_analog_i.SA_OUT;
-        from_sram.rd_valid_o <= wc_done;
+        from_sram_rd_data <= from_analog_i.SA_OUT;
+        from_sram_rd_valid <= wc_done;
     end
 end
 

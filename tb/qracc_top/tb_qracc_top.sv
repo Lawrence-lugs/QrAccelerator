@@ -63,6 +63,15 @@ bus_resp_t bus_resp;
 
 to_analog_t to_analog;
 from_analog_t from_analog;
+
+logic [3871:0] from_analog_wire;
+logic [3401:0] to_analog_wire;
+
+`ifdef POST_SYNTH
+assign from_analog_wire = from_analog;
+assign to_analog = to_analog_wire;
+`endif
+
 logic [numBanks-1:0] bank_select;
 
 qracc_config_t cfg;
@@ -187,9 +196,32 @@ qr_acc_top #(
     .bus_resp_o                     (bus_resp),
 
     // Analog passthrough signals
+    `ifdef POST_SYNTH
+    .to_analog                      (to_analog_wire),
+    .from_analog                    (from_analog_wire),
+    `else
     .to_analog                      (to_analog),
     .from_analog                    (from_analog),
+    `endif 
+
     .bank_select                    (bank_select)
+);
+
+qracc_csr #(
+    .csrWidth                   (32),
+    .numCsr                     (16)
+) u_csr_tb_model (
+    .clk                        (clk),
+    .nrst                       (nrst),
+    .bus_req_i                  (bus_req),
+    .bus_resp_o                 (),
+    .csr_rd_data_valid_o        (),
+    .cfg_o                      (cfg),
+    .csr_main_clear             (),
+    .csr_main_trigger           (),
+    .csr_main_busy              (0),
+    .csr_main_inst_write_mode   (),
+    .csr_main_internal_state    (0)
 );
 
 // Analog test schematic
@@ -262,15 +294,14 @@ static string tb_name = "tb_qracc_top";
 `ifdef SYNOPSYS
 initial begin
     $vcdplusfile({tb_name,".vpd"});
-    $vcdpluson();
+    $vcdpluson(3, tb_qracc_top);
     $vcdplusmemon();
-    $dumpvars(0);
 end
 `endif
-initial begin
-    $dumpfile({tb_name,".vcd"});
-    $dumpvars(0);
-end
+// initial begin
+//     $dumpfile({tb_name,".vcd"});
+//     $dumpvars(0);
+// end
 `endif
 
 
@@ -427,8 +458,6 @@ endclass
 
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
-
-assign cfg = u_qr_acc_top.cfg;
 
 `ifndef POST_SYNTH
 task display_config();
@@ -848,6 +877,85 @@ end
 
 // ========================= STATISTICS TRACKING SECTION =========================
 
+
+// ========================= SAIF TRACKING SECTION ==========================
+
+`ifdef POST_SYNTH
+`ifdef SYNOPSYS
+
+// SAIF tracking variables
+logic [31:0] saif_state_counter = 0;
+logic [31:0] previous_state;
+logic [31:0] current_state;
+logic saif_initialized = 0;
+string saif_filename;
+
+// Task to start SAIF recording for a specific state
+task start_saif_recording(input string state_name);
+    saif_filename = $sformatf("%s/saif_%s_%0d.saif", output_path, state_name, saif_state_counter);
+    $display("Starting SAIF recording for state %s at time %t", state_name, $time);
+    $display("SAIF file: %s", saif_filename);
+    
+    // Start SAIF recording
+    $set_toggle_region(tb_qracc_top.u_qr_acc_top);
+    $toggle_start();
+    // $toggle_reset();
+endtask
+
+// Task to stop SAIF recording and export file
+task stop_saif_recording(input string state_name);
+    $display("Stopping SAIF recording for state %s at time %t", state_name, $time);
+    
+    // Stop SAIF recording and dump to file
+    $toggle_stop();
+    $toggle_report(saif_filename, 1.0e-9, tb_qracc_top.u_qr_acc_top);
+    $toggle_reset();
+    
+    saif_state_counter++;
+endtask
+
+task restart_saif_recording(input string state_name);
+    saif_filename = $sformatf("%s/saif_%s_%0d.saif", output_path, state_name, saif_state_counter);
+    $display("Restarting SAIF recording for state %s at time %t", state_name, $time);    
+    $toggle_start();
+endtask
+
+// Monitor QRAcc controller state changes
+always @(posedge clk) begin
+    if (!nrst) begin
+        saif_initialized <= 0;
+        saif_state_counter <= 0;
+        previous_state <= 0;
+        current_state <= 0;
+    end else begin
+        current_state <= u_qr_acc_top.u_qracc_controller.csr_main_internal_state;
+        
+        if (!saif_initialized) begin
+            previous_state <= current_state;
+            saif_initialized <= 1;
+            start_saif_recording($sformatf("state_%0d", current_state));
+        end else if (current_state != previous_state) begin
+            // State changed - stop current recording and start new one
+            stop_saif_recording($sformatf("state_%0d", previous_state));
+            restart_saif_recording($sformatf("state_%0d", current_state));
+            previous_state <= current_state;
+        end
+    end
+end
+
+// Final SAIF export at end of simulation
+final begin
+    if (saif_initialized) begin
+        stop_saif_recording($sformatf("state_%0d", current_state));
+        $display("Final SAIF recording completed. Total state recordings: %0d", saif_state_counter);
+    end
+end
+
+`endif
+`endif
+
+// ========================= END SAIF TRACKING SECTION ==========================
+
 initial begin
     $display("=============== TESTBENCH START ===============");
 
@@ -860,12 +968,16 @@ initial begin
     biases = new("biases");
     `endif // NOIOFILES
 
+    #(2.5);
+
     start_sim();
 
     bus_write_loop();
     
     `ifndef NOIOFILES
+    `ifndef POST_SYNTH
     export_l2();
+    `endif // POST_SYNTH
     `endif // NOIOFILES
 
     end_sim();

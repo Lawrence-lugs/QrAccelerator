@@ -4,38 +4,35 @@
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
-`endif
-
-
 package qracc_pkg;
 
-    // QRAcc Parameters
-    parameter numRows = `SRAM_ROWS;
-    parameter numCols    = 32;
-    parameter numAdcBits = 4;
-    parameter compCount  = (2**numAdcBits)-1;
-    parameter numCfgBits = 8;
-    parameter numBanks   = `SRAM_COLS/numCols;
-    parameter outputElements = `SRAM_COLS;
-    
-      // Output Scaler Parameters
-    parameter accumulatorBits = 16;
-    parameter outputBits      = `QRACC_OUTPUT_BITS;
-    parameter inputBits       = `QRACC_INPUT_BITS;
-
     // // QRAcc Parameters
-    // parameter numRows = 128;
+    // parameter numRows = `SRAM_ROWS;
     // parameter numCols    = 32;
     // parameter numAdcBits = 4;
     // parameter compCount  = (2**numAdcBits)-1;
     // parameter numCfgBits = 8;
-    // parameter numBanks   = 32/numCols;
-    // parameter outputElements = 32;
+    // parameter numBanks   = `SRAM_COLS/numCols;
+    // parameter outputElements = `SRAM_COLS;
     
     //   // Output Scaler Parameters
     // parameter accumulatorBits = 16;
-    // parameter outputBits      = 8;
-    // parameter inputBits       = 8;
+    // parameter outputBits      = `QRACC_OUTPUT_BITS;
+    // parameter inputBits       = `QRACC_INPUT_BITS;
+
+    // QRAcc Parameters
+    parameter numRows = 256;
+    parameter numCols    = 32;
+    parameter numAdcBits = 4;
+    parameter compCount  = (2**numAdcBits)-1;
+    parameter numCfgBits = 8;
+    parameter numBanks   = 256/numCols;
+    parameter outputElements = 256;
+    
+      // Output Scaler Parameters
+    parameter accumulatorBits = 16;
+    parameter outputBits      = 8;
+    parameter inputBits       = 8;
 
     // Trigger Values
     typedef enum logic [2:0] {
@@ -156,7 +153,7 @@ package qracc_pkg;
         logic CLK;
     } to_column_analog_t;
 
-    typedef struct {
+    typedef struct packed {
         // SWITCH MATRIX
         logic [numRows-1:0] PSM_VDR_SEL;
         logic [numRows-1:0] PSM_VDR_SELB;
@@ -192,7 +189,7 @@ package qracc_pkg;
         logic CLK;
     } to_analog_t;
 
-    typedef struct {
+    typedef struct packed {
         logic [numCols-1:0] SA_OUT;
         logic [compCount*outputElements-1:0] ADC_OUT;
     } from_analog_t;
@@ -325,3 +322,4 @@ package qracc_pkg;
     } bus_resp_t;
 
 endpackage
+`endif

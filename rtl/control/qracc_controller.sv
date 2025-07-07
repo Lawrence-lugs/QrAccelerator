@@ -22,16 +22,23 @@ module qracc_controller #(
     input bus_req_t bus_req_i,
     output bus_resp_t bus_resp_o,
 
+    // SRAM signals
+    output logic to_sram_rq_wr,
+    output logic to_sram_rq_valid,
+    output logic [numCols-1:0] to_sram_wr_data,
+    output logic [$clog2(numRows)-1:0] to_sram_addr,
+    input from_sram_rq_ready,
+    input from_sram_rd_valid,
+    input [numCols-1:0] from_sram_rd_data,
+
     // Signals to the people
     output qracc_control_t ctrl_o,
-    output to_sram_t to_sram,
     output logic [numBanks-1:0] bank_select,
 
     // Signals from the people
     input qracc_ready,
     input qracc_output_valid,
     input wsacc_output_valid,
-    input from_sram_t from_sram,
     input int_write_queue_valid,
 
     // Signals from csr
@@ -156,11 +163,11 @@ end
 
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
-    to_sram.rq_wr_i = 0;
-    to_sram.rq_valid_i = 0;
-    to_sram.wr_data_i = 0;
-    to_sram.addr_i = 0;
-    bus_resp_o.ready = 0;
+    to_sram_rq_wr = 0;
+    to_sram_rq_valid = 0;
+    to_sram_wr_data = 0;
+    to_sram_addr = 0;
+    bus_resp_o.ready = 1;
     bus_resp_o.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
@@ -168,14 +175,14 @@ always_comb begin : ctrlDecode
     case(state_q)
         S_IDLE: begin
             bus_resp_o.ready = 1; // CSR is always ready to take data
-            bus_resp_o.rd_data_valid = csr_rd_data_valid;
+            bus_resp_o.rd_data_valid = 0;
         end
         S_LOADWEIGHTS: begin
-            to_sram.rq_wr_i = data_write;
-            to_sram.rq_valid_i = bus_req_i.valid;
-            to_sram.addr_i = weight_ptr[$clog2(numBanks)+:addrBits];
-            to_sram.wr_data_i = bus_req_i.data_in;
-            bus_resp_o.ready = from_sram.rq_ready_o;
+            to_sram_rq_wr = data_write;
+            to_sram_rq_valid = bus_req_i.valid;
+            to_sram_addr = weight_ptr[$clog2(numBanks)+:addrBits];
+            to_sram_wr_data = bus_req_i.data_in;
+            bus_resp_o.ready = from_sram_rq_ready;
             bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
             bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
@@ -238,6 +245,7 @@ always_comb begin : ctrlDecode
         end
         default: begin
             ctrl_o = 0;
+            bus_resp_o.ready = 1; // CSR is always ready to take data
         end
     endcase
 end

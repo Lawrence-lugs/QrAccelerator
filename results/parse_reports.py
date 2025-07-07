@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Report Parser
-
-This script parses Synopsys reports (power and area) and converts the hierarchical data
-into pandas DataFrames for analysis and visualization.
-"""
-
 import pandas as pd
 import re
 from typing import List, Dict, Optional, Tuple, Union
@@ -15,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 sns.set_theme(style="whitegrid")
 
-def plot_power_pie(df):
+def plot_power_pie(df,startangle: int = 140):
     # Set a threshold for minimum percentage to show separately
     threshold = 1.0  # percent
     df_plot = df.copy()
@@ -37,7 +29,7 @@ def plot_power_pie(df):
         df_plot['total_power'],
         labels=df_plot['hierarchy_clean'],
         autopct='%1.1f%%',
-        startangle=140,
+        startangle=startangle,
         explode=[0.05]*len(df_plot),
         colors=sns.color_palette("viridis_r", len(df_plot)),
         pctdistance=1.2,
@@ -137,8 +129,8 @@ def plot_area_pie(df, startangle: int = 140):
         df_plot = df_plot[~mask]
         df_plot = pd.concat([df_plot, pd.DataFrame([others_row])], ignore_index=True)
 
-    # Add linebreaks to long labels
-    df_plot['label'] = df_plot['hierarchy_clean'].apply(lambda x: '\n'.join(x[i:i+10] for i in range(0, len(x), 10)))
+    # Add linebreaks for spaces in labels
+    df_plot['label'] = df_plot['hierarchy_clean'].str.replace(' ', '\n')
 
     fig, ax = plt.subplots(figsize=(8, 4), dpi=300)
     wedges, texts, autotexts = plt.pie(

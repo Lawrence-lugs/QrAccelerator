@@ -97,9 +97,15 @@ logic [qrAccInputElements-1:0][qrAccInputBits-1:0] qracc_mac_data;
 logic qracc_output_valid;
 logic [qrAccOutputElements-1:0][qrAccAccumulatorBits-1:0] qracc_mac_output;
 logic qracc_ready;
-to_sram_t to_sram;
 
-from_sram_t from_sram; // no need to touch this for now, can use it later to read from sram
+// SRAM Signals
+logic to_sram_rq_wr;
+logic to_sram_rq_valid;
+logic [numCols-1:0] to_sram_wr_data;
+logic [$clog2(numRows)-1:0] to_sram_addr;
+logic from_sram_rq_ready;
+logic from_sram_rd_valid;
+logic [numCols-1:0] from_sram_rd_data;
 
 // Signals : Activation Buffer
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
@@ -140,7 +146,8 @@ qracc_csr #(
     .csr_main_trigger           (csr_main_trigger),
     .csr_main_busy              (csr_main_busy),
     .csr_main_inst_write_mode   (csr_main_inst_write_mode),
-    .csr_main_internal_state    (csr_main_internal_state)
+    .csr_main_internal_state    (csr_main_internal_state),
+    .csr_rd_data_valid_o        (csr_rd_data_valid)
 );
 
 qracc_controller #(
@@ -156,8 +163,13 @@ qracc_controller #(
     .bus_resp_o                 (controller_bus_resp),
 
     .ctrl_o                     (qracc_ctrl),
-    .to_sram                    (to_sram),
-    .from_sram                  (from_sram),
+    .to_sram_rq_wr              (to_sram_rq_wr),
+    .to_sram_rq_valid           (to_sram_rq_valid),
+    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_addr               (to_sram_addr),
+    .from_sram_rq_ready         (from_sram_rq_ready),
+    .from_sram_rd_valid         (from_sram_rd_valid),
+    .from_sram_rd_data          (from_sram_rd_data),
     .bank_select                (bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
@@ -202,8 +214,15 @@ seq_acc #(
     // Passthrough Signals
     .to_analog_o    (to_analog),
     .from_analog_i  (from_analog),
-    .from_sram      (from_sram),
-    .to_sram        (to_sram)
+
+    // SRAM
+    .to_sram_rq_wr              (to_sram_rq_wr),
+    .to_sram_rq_valid           (to_sram_rq_valid),
+    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_addr               (to_sram_addr),
+    .from_sram_rq_ready         (from_sram_rq_ready),
+    .from_sram_rd_valid         (from_sram_rd_valid),
+    .from_sram_rd_data          (from_sram_rd_data)
 );
 
 always_comb begin : wsAccDataOrientation
