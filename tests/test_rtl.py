@@ -15,7 +15,7 @@ from .utils import *
 
 @pytest.mark.parametrize(
     "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y, depthwise",[
-    ('singlebank',      (1,3,32,32),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
+    ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
     ('offsetx',         (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      30,         0,          False),           
     ('offsetxy',        (1,3,16,16),   (32,3,3,3),     (256,256),  1,          1,      69,         38,         False),          
     ('fc_offsetxy',     (1,16,16,16),  (64,16,3,3),    (256,256),  1,          1,      69,         38,         False),          
@@ -43,19 +43,36 @@ def test_qr_acc_top_single_load(
     mm_offset_x,
     mm_offset_y,
     depthwise,
-    ifmap_bits = 8, 
-    kernel_bits = 1,
-    ofmap_bits = 8,
-    soft_padding = False,
-    snr_limit = 1 # We get really poor SNR due to MBL value clipping. Need signed weights. See issue.
+    ifmap_bits    = 8,
+    kernel_bits   = 1,
+    ofmap_bits    = 8,
+    soft_padding  = False,
+    snr_limit     = 1,     # We get really poor SNR due to MBL value clipping. Need signed weights. See issue #28 and #13.
+    model_mem     = True,
+    post_synth    = True,
+    nodump        = False,
+    noiofiles     = True,
+    notplitztrack = True,
 ): 
+    
+    run_read_but_noio = False
+    if post_synth: 
+        model_mem = False # Post-synthesis does not support model memory
+        notplitztrack = True # Post-synthesis does not support toeplitz tracking
+        if not noiofiles:
+            run_read_but_noio = True # Run the read state regardless of noiofiles
+        noiofiles = True # Post-synthesis does not support I/O files
+
     # Pointwise convolutions do not pad or stride
     if kernel_shape[2] == 1 and kernel_shape[3] == 1:
         padding = 0
         stride = 1
+
+    add_libs = not model_mem or post_synth
   
-    package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
-    rtl_file_list = [ 
+    lib_list = [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if add_libs else []
+    package_list = lib_list + ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
+    rtl_file_list = [
         '../rtl/activation_buffer/piso_write_queue.sv',
         '../rtl/activation_buffer/mm_output_aligner.sv',
         '../rtl/wsacc/wsacc_pe_cluster.sv',
@@ -74,7 +91,17 @@ def test_qr_acc_top_single_load(
         '../rtl/feature_loader/padder.sv',
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
+    ] if not post_synth else [
+        '../rtl/ts_qracc.sv',
+        '../rtl/ts_qracc_multibank.sv',
+        '../rtl/control/qracc_csr.sv',
+        '../synth/mapped/mapped_qr_acc_top.v'
     ]
+
+    if not model_mem:
+        rtl_file_list += [
+        '../rtl/activation_buffer/activation_buffer.sv','../rtl/activation_buffer/sram_32bank_8b.sv']
+
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
@@ -94,10 +121,20 @@ def test_qr_acc_top_single_load(
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
-        "NODUMP": 1,  # Disable dumping of VPD and VCD
-        # "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
-        # "NOIOFILES": 1, # Disable file I/O
     }
+    if notplitztrack:
+        parameter_list['NOTPLITZTRACK'] = 1
+    if nodump:
+        parameter_list['NODUMP'] = 1
+    if noiofiles:
+        parameter_list['NOIOFILES'] = 1
+    if model_mem:
+        parameter_list['MODEL_MEM'] = 1
+    if post_synth:
+        parameter_list['POST_SYNTH'] = 1
+    if run_read_but_noio:
+        parameter_list['RUN_READ_BUT_NOIO'] = 1
+
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 

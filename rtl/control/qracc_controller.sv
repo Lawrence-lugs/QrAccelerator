@@ -19,18 +19,26 @@ module qracc_controller #(
 ) (
     input clk, nrst,
 
-    qracc_data_interface bus_i,
+    input bus_req_t bus_req_i,
+    output bus_resp_t bus_resp_o,
+
+    // SRAM signals
+    output logic to_sram_rq_wr,
+    output logic to_sram_rq_valid,
+    output logic [numCols-1:0] to_sram_wr_data,
+    output logic [$clog2(numRows)-1:0] to_sram_addr,
+    input from_sram_rq_ready,
+    input from_sram_rd_valid,
+    input [numCols-1:0] from_sram_rd_data,
 
     // Signals to the people
     output qracc_control_t ctrl_o,
-    output to_sram_t to_sram,
     output logic [numBanks-1:0] bank_select,
 
     // Signals from the people
     input qracc_ready,
     input qracc_output_valid,
     input wsacc_output_valid,
-    input from_sram_t from_sram,
     input int_write_queue_valid,
 
     // Signals from csr
@@ -67,9 +75,9 @@ assign output_fmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_
 logic data_handshake;
 logic data_read;
 logic data_write;
-assign data_handshake = bus_i.valid && bus_i.ready;
-assign data_read      = data_handshake && !bus_i.wen;
-assign data_write     = data_handshake && bus_i.wen;
+assign data_handshake = bus_req_i.valid && bus_resp_o.ready;
+assign data_read      = data_handshake && !bus_req_i.wen;
+assign data_write     = data_handshake && bus_req_i.wen;
 
 // Configuration Calculation signals
 logic [31:0] n_elements_per_word;
@@ -146,7 +154,7 @@ end
 always_ff @( posedge clk or negedge nrst ) begin
     if (!nrst) begin
         write_queue_done <= 0;
-        int_write_queue_valid_q <= int_write_queue_valid;
+        int_write_queue_valid_q <= 0;
     end else begin
         int_write_queue_valid_q <= int_write_queue_valid;
         write_queue_done <= ~int_write_queue_valid && int_write_queue_valid_q; // 1->0 transition
@@ -155,55 +163,54 @@ end
 
 always_comb begin : ctrlDecode
     ctrl_o = 0; // must be that ctrl_o is a NOP
-    to_sram.rq_wr_i = 0;
-    to_sram.rq_valid_i = 0;
-    to_sram.wr_data_i = 0;
-    to_sram.addr_i = 0;
-    bus_i.ready = 0;
-    bus_i.rd_data_valid = 0;
+    to_sram_rq_wr = 0;
+    to_sram_rq_valid = 0;
+    to_sram_wr_data = 0;
+    to_sram_addr = 0;
+    bus_resp_o.ready = 1;
+    bus_resp_o.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
     csr_main_busy = ~( state_q == S_IDLE );
     case(state_q)
         S_IDLE: begin
-            
-            bus_i.ready = 1; // CSR is always ready to take data
-            bus_i.rd_data_valid = csr_rd_data_valid;
+            bus_resp_o.ready = 1; // CSR is always ready to take data
+            bus_resp_o.rd_data_valid = 0;
         end
         S_LOADWEIGHTS: begin
-            to_sram.rq_wr_i = data_write;
-            to_sram.rq_valid_i = bus_i.valid;
-            to_sram.addr_i = weight_ptr[$clog2(numBanks)+:addrBits];
-            to_sram.wr_data_i = bus_i.data_in;
-            bus_i.ready = from_sram.rq_ready_o;
+            to_sram_rq_wr = data_write;
+            to_sram_rq_valid = bus_req_i.valid;
+            to_sram_addr = weight_ptr[$clog2(numBanks)+:addrBits];
+            to_sram_wr_data = bus_req_i.data_in;
+            bus_resp_o.ready = from_sram_rq_ready;
             bank_select_code = weight_ptr[bankCodeBits-1:0] - 1; // Delay by 1 cycle;
             bank_select = (numBanks > 1) ? (1 << bank_select_code) : 1;
         end
         S_LOAD_DIGITAL_WEIGHTS: begin
-            ctrl_o.wsacc_weight_itf_i_valid = bus_i.valid;
-            bus_i.ready = 1;
+            ctrl_o.wsacc_weight_itf_i_valid = bus_req_i.valid;
+            bus_resp_o.ready = 1;
         end
         S_LOADACTS: begin
             ctrl_o.activation_buffer_ext_wr_en = data_write;
             ctrl_o.activation_buffer_ext_wr_addr = act_wr_ptr;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
         end
         S_LOADSCALER: begin
             ctrl_o.output_scaler_scale_w_en = data_write;
             ctrl_o.output_scaler_shift_w_en = data_write;
             ctrl_o.output_scaler_offset_w_en = data_write;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
         end
         S_LOADBIAS: begin
             ctrl_o.output_bias_w_en = data_write;
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
             // ctrl_o.activation_buffer_int_rd_en = (state_d == S_COMPUTE_ANALOG) ? 1 : 0;
         end
         S_COMPUTE_ANALOG, S_COMPUTE_DIGITAL: begin
 
             if (state_q == S_COMPUTE_DIGITAL) ctrl_o.wsacc_active = 1;
 
-            bus_i.ready = 1; // Ready to be read (all extern WRENs are deasserted)
+            bus_resp_o.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
             ctrl_o.activation_buffer_int_rd_addr = 
                     cfg.num_input_channels * 
@@ -230,14 +237,15 @@ always_comb begin : ctrlDecode
             ctrl_o.padding_end = padding_end_q;
         end
         S_READACTS: begin
-            bus_i.ready = 1;
+            bus_resp_o.ready = 1;
             ctrl_o.activation_buffer_ext_rd_en = 1;
             // Due to the ifmap->ofmap swapping, the ofmap is now in the ifmap_start_addr
             ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ifmap_start_addr;
-            bus_i.rd_data_valid = read_acts_out_valid;
+            bus_resp_o.rd_data_valid = read_acts_out_valid;
         end
         default: begin
             ctrl_o = 0;
+            bus_resp_o.ready = 1; // CSR is always ready to take data
         end
     endcase
 end
@@ -514,7 +522,7 @@ always_ff @( posedge clk or negedge nrst ) begin : weightWriteLogic
             end
         end
         if (state_q == S_LOAD_DIGITAL_WEIGHTS) begin
-            if (bus_i.valid) weight_ptr <= weight_ptr + 1;
+            if (bus_req_i.valid) weight_ptr <= weight_ptr + 1;
             if (state_d != S_LOAD_DIGITAL_WEIGHTS) begin 
                 weight_ptr <= 0;
             end
@@ -569,18 +577,20 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         end
 
         if (state_q == S_COMPUTE_ANALOG) begin
-
             if (state_d != S_COMPUTE_ANALOG) begin
-                ifmap_start_addr <= ofmap_start_addr;
-                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                if (!cfg.preserve_ifmap) begin
+                    ifmap_start_addr <= ofmap_start_addr;
+                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                end
             end
         end
 
         if (state_q == S_COMPUTE_DIGITAL) begin
-
             if (state_d != S_COMPUTE_DIGITAL) begin
-                ifmap_start_addr <= ofmap_start_addr;
-                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                if (!cfg.preserve_ifmap) begin
+                    ifmap_start_addr <= ofmap_start_addr;
+                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                end            
             end
         end
     end
@@ -608,5 +618,23 @@ always_ff @( posedge clk or negedge nrst ) begin : scalerLogic
         end
     end
 end
+
+`ifdef TRACK_STATISTICS
+always_ff @( posedge clk ) begin : statsTracker
+    // Statistics tracking
+    case(state_q)
+        S_IDLE:                  stats.cyclesIdle <= stats.cyclesIdle + 1;
+        S_LOADACTS:              stats.cyclesLoadActivation <= stats.cyclesLoadActivation + 1;
+        S_LOADSCALER:            stats.cyclesLoadScaler <= stats.cyclesLoadScaler + 1;
+        S_LOADWEIGHTS:           stats.cyclesLoadWeights <= stats.cyclesLoadWeights + 1;
+        S_COMPUTE_ANALOG:        stats.cyclesComputeAnalog <= stats.cyclesComputeAnalog + 1;
+        S_READACTS:              stats.cyclesReadActivation <= stats.cyclesReadActivation + 1;
+        S_LOADBIAS:              stats.cyclesLoadBias <= stats.cyclesLoadBias + 1;
+        S_COMPUTE_DIGITAL:       stats.cyclesComputeDigital <= stats.cyclesComputeDigital + 1;
+        S_LOAD_DIGITAL_WEIGHTS:  stats.cyclesLoadWeightsDigital <= stats.cyclesLoadWeightsDigital + 1;
+        default: ;
+    endcase
+end
+`endif // TRACK_STATISTICS
 
 endmodule

@@ -8,8 +8,8 @@ module qracc_csr #(
 ) (
     input clk, nrst,
 
-    qracc_data_interface bus_i,
-    output logic [31:0] csr_rd_data_o, // CSR read data output
+    input bus_req_t bus_req_i,
+    output bus_resp_t bus_resp_o,
     output logic csr_rd_data_valid_o,
 
     // CSR signals
@@ -44,9 +44,10 @@ logic [31:0] csr_main_read_output;
 
 // Kausap ba ako
 always_comb begin : csrAddressed
-    kausap_ako = (bus_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
-    handshake_success = bus_i.valid && kausap_ako && bus_i.ready; 
-    csr_addr = bus_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
+    kausap_ako = (bus_req_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
+    handshake_success = bus_req_i.valid && kausap_ako; 
+    csr_addr = bus_req_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
+    bus_resp_o.ready = 1; // The CSR is always ready to respond
 end
 
 // CSR Write & Reads
@@ -55,27 +56,28 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
         for(int i = 0; i < numCsr; i++) begin
             csr_set[i] <= 0;
         end
-        csr_rd_data_valid_o <= 0;
+        bus_resp_o.rd_data_valid <= 1'b0;
     end else begin
         if (handshake_success) begin
             // Write to CSR
-            if (bus_i.wen) begin
-                csr_set[csr_addr] <= bus_i.data_in;
+            if (bus_req_i.wen) begin
+                csr_set[csr_addr] <= bus_req_i.data_in;
+                bus_resp_o.rd_data_valid <= 1'b0;
             end else begin
-                csr_rd_data_valid_o <= 1'b1;
                 case (csr_addr)
                     CSR_REG_MAIN: begin
                         // $display("CSR_REG_MAIN: csr_main_read_output = %h", csr_main_read_output);
-                        csr_rd_data_o <= csr_main_read_output;
+                        bus_resp_o.data_out <= csr_main_read_output;
+                        bus_resp_o.rd_data_valid <= 1'b1;
                     end
                     default: begin
-                        csr_rd_data_o <= csr_set[csr_addr]; 
+                        bus_resp_o.data_out <= csr_set[csr_addr]; 
+                        bus_resp_o.rd_data_valid <= 1'b1;
                     end
                 endcase
             end
         end else begin
-            csr_rd_data_valid_o <= 1'b0; // No handshake, so no valid read data
-            csr_rd_data_o <= 32'b0; // Default value when not addressed
+            bus_resp_o.data_out <= 32'b0; // Default value when not addressed
         end
     end
 end
@@ -83,7 +85,8 @@ end
 // CSR Decode
 always_comb begin : csrDecode
     csr_main_read_output = {
-        20'b0, // free
+        19'b0, // free
+        1'b0, // preserve_ifmap
         csr_main_internal_state,
         3'b0, // free
         csr_main_busy, // csr_main_busy
@@ -92,10 +95,10 @@ always_comb begin : csrDecode
     };
 
     // When the bus is trying to write to main, pass it combinationally...
-    if (handshake_success && bus_i.wen && (csr_addr == CSR_REG_MAIN)) begin
-        csr_main_trigger = qracc_trigger_t'(bus_i.data_in[2:0]);
-        csr_main_clear = bus_i.data_in[3]; 
-        csr_main_inst_write_mode = bus_i.data_in[5];
+    if (handshake_success && bus_req_i.wen && (csr_addr == CSR_REG_MAIN)) begin
+        csr_main_trigger = qracc_trigger_t'(bus_req_i.data_in[2:0]);
+        csr_main_clear = bus_req_i.data_in[3]; 
+        csr_main_inst_write_mode = bus_req_i.data_in[5];
     end else begin
         csr_main_trigger = TRIGGER_IDLE;
         csr_main_clear = 1'b0;
@@ -103,29 +106,31 @@ always_comb begin : csrDecode
     end
 
     // Assign configuration output
-    cfg_o.binary_cfg          = csr_set[CSR_REG_CONFIG][0];
-    cfg_o.unsigned_acts       = csr_set[CSR_REG_CONFIG][1];
-    cfg_o.adc_ref_range_shifts= csr_set[CSR_REG_CONFIG][7:4];
-    cfg_o.filter_size_y       = csr_set[CSR_REG_CONFIG][11:8];
-    cfg_o.filter_size_x       = csr_set[CSR_REG_CONFIG][15:12];
-    cfg_o.stride_x            = csr_set[CSR_REG_CONFIG][19:16];
-    cfg_o.stride_y            = csr_set[CSR_REG_CONFIG][23:20];
-    cfg_o.n_input_bits_cfg    = csr_set[CSR_REG_CONFIG][27:24];
-    cfg_o.n_output_bits_cfg   = csr_set[CSR_REG_CONFIG][31:28];
+    cfg_o.preserve_ifmap = csr_set[CSR_REG_MAIN][12];
 
-    cfg_o.input_fmap_dimx     = csr_set[CSR_REG_IFMAP_DIMS][15:0];
-    cfg_o.input_fmap_dimy     = csr_set[CSR_REG_IFMAP_DIMS][31:16];
+    cfg_o.binary_cfg           = csr_set[CSR_REG_CONFIG][0];
+    cfg_o.unsigned_acts        = csr_set[CSR_REG_CONFIG][1];
+    cfg_o.adc_ref_range_shifts = csr_set[CSR_REG_CONFIG][7:4];
+    cfg_o.filter_size_y        = csr_set[CSR_REG_CONFIG][11:8];
+    cfg_o.filter_size_x        = csr_set[CSR_REG_CONFIG][15:12];
+    cfg_o.stride_x             = csr_set[CSR_REG_CONFIG][19:16];
+    cfg_o.stride_y             = csr_set[CSR_REG_CONFIG][23:20];
+    cfg_o.n_input_bits_cfg     = csr_set[CSR_REG_CONFIG][27:24];
+    cfg_o.n_output_bits_cfg    = csr_set[CSR_REG_CONFIG][31:28];
 
-    cfg_o.output_fmap_dimx    = csr_set[CSR_REG_OFMAP_DIMS][15:0];
-    cfg_o.output_fmap_dimy    = csr_set[CSR_REG_OFMAP_DIMS][31:16];
+    cfg_o.input_fmap_dimx = csr_set[CSR_REG_IFMAP_DIMS][15:0];
+    cfg_o.input_fmap_dimy = csr_set[CSR_REG_IFMAP_DIMS][31:16];
+
+    cfg_o.output_fmap_dimx = csr_set[CSR_REG_OFMAP_DIMS][15:0];
+    cfg_o.output_fmap_dimy = csr_set[CSR_REG_OFMAP_DIMS][31:16];
 
     cfg_o.num_input_channels  = csr_set[CSR_REG_CHANNELS][15:0];
     cfg_o.num_output_channels = csr_set[CSR_REG_CHANNELS][31:16];
 
     cfg_o.mapped_matrix_offset_x = csr_set[CSR_REG_OFFSETS][15:0];
-    cfg_o.mapped_matrix_offset_y = csr_set[CSR_REG_OFFSETS][31:16];    
+    cfg_o.mapped_matrix_offset_y = csr_set[CSR_REG_OFFSETS][31:16];
 
-    cfg_o.padding = csr_set[CSR_REG_PADDING][3:0];
+    cfg_o.padding       = csr_set[CSR_REG_PADDING][3:0];
     cfg_o.padding_value = csr_set[CSR_REG_PADDING][11:4];
 end
 

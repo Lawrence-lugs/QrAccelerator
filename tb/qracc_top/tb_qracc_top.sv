@@ -58,11 +58,20 @@ module tb_qracc_top #(
 logic clk;
 logic nrst;
 
-qracc_ctrl_interface periph();
-qracc_data_interface bus();
+bus_req_t bus_req;
+bus_resp_t bus_resp;
 
 to_analog_t to_analog;
 from_analog_t from_analog;
+
+logic [3871:0] from_analog_wire;
+logic [3401:0] to_analog_wire;
+
+`ifdef POST_SYNTH
+assign from_analog_wire = from_analog;
+assign to_analog = to_analog_wire;
+`endif
+
 logic [numBanks-1:0] bank_select;
 
 qracc_config_t cfg;
@@ -153,6 +162,7 @@ assign CLK = to_analog.CLK;
 
 // DUT instantiation
 qr_acc_top #(
+    `ifndef POST_SYNTH
     .dataInterfaceSize              (dataInterfaceSize),
     .ctrlInterfaceSize              (ctrlInterfaceSize),
 
@@ -176,27 +186,54 @@ qr_acc_top #(
     .aflDimY                        (aflDimY),
     .aflDimX                        (aflDimX),
     .aflAddrWidth                   (aflAddrWidth)
+    `endif
 ) u_qr_acc_top (
     .clk                            (clk),
     .nrst                           (nrst),
 
     // Control Interface
-    .bus_i                          (bus.slave), 
+    .bus_req_i                      (bus_req),
+    .bus_resp_o                     (bus_resp),
 
     // Analog passthrough signals
+    `ifdef POST_SYNTH
+    .to_analog                      (to_analog_wire),
+    .from_analog                    (from_analog_wire),
+    `else
     .to_analog                      (to_analog),
     .from_analog                    (from_analog),
+    `endif 
+
     .bank_select                    (bank_select)
 );
 
+qracc_csr #(
+    .csrWidth                   (32),
+    .numCsr                     (16)
+) u_csr_tb_model (
+    .clk                        (clk),
+    .nrst                       (nrst),
+    .bus_req_i                  (bus_req),
+    .bus_resp_o                 (),
+    .csr_rd_data_valid_o        (),
+    .cfg_o                      (cfg),
+    .csr_main_clear             (),
+    .csr_main_trigger           (),
+    .csr_main_busy              (0),
+    .csr_main_inst_write_mode   (),
+    .csr_main_internal_state    (0)
+);
+
 // Analog test schematic
+logic [3:0] adc_ref_range_shifts; 
+
 ts_qracc_multibank #(
     .numRows(qrAccInputElements),
     .numCols(numCols),
     .numAdcBits(numAdcBits),
     .numBanks(numBanks)
 ) u_ts_qracc (
-    .adc_ref_range_shifts(u_qr_acc_top.cfg.adc_ref_range_shifts),
+    .adc_ref_range_shifts(adc_ref_range_shifts),
     .bank_select(bank_select),
     .PSM_VDR_SEL(PSM_VDR_SEL),
     .PSM_VDR_SELB(PSM_VDR_SELB),
@@ -236,9 +273,9 @@ always_ff @( posedge clk or negedge nrst ) begin : l2Mem
     
     if(!nrst) l2_mem_addr <= 0;
     
-    if (bus.rd_data_valid && l2_mem_enable) begin
+    if (bus_resp.rd_data_valid && l2_mem_enable) begin
         for (int i = 0; i < 32/8; i++) begin
-            l2_mem[l2_mem_addr + i] <= bus.data_out[(32/8-1-i)*8 +: 8];
+            l2_mem[l2_mem_addr + i] <= bus_resp.data_out[(32/8-1-i)*8 +: 8];
         end
         l2_mem_addr <= l2_mem_addr + 4;
     end
@@ -257,15 +294,14 @@ static string tb_name = "tb_qracc_top";
 `ifdef SYNOPSYS
 initial begin
     $vcdplusfile({tb_name,".vpd"});
-    $vcdpluson();
+    $vcdpluson(3, tb_qracc_top);
     $vcdplusmemon();
-    $dumpvars(0);
 end
 `endif
-initial begin
-    $dumpfile({tb_name,".vcd"});
-    $dumpvars(0);
-end
+// initial begin
+//     $dumpfile({tb_name,".vcd"});
+//     $dumpvars(0);
+// end
 `endif
 
 
@@ -423,8 +459,7 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 int errcnt = 0;
 
-assign cfg = u_qr_acc_top.cfg;
-
+`ifndef POST_SYNTH
 task display_config();
 
     $display("=== CONFIGURATION ===");
@@ -455,182 +490,8 @@ task display_config();
 
 endtask
 
-task start_sim();
-
-    // errcnt = 0;
-
-    // SRAM_COLS must be multiple of 32
-    if (qrAccInputElements % 32 != 0) begin
-        $display("Error: SRAM_COLS must be multiple of 32");
-        $finish;
-    end
-
-    bus.wen = 0;
-    bus.valid = 0;
-    bus.addr = 0;
-    bus.data_in = 0;
-
-    $display("=============== STARTING SIMULATION ===============");
-    nrst = 0;
-    #(CLK_PERIOD*2);
-    nrst = 1;
-    #(CLK_PERIOD*2);
-endtask
-
 task status_checkup();
     $display("STATE: %s", u_qr_acc_top.u_qracc_controller.state_q.name());
-endtask
-
-task bus_write_loop();
-
-    int fd;
-    int data;
-    int addr;
-    int i;
-    qracc_trigger_t trigger_type;
-    string command;
-    fd = $fopen({files_path,"commands.txt"},"r");
-    
-    $display("=========== BUS COMMAND LOOP ============");
-    if (fd == 0) begin
-        $display("Error opening commands file");
-        $finish;
-    end
-
-    while (!$feof(fd)) begin
-        $fscanf(fd,"%s", command);
-        case(command)
-            "INFO": begin
-                $display("=== NODE INFORMATION ===");
-                do begin
-                    $fgets(command, fd);
-                    $write("%s ", command);
-                end while (command != "ENDINFO\n");
-                $display("=== END OF NODE INFORMATION ===");
-            end
-            "LOAD": begin
-                $fscanf(fd,"%h %h",addr,data);
-
-                trigger_type = qracc_trigger_t'(data[2:0]);
-
-                if ((addr & 32'hFFFF_FFF0)== 32'h0000_0010) begin
-                    if (data[2:0] != TRIGGER_IDLE) begin
-                        $display("Triggering QRAcc with command: %s", trigger_type.name());
-                    end
-                end
-
-                // casex(addr)
-                //     32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
-                //     32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
-                //     default: $write("Writing to unknown address: %h = %h", addr, data);
-                // endcase
-                bus.addr = addr;
-                bus.data_in = data;
-                bus.valid = 1;
-                bus.wen = 1;
-                if(!$feof(fd)) begin
-                    while (!bus.ready) begin 
-                        #(CLK_PERIOD);
-                        // $write(".");
-                    end
-                    #(CLK_PERIOD);
-                    // $write("\tDONE\n");
-                    bus.valid = 0;
-                    // status_checkup();
-                end
-            end
-            "WAITBUSY": begin
-                display_config();
-                $display("Waiting for QRAcc Computation, time:", $time);
-                $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
-                `ifdef NOTPLITZTRACK
-                wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
-                `else
-                track_toeplitz();
-                `endif
-            end
-            "WAITREAD": begin
-                // Wait for reads to finish
-                $display("Waiting for QRAcc Readout, time:", $time);
-                $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
-                i = 0;
-                l2_mem_enable = 1;
-                for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
-                    bus.addr = QRACC_MAIN_ADDR;
-                    bus.valid = 1;
-                    bus.wen = 0;
-                    while (!bus.ready) begin 
-                        #(CLK_PERIOD);
-                        i++;
-                        $write(".");
-                    end
-                    #(CLK_PERIOD);
-                    i++;
-                end
-                l2_mem_enable = 0;
-                $display("\nQRAcc is ready after %d cycles, time: ", i, $time);
-            end
-            "END": begin
-                $write("Ending bus write loop\n");
-                break;
-            end
-        endcase
-    end
-
-    $write("\n");
-    $display("=========== END OF BUS WRITE LOOP ============");
-
-endtask
-
-task wait_busy_silent();
-
-    input int addr;
-    int i;
-    $display("Waiting for QRAcc to be ready, time:", $time);
-    i = 0;
-    do begin
-        bus.addr = addr; // CSR_REG_MAIN
-        bus.valid = 1;
-        bus.wen = 0;
-        // $display("%h",bus.data_out);
-        while (!bus.ready) begin 
-            #(CLK_PERIOD);
-            i++;
-            // $write(".");
-        end
-        #(CLK_PERIOD);
-        i++;
-    end while (bus.data_out[4] == 1); // QRACC IS BUSY 
-    $display("\nQRAcc is ready after %d cycles, time:", i,$time);
-endtask
-
-// Address by 4-byte word
-task check_acts();
-    int ptr;
-    int word;
-    ptr = u_qr_acc_top.u_qracc_controller.ifmap_start_addr;
-
-    $display("Checking activations at time %t", $time);
-    for (i=0;i<ifmap.size*4;i=i+4) begin
-        if (i%16 == 0) begin
-            $write("\n");
-            $write("[%d]:\t",i);
-        end else begin
-            $write("\t");
-        end
-        
-        word = {u_qr_acc_top.u_activation_buffer.mem[ptr + i], 
-                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 1],
-                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 2],
-                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 3]};
-        
-        $write("%h\t",word);
-        if (word != ifmap.array[i >> 2]) begin
-            $write(" != %h",ifmap.array[i >> 2]);
-            errcnt++;
-        end
-    end
-    $write("\n");
 endtask
 
 localparam MAX_TROWS = 10000;
@@ -739,20 +600,11 @@ task check_scales();
 
 endtask
 
-task end_sim();
-    if (errcnt == 0) begin
-        $display("TEST SUCCESS");
-    end else begin
-        $display("TEST FAILED - ERRORS: %d",errcnt);
-    end
-    $display("=============== END OF SIMULATION ===============");
-
-    $finish;
-endtask
-
+`ifdef MODEL_MEM
 task magic_export_ofmap();
 
     // Magically export of the ofmap without actual readout
+    input string output_file_name;
 
     int a;
     int fd;
@@ -760,9 +612,9 @@ task magic_export_ofmap();
 
     ofmap_size = cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;
 
-    $display("Exporting ofmap at time %t", $time);
+    $display("Exporting ofmap to file %s at time %t", {output_path,output_file_name,".txt"}, $time);
 
-    fd = $fopen({output_path,"hw_ofmap_magic",".txt"},"w");
+    fd = $fopen({output_path,output_file_name,".txt"},"w");
     for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
@@ -775,6 +627,37 @@ task magic_export_ofmap();
     end
 
 endtask
+
+// Address by 4-byte word
+task check_acts();
+    int ptr;
+    int word;
+    ptr = u_qr_acc_top.u_qracc_controller.ifmap_start_addr;
+
+    $display("Checking activations at time %t", $time);
+    for (i=0;i<ifmap.size*4;i=i+4) begin
+        if (i%16 == 0) begin
+            $write("\n");
+            $write("[%d]:\t",i);
+        end else begin
+            $write("\t");
+        end
+        
+        word = {u_qr_acc_top.u_activation_buffer.mem[ptr + i], 
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 1],
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 2],
+                u_qr_acc_top.u_activation_buffer.mem[ptr + i + 3]};
+        
+        $write("%h\t",word);
+        if (word != ifmap.array[i >> 2]) begin
+            $write(" != %h",ifmap.array[i >> 2]);
+            errcnt++;
+        end
+    end
+    $write("\n");
+endtask
+
+`endif // MODEL_MEM
 
 task export_l2();
 
@@ -793,6 +676,290 @@ task export_l2();
 
 endtask
 
+`endif // POST_SYNTH
+
+task start_sim();
+
+    // errcnt = 0;
+
+    // SRAM_COLS must be multiple of 32
+    if (qrAccInputElements % 32 != 0) begin
+        $display("Error: SRAM_COLS must be multiple of 32");
+        $finish;
+    end
+
+    bus_req.wen = 0;
+    bus_req.valid = 0;
+    bus_req.addr = 0;
+    bus_req.data_in = 0;
+
+    $display("=============== STARTING SIMULATION ===============");
+    nrst = 0;
+    #(CLK_PERIOD*2);
+    nrst = 1;
+    #(CLK_PERIOD*2);
+endtask
+
+task bus_write_loop();
+
+    int fd;
+    int data;
+    int addr;
+    int i;
+    string node_name;
+    qracc_trigger_t trigger_type;
+    string command;
+    fd = $fopen({files_path,"commands.txt"},"r");
+    
+    $display("=========== BUS COMMAND LOOP ============");
+    if (fd == 0) begin
+        $display("Error opening commands file");
+        $finish;
+    end
+
+    while (!$feof(fd)) begin
+        $fscanf(fd,"%s", command);
+        case(command)
+            "INFO": begin
+                `ifdef TRACK_STATISTICS
+                // Save statistics of the previous node
+                if (node_name != "") begin
+                    append_stats_to_csv({output_path,"qracc_statistics",".csv"},node_name);
+                    reset_statistics();
+                end
+                `endif
+                $display("=== NODE INFORMATION ===");
+                $fscanf(fd,"\n%s", node_name);
+                // $fgets(node_name, fd);
+                $display("Node Name: %s", node_name);
+                do begin
+                    $fgets(command, fd);
+                    $write("%s ", command);
+                end while (command != "ENDINFO\n");
+                $display("=== END OF NODE INFORMATION ===");
+            end
+            "LOAD": begin
+                $fscanf(fd,"%h %h",addr,data);
+
+                trigger_type = qracc_trigger_t'(data[2:0]);
+
+                if ((addr & 32'hFFFF_FFF0)== 32'h0000_0010) begin
+                    if (data[2:0] != TRIGGER_IDLE) begin
+                        $display("Triggering QRAcc with command: %s", trigger_type.name());
+                    end
+                end
+                if (addr == 32'h0000_0011) begin
+                    adc_ref_range_shifts = data[7:4];
+                end
+
+                // casex(addr)
+                //     32'h0000_001x: $write("Writing to CSR: %h = %h", addr, data);
+                //     32'h0000_0100: $write("Writing to QRAcc: %h = %h", addr, data);
+                //     default: $write("Writing to unknown address: %h = %h", addr, data);
+                // endcase
+                bus_req.addr = addr;
+                bus_req.data_in = data;
+                bus_req.valid = 1;
+                bus_req.wen = 1;
+                if(!$feof(fd)) begin
+                    while (!bus_resp.ready) begin 
+                        #(CLK_PERIOD);
+                        // $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    // $write("\tDONE\n");
+                    bus_req.valid = 0;
+                    // status_checkup();
+                end
+            end
+            "WAITBUSY": begin
+                $display("Waiting for QRAcc Computation, time:", $time);
+                $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
+                `ifdef NOTPLITZTRACK
+                wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
+                `else
+                display_config();
+                track_toeplitz();
+                `endif
+                `ifdef SNOOP_OFMAP
+                magic_export_ofmap(node_name);
+                `endif
+            end
+            "WAITREAD": begin
+                // Wait for reads to finish
+                $display("Waiting for QRAcc Readout, time:", $time);
+                // $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
+                i = 0;
+                l2_mem_enable = 1;
+                for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
+                    bus_req.addr = QRACC_MAIN_ADDR;
+                    bus_req.valid = 1;
+                    bus_req.wen = 0;
+                    while (!bus_resp.ready) begin 
+                        #(CLK_PERIOD);
+                        i++;
+                        $write(".");
+                    end
+                    #(CLK_PERIOD);
+                    i++;
+                end
+                l2_mem_enable = 0;
+                $display("\nQRAcc is ready after %d cycles, time: ", i, $time);
+            end
+            "END": begin
+                $write("Ending bus write loop\n");
+                break;
+            end
+        endcase
+    end
+
+    $write("\n");
+    $display("=========== END OF BUS WRITE LOOP ============");
+
+endtask
+
+task wait_busy_silent();
+
+    input int addr;
+    int i;
+    $display("Waiting for QRAcc to be ready, time:", $time);
+    i = 0;
+    do begin
+        bus_req.addr = addr; // CSR_REG_MAIN
+        bus_req.valid = 1;
+        bus_req.wen = 0;
+        // $display("%h",bus_resp.data_out);
+        while (!bus_resp.ready) begin 
+            #(CLK_PERIOD);
+            i++;
+            // $write(".");
+        end
+        #(CLK_PERIOD);
+        i++;
+    end while (bus_resp.data_out[4] == 1); // QRACC IS BUSY 
+    $display("\nQRAcc is ready after %d cycles, time:", i,$time);
+endtask
+
+task end_sim();
+    if (errcnt == 0) begin
+        $display("TEST SUCCESS");
+    end else begin
+        $display("TEST FAILED - ERRORS: %d",errcnt);
+    end
+    $display("=============== END OF SIMULATION ===============");
+
+    $finish;
+endtask
+
+
+// ========================= STATISTICS TRACKING SECTION =========================
+
+// This function is accessed by the other tasks, so it's outside the `ifdef TRACK_STATISTICS block
+task export_statistics();
+
+    int fd;
+    fd = $fopen({output_path,"statistics.txt"},"w");
+    
+    if (fd == 0) begin
+        $display("Error opening statistics file");
+        return;
+    end
+
+    // Write the statistics to the file
+    
+    $fclose(fd);
+endtask
+
+`ifdef TRACK_STATISTICS
+
+// A bunch of watcher modules to track the statistics
+initial begin
+    reset_statistics();
+end
+
+`endif
+
+// ========================= STATISTICS TRACKING SECTION =========================
+
+
+// ========================= SAIF TRACKING SECTION ==========================
+
+`ifdef POST_SYNTH
+`ifdef SYNOPSYS
+
+// SAIF tracking variables
+logic [31:0] saif_state_counter = 0;
+logic [31:0] previous_state;
+logic [31:0] current_state;
+logic saif_initialized = 0;
+string saif_filename;
+
+// Task to start SAIF recording for a specific state
+task start_saif_recording(input string state_name);
+    saif_filename = $sformatf("%s/saif_%s_%0d.saif", output_path, state_name, saif_state_counter);
+    $display("Starting SAIF recording for state %s at time %t", state_name, $time);
+    $display("SAIF file: %s", saif_filename);
+    
+    // Start SAIF recording
+    $set_toggle_region(tb_qracc_top.u_qr_acc_top);
+    $toggle_start();
+    // $toggle_reset();
+endtask
+
+// Task to stop SAIF recording and export file
+task stop_saif_recording(input string state_name);
+    $display("Stopping SAIF recording for state %s at time %t", state_name, $time);
+    
+    // Stop SAIF recording and dump to file
+    $toggle_stop();
+    $toggle_report(saif_filename, 1.0e-9, tb_qracc_top.u_qr_acc_top);
+    $toggle_reset();
+    
+    saif_state_counter++;
+endtask
+
+task restart_saif_recording(input string state_name);
+    saif_filename = $sformatf("%s/saif_%s_%0d.saif", output_path, state_name, saif_state_counter);
+    $display("Restarting SAIF recording for state %s at time %t", state_name, $time);    
+    $toggle_start();
+endtask
+
+// Monitor QRAcc controller state changes
+always @(posedge clk) begin
+    if (!nrst) begin
+        saif_initialized <= 0;
+        saif_state_counter <= 0;
+        previous_state <= 0;
+        current_state <= 0;
+    end else begin
+        current_state <= u_qr_acc_top.u_qracc_controller.csr_main_internal_state;
+        
+        if (!saif_initialized) begin
+            previous_state <= current_state;
+            saif_initialized <= 1;
+            start_saif_recording($sformatf("state_%0d", current_state));
+        end else if (current_state != previous_state) begin
+            // State changed - stop current recording and start new one
+            stop_saif_recording($sformatf("state_%0d", previous_state));
+            restart_saif_recording($sformatf("state_%0d", current_state));
+            previous_state <= current_state;
+        end
+    end
+end
+
+// Final SAIF export at end of simulation
+final begin
+    if (saif_initialized) begin
+        stop_saif_recording($sformatf("state_%0d", current_state));
+        $display("Final SAIF recording completed. Total state recordings: %0d", saif_state_counter);
+    end
+end
+
+`endif
+`endif
+
+// ========================= END SAIF TRACKING SECTION ==========================
+
 initial begin
     $display("=============== TESTBENCH START ===============");
 
@@ -805,12 +972,16 @@ initial begin
     biases = new("biases");
     `endif // NOIOFILES
 
+    #(2.5);
+
     start_sim();
 
     bus_write_loop();
-
+    
     `ifndef NOIOFILES
+    `ifndef POST_SYNTH
     export_l2();
+    `endif // POST_SYNTH
     `endif // NOIOFILES
 
     end_sim();

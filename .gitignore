@@ -21,3 +21,4 @@ ams*
 *scratch*
 tb/*/*outputs*
 *.svg
+results/*

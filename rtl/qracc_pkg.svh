@@ -1,25 +1,38 @@
 `timescale 1ns/1ps
 
-`include "qracc_params.svh"
+// `include "qracc_params.svh"
 
 `ifndef QRACC_PKG // evil hack for linting again
 `define QRACC_PKG
-
 package qracc_pkg;
 
+    // // QRAcc Parameters
+    // parameter numRows = `SRAM_ROWS;
+    // parameter numCols    = 32;
+    // parameter numAdcBits = 4;
+    // parameter compCount  = (2**numAdcBits)-1;
+    // parameter numCfgBits = 8;
+    // parameter numBanks   = `SRAM_COLS/numCols;
+    // parameter outputElements = `SRAM_COLS;
+    
+    //   // Output Scaler Parameters
+    // parameter accumulatorBits = 16;
+    // parameter outputBits      = `QRACC_OUTPUT_BITS;
+    // parameter inputBits       = `QRACC_INPUT_BITS;
+
     // QRAcc Parameters
-    parameter numRows = `SRAM_ROWS;
+    parameter numRows = 256;
     parameter numCols    = 32;
     parameter numAdcBits = 4;
     parameter compCount  = (2**numAdcBits)-1;
     parameter numCfgBits = 8;
-    parameter numBanks   = `SRAM_COLS/numCols;
-    parameter outputElements = `SRAM_COLS;
+    parameter numBanks   = 256/numCols;
+    parameter outputElements = 256;
     
       // Output Scaler Parameters
     parameter accumulatorBits = 16;
-    parameter outputBits      = `QRACC_OUTPUT_BITS;
-    parameter inputBits       = `QRACC_INPUT_BITS;
+    parameter outputBits      = 8;
+    parameter inputBits       = 8;
 
     // Trigger Values
     typedef enum logic [2:0] {
@@ -77,6 +90,7 @@ package qracc_pkg;
         // 5 - csr_main_inst_write_mode = 1 if writing instructions
         // 7:5 - free
         // 11:8 - csr_main_internal_state = state_q of qracc_controller
+        logic preserve_ifmap; // 12
 
         // CSR 1: Config
         logic binary_cfg;                       // 0 - binary or bipolar mode, binary if 1
@@ -139,7 +153,7 @@ package qracc_pkg;
         logic CLK;
     } to_column_analog_t;
 
-    typedef struct {
+    typedef struct packed {
         // SWITCH MATRIX
         logic [numRows-1:0] PSM_VDR_SEL;
         logic [numRows-1:0] PSM_VDR_SELB;
@@ -175,7 +189,7 @@ package qracc_pkg;
         logic CLK;
     } to_analog_t;
 
-    typedef struct {
+    typedef struct packed {
         logic [numCols-1:0] SA_OUT;
         logic [compCount*outputElements-1:0] ADC_OUT;
     } from_analog_t;
@@ -200,88 +214,144 @@ package qracc_pkg;
         I_WRITE_CONFIG = 4'b0011
     } qracc_inst_t; // NEEDS OVERHAUL FOR MICROCODE LOOP
 
+    // STATISTICS BROKERS
 
+    typedef struct packed {
+        int statActmemExtPortReads;
+        int statActmemExtPortWrites;
+        int statActmemIntPortReads;
+        int statActmemIntPortWrites;
+
+        int statFLReads;
+        int statFLWrites;
+
+        int statSeqAccWeightWrites;
+        int statSeqAccOperations;
+        int statSeqAccMacs;
+
+        int statWQWrites;
+        int statWQReads;
+
+        int cyclesIdle;
+        int cyclesLoadActivation;
+        int cyclesLoadScaler;
+        int cyclesLoadWeights;
+        int cyclesComputeAnalog;
+        int cyclesReadActivation;
+        int cyclesLoadBias;
+        int cyclesComputeDigital;
+        int cyclesLoadWeightsDigital;
+
+    } qracc_statistics_t;
+
+    `ifdef TRACK_STATISTICS
+    qracc_statistics_t stats;
+
+    task reset_statistics();
+        stats = 0;
+    endtask
+    
+    // Task to write statistics to file
+    task write_stats_to_file(string filename);
+        int file_handle;
+        file_handle = $fopen(filename, "w");
+        if (file_handle) begin
+            $fwrite(file_handle, "QRAcc Statistics Report\n");
+            $fwrite(file_handle, "========================\n");
+            $fwrite(file_handle, "Activation Memory Statistics:\n");
+            $fwrite(file_handle, "  External Port Reads:  %0d\n", stats.statActmemExtPortReads);
+            $fwrite(file_handle, "  External Port Writes: %0d\n", stats.statActmemExtPortWrites);
+            $fwrite(file_handle, "  Internal Port Reads:  %0d\n", stats.statActmemIntPortReads);
+            $fwrite(file_handle, "  Internal Port Writes: %0d\n", stats.statActmemIntPortWrites);
+            $fwrite(file_handle, "\nFeature Loader Statistics:\n");
+            $fwrite(file_handle, "  FL Reads:  %0d\n", stats.statFLReads);
+            $fwrite(file_handle, "  FL Writes: %0d\n", stats.statFLWrites);
+            $fwrite(file_handle, "\nSequential Accelerator Statistics:\n");
+            $fwrite(file_handle, "  Weight Writes: %0d\n", stats.statSeqAccWeightWrites);
+            $fwrite(file_handle, "  Operations:    %0d\n", stats.statSeqAccOperations);
+            $fwrite(file_handle, "  MACs:          %0d\n", stats.statSeqAccMacs);
+            $fwrite(file_handle, "\nWeight Queue Statistics:\n");
+            $fwrite(file_handle, "  WQ Writes: %0d\n", stats.statWQWrites);
+            $fwrite(file_handle, "  WQ Reads:  %0d\n", stats.statWQReads);
+            $fwrite(file_handle, "\nCycle Count Statistics:\n");
+            $fwrite(file_handle, "  Idle:                   %0d\n", stats.cyclesIdle);
+            $fwrite(file_handle, "  Load Activation:        %0d\n", stats.cyclesLoadActivation);
+            $fwrite(file_handle, "  Load Scaler:            %0d\n", stats.cyclesLoadScaler);
+            $fwrite(file_handle, "  Load Weights:           %0d\n", stats.cyclesLoadWeights);
+            $fwrite(file_handle, "  Compute Analog:         %0d\n", stats.cyclesComputeAnalog);
+            $fwrite(file_handle, "  Read Activation:        %0d\n", stats.cyclesReadActivation);
+            $fwrite(file_handle, "  Load Bias:              %0d\n", stats.cyclesLoadBias);
+            $fwrite(file_handle, "  Compute Digital:        %0d\n", stats.cyclesComputeDigital);
+            $fwrite(file_handle, "  Load Weights Digital:   %0d\n", stats.cyclesLoadWeightsDigital);
+            $fclose(file_handle);
+            $display("Statistics written to file: %s", filename);
+        end else begin
+            $error("Could not open file %s for writing", filename);
+        end
+    endtask
+    
+    // Task to append statistics to CSV file for analysis
+    task append_stats_to_csv(string filename, string event_name);
+        int file_handle;
+        static bit header_written = 0;
+        
+        if (!header_written) begin
+            file_handle = $fopen(filename, "w");
+            if (file_handle) begin
+                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,SeqAccMacs,WQWrites,WQReads,cyclesIdle,cyclesLoadActivation,cyclesLoadScaler,cyclesLoadWeights,cyclesComputeAnalog,cyclesReadActivation,cyclesLoadBias,cyclesComputeDigital,cyclesLoadWeightsDigital\n");
+                $fclose(file_handle);
+                header_written = 1;
+            end
+        end
+        
+        file_handle = $fopen(filename, "a");
+        if (file_handle) begin
+            $fwrite(file_handle, "%s,%t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
+                    event_name, 
+                    $time,
+                    stats.statActmemExtPortReads,
+                    stats.statActmemExtPortWrites,
+                    stats.statActmemIntPortReads,
+                    stats.statActmemIntPortWrites,
+                    stats.statFLReads, // There's actually no such thing
+                    stats.statFLWrites,
+                    stats.statSeqAccWeightWrites,
+                    stats.statSeqAccOperations,
+                    stats.statSeqAccMacs,
+                    stats.statWQWrites,
+                    stats.statWQReads,
+                    stats.cyclesIdle,
+                    stats.cyclesLoadActivation,
+                    stats.cyclesLoadScaler,
+                    stats.cyclesLoadWeights,
+                    stats.cyclesComputeAnalog,
+                    stats.cyclesReadActivation,
+                    stats.cyclesLoadBias,
+                    stats.cyclesComputeDigital,
+                    stats.cyclesLoadWeightsDigital);
+            $fclose(file_handle);
+        end else begin
+            $error("Could not open file %s for appending", filename);
+        end
+    endtask
+
+    `endif // TRACK STATISTICS
+
+    // END STATISTICS BROKERS
+
+    // Bus Interface Structs
+    typedef struct packed {
+        logic [31:0] data_in;
+        logic [31:0] addr;
+        logic wen;
+        logic valid;
+    } bus_req_t;
+
+    typedef struct packed {
+        logic ready;
+        logic [31:0] data_out;
+        logic rd_data_valid;
+    } bus_resp_t;
 
 endpackage
-
-interface qracc_ctrl_interface #( // Generic control interface
-);    
-
-    logic [31:0] data;
-    logic [31:0] read_data;
-    logic [31:0] addr;
-    logic wen;
-    logic valid;
-    logic ready;
-
-    modport slave (
-        input data, addr, wen, valid,
-        output ready, read_data
-    );
-
-    modport master (
-        output data, addr, wen, valid,
-        input ready, read_data
-    );
-
-endinterface // qracc_ctrl_interface
-
-interface qracc_data_interface #( // Generic data interface
-);
-
-    logic [31:0] data_in;
-    logic [31:0] data_out;
-    logic [31:0] addr;
-    logic wen;
-    logic valid;
-    logic rd_data_valid;
-    logic ready;
-
-    modport slave (
-        input data_in, addr, wen, valid,
-        output ready, data_out, rd_data_valid
-    );
-
-    modport master (
-        output data_in, addr, wen, valid,
-        input ready, data_out, rd_data_valid
-    );
-
-endinterface // qracc_data_interface
-
-interface sram_itf #(
-    parameter numRows = 128,
-    parameter numCols = 32
-);
-    // DIGITAL INTERFACE: SRAM
-    logic rq_wr_i; // write or read request
-    logic rq_valid_i; // request is valid
-    logic rq_ready_o; // if ready and valid; request is taken
-    logic rd_valid_o; // once asserted; rdata is valid for read requests
-    logic [numCols-1:0] rd_data_o;
-    logic [numCols-1:0] wr_data_i;
-    logic [$clog2(numRows)-1:0] addr_i;
-
-    modport slave (
-        input rq_wr_i, // write or read request
-        input rq_valid_i, // request is valid
-        output rq_ready_o, // if ready and valid; request is taken
-        output rd_valid_o, // once asserted; rdata is valid for read requests
-        output rd_data_o,
-        input wr_data_i,
-        input addr_i
-    );
-
-    modport master (
-        output rq_wr_i, // write or read request
-        output rq_valid_i, // request is valid
-        input rq_ready_o, // if ready and valid; request is taken
-        input rd_valid_o, // once asserted; rdata is valid for read requests
-        input rd_data_o,
-        output wr_data_i,
-        output addr_i
-    );
-
-endinterface //sram_itf
-
 `endif

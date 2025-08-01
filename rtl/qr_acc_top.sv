@@ -21,17 +21,17 @@ module qr_acc_top #(
     // parameter numCsr = 4,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = `QRACC_INPUT_BITS,
-    parameter qrAccInputElements = `SRAM_ROWS,
-    parameter qrAccOutputBits = `QRACC_OUTPUT_BITS,
-    parameter qrAccOutputElements = `SRAM_COLS,
+    parameter qrAccInputBits = 8,
+    parameter qrAccInputElements = 256,
+    parameter qrAccOutputBits = 8,
+    parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
 
     //  Parameters: Per Bank
-    parameter numRows = `SRAM_ROWS,
+    parameter numRows = 256,
     parameter numCols = 32,
-    parameter numBanks = `SRAM_COLS/numCols,
+    parameter numBanks = 256/numCols,
 
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**8,
@@ -57,7 +57,8 @@ module qr_acc_top #(
     input clk, nrst,
 
     // Control Interface
-    qracc_data_interface bus_i, 
+    input bus_req_t bus_req_i,
+    output bus_resp_t bus_resp_o,
 
     // Analog passthrough signals
     output to_analog_t to_analog,
@@ -86,15 +87,25 @@ logic csr_main_busy;
 logic csr_main_inst_write_mode;
 logic [3:0] csr_main_internal_state;
 qracc_trigger_t csr_main_trigger;
-logic [31:0] csr_rd_data;
+
+// Bus signals
+bus_resp_t csr_bus_resp;
+bus_resp_t controller_bus_resp;
 
 // Signals : QRAcc
 logic [qrAccInputElements-1:0][qrAccInputBits-1:0] qracc_mac_data;
 logic qracc_output_valid;
 logic [qrAccOutputElements-1:0][qrAccAccumulatorBits-1:0] qracc_mac_output;
 logic qracc_ready;
-to_sram_t to_sram;
-from_sram_t from_sram; // no need to touch this for now, can use it later to read from sram
+
+// SRAM Signals
+logic to_sram_rq_wr;
+logic to_sram_rq_valid;
+logic [numCols-1:0] to_sram_wr_data;
+logic [$clog2(numRows)-1:0] to_sram_addr;
+logic from_sram_rq_ready;
+logic from_sram_rd_valid;
+logic [numCols-1:0] from_sram_rd_data;
 
 // Signals : Activation Buffer
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
@@ -113,6 +124,10 @@ logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_outpu
 
 logic csr_rd_data_valid;
 
+logic wsacc_data_o_valid;
+logic [wsAccNumPes-1:0][qrAccAccumulatorBits-1:0] wsacc_data_o;
+logic [wsAccNumPes-1:0][wsAccWindowElements-1:0][qrAccInputBits-1:0] wsacc_data_i;
+
 //-----------------------------------
 // Modules
 //-----------------------------------
@@ -124,15 +139,15 @@ qracc_csr #(
 ) u_csr (
     .clk                        (clk),
     .nrst                       (nrst),
-    .bus_i                      (bus_i.slave),
+    .bus_req_i                  (bus_req_i),
+    .bus_resp_o                 (csr_bus_resp),
     .cfg_o                      (cfg),
-    .csr_rd_data_o              (csr_rd_data),
-    .csr_rd_data_valid_o        (csr_rd_data_valid),
     .csr_main_clear             (csr_main_clear),
     .csr_main_trigger           (csr_main_trigger),
     .csr_main_busy              (csr_main_busy),
     .csr_main_inst_write_mode   (csr_main_inst_write_mode),
-    .csr_main_internal_state    (csr_main_internal_state)
+    .csr_main_internal_state    (csr_main_internal_state),
+    .csr_rd_data_valid_o        (csr_rd_data_valid)
 );
 
 qracc_controller #(
@@ -144,11 +159,17 @@ qracc_controller #(
     .clk                        (clk),
     .nrst                       (nrst),
 
-    .bus_i                      (bus_i.slave),
+    .bus_req_i                  (bus_req_i),
+    .bus_resp_o                 (controller_bus_resp),
 
     .ctrl_o                     (qracc_ctrl),
-    .to_sram                    (to_sram),
-    .from_sram                  (from_sram),
+    .to_sram_rq_wr              (to_sram_rq_wr),
+    .to_sram_rq_valid           (to_sram_rq_valid),
+    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_addr               (to_sram_addr),
+    .from_sram_rq_ready         (from_sram_rq_ready),
+    .from_sram_rd_valid         (from_sram_rd_valid),
+    .from_sram_rd_data          (from_sram_rd_data),
     .bank_select                (bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
@@ -193,13 +214,16 @@ seq_acc #(
     // Passthrough Signals
     .to_analog_o    (to_analog),
     .from_analog_i  (from_analog),
-    .from_sram      (from_sram),
-    .to_sram        (to_sram)
-);
 
-logic wsacc_data_o_valid;
-logic [wsAccNumPes-1:0][qrAccAccumulatorBits-1:0] wsacc_data_o;
-logic [wsAccNumPes-1:0][wsAccWindowElements-1:0][qrAccInputBits-1:0] wsacc_data_i;
+    // SRAM
+    .to_sram_rq_wr              (to_sram_rq_wr),
+    .to_sram_rq_valid           (to_sram_rq_valid),
+    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_addr               (to_sram_addr),
+    .from_sram_rq_ready         (from_sram_rq_ready),
+    .from_sram_rd_valid         (from_sram_rd_valid),
+    .from_sram_rd_data          (from_sram_rd_data)
+);
 
 always_comb begin : wsAccDataOrientation
     // Orient the data for the WSAcc PE cluster
@@ -209,6 +233,10 @@ always_comb begin : wsAccDataOrientation
         end
     end
 end
+
+logic wsacc_o_ready;
+assign wsacc_o_ready = 1;
+
 wsacc_pe_cluster #(
     .numPes(wsAccNumPes),
     .windowElements(wsAccWindowElements),
@@ -218,32 +246,35 @@ wsacc_pe_cluster #(
     .nrst(nrst),
     .data_i(wsacc_data_i),
     .data_i_valid(qracc_ctrl.wsacc_data_i_valid),
-    .data_i_ready('0), // wsacc_pe_cluster will never stall in this system i just added it for fun
+    .data_i_ready(), // wsacc_pe_cluster will never stall in this system i just added it for fun
     
-    .weight_itf_i(bus_i.data_in),
+    .weight_itf_i(bus_req_i.data_in),
     .weight_itf_i_valid(qracc_ctrl.wsacc_weight_itf_i_valid),
     .weight_writing_done(),
 
     .data_o(wsacc_data_o),
     .data_o_valid(wsacc_data_o_valid),
-    .data_o_ready(data_o_ready)
+    .data_o_ready(wsacc_o_ready)
 );
 
 // Main feature map buffer
 localparam oscalerOutputSize = qrAccOutputBits*qrAccOutputElements;
 localparam oscalerExtendBits = globalBufferIntInterfaceWidth - oscalerOutputSize;
+logic activation_buffer_wr_ready;
+
+`ifdef MODEL_MEM
 ram_2w2r #(
     .dataSize           (globalBufferDataSize),
     .depth              (globalBufferDepth),
     .addrWidth          (globalBufferAddrWidth),
     .interfaceWidth1    (globalBufferExtInterfaceWidth),
     .interfaceWidth2    (globalBufferIntInterfaceWidth)
-) u_activation_buffer (
+) u_activation_buffer    (
     .clk                (clk),
     .nrst               (nrst),
     
     // External Interface
-    .wr_data_1_i        (bus_i.data_in),
+    .wr_data_1_i        (bus_req_i.data_in),
     .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
     .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
     .rd_data_1_o        (abuf_rd_data),
@@ -258,6 +289,36 @@ ram_2w2r #(
     .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
     .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en)
 );
+assign activation_buffer_wr_ready = 1;
+`else // MODEL_MEM
+activation_buffer #(
+    .dataSize           (globalBufferDataSize),
+    .addrWidth          (globalBufferAddrWidth),
+    .interfaceWidth1    (globalBufferExtInterfaceWidth),
+    .interfaceWidth2    (globalBufferIntInterfaceWidth)
+) u_activation_buffer (
+    .clk                (clk),
+    .nrst               (nrst),
+    
+    // External Interface
+    .wr_data_1_i        (bus_req_i.data_in),
+    .wr_en_1_i          (qracc_ctrl.activation_buffer_ext_wr_en),
+    .wr_addr_1_i        (qracc_ctrl.activation_buffer_ext_wr_addr),
+    .rd_data_1_o        (abuf_rd_data),
+    .rd_addr_1_i        (qracc_ctrl.activation_buffer_ext_rd_addr),
+    .rd_en_1_i          (qracc_ctrl.activation_buffer_ext_rd_en),
+
+    // Internal Interface
+    .wr_data_2_i       (activation_buffer_int_wr_data),
+    .wr_en_2_i         (int_write_queue_valid_out),
+    .wr_addr_2_i       (activation_buffer_int_wr_addr),
+    .rd_data_2_o       (activation_buffer_rd_data),
+    .rd_addr_2_i       (qracc_ctrl.activation_buffer_int_rd_addr),
+    .rd_en_2_i         (qracc_ctrl.activation_buffer_int_rd_en),
+
+    .wr_ready_o        (activation_buffer_wr_ready) // Ready signal for external interface
+);
+`endif // MODEL_MEM
 
 // Padder - implements hardware padding
 padder #(
@@ -319,16 +380,16 @@ output_scaler_set #(
     .y_o            (output_scaler_output),
 
     .scale_w_en_i   (qracc_ctrl.output_scaler_scale_w_en),
-    .scale_w_data_i (bus_i.data_in[4+:16]),
+    .scale_w_data_i (bus_req_i.data_in[4+:16]),
 
     .shift_w_en_i   (qracc_ctrl.output_scaler_shift_w_en),
-    .shift_w_data_i (bus_i.data_in[3:0]),
+    .shift_w_data_i (bus_req_i.data_in[3:0]),
     
     .offset_w_en_i   (qracc_ctrl.output_scaler_offset_w_en),
-    .offset_w_data_i (bus_i.data_in[20+:8]),
+    .offset_w_data_i (bus_req_i.data_in[20+:8]),
 
     .bias_w_en_i    (qracc_ctrl.output_bias_w_en),
-    .bias_w_data_i  (bus_i.data_in[31:0]),
+    .bias_w_data_i  (bus_req_i.data_in[31:0]),
 
     .cfg_unsigned   (cfg.unsigned_acts),
     .cfg_output_bits(cfg.n_output_bits_cfg)
@@ -369,7 +430,7 @@ piso_write_queue #(
     .data_in        (aligned_output_scaler_output), // must always be equal to numBanks * oscalerOutputSize
     .addr_in        (piso_write_queue_addr_in),
     .valid_in       (piso_write_queue_valid_in),
-    .ready_out      (), // Not connected since writing to internal interface
+    .ready_out      (activation_buffer_wr_ready),
 
     .addr_out       (activation_buffer_int_wr_addr), // Writing to internal interface
     .data_out       (activation_buffer_int_wr_data), // Writing to internal interface
@@ -378,20 +439,13 @@ piso_write_queue #(
 
 // Manage bus output
 always_comb begin : busOutputManage
-    
-    case(bus_i.addr & 32'hFFFF_FFF0) // Mask for base address
-        csrBaseAddr: begin
-            // CSR Read Data
-            bus_i.data_out = csr_rd_data;
-        end
-        accBaseAddr: begin
-            // QRAcc Output Data
-            bus_i.data_out = abuf_rd_data;
-        end
-        default: begin
-            bus_i.data_out = '0; // Default case, return zero
-        end
-    endcase
+    if ((bus_req_i.addr & 32'hFFFF_FFF0) == csrBaseAddr) begin
+        // CSR Base Address
+        bus_resp_o = csr_bus_resp;
+    end else begin
+        bus_resp_o = controller_bus_resp;
+        bus_resp_o.data_out = abuf_rd_data; // Read from activation buffer
+    end
 end
 
 endmodule

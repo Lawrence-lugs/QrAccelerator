@@ -36,8 +36,14 @@ module seq_acc #(
     output to_analog_t to_analog_o,
     input from_analog_t from_analog_i,
     
-    output from_sram_t from_sram,
-    input to_sram_t to_sram
+    // SRAM signals
+    input to_sram_rq_wr,
+    input to_sram_rq_valid,
+    input [numCols-1:0] to_sram_wr_data,
+    input [$clog2(numRows)-1:0] to_sram_addr,
+    output logic from_sram_rq_ready,
+    output logic from_sram_rd_valid,
+    output logic [numCols-1:0] from_sram_rd_data
 );
 
 // Parameters
@@ -84,8 +90,13 @@ qr_acc_wrapper #(
     .data_n_i(data_n_i),
 
     // DIGITAL INTERFACE: SRAM
-    .from_sram(from_sram),
-    .to_sram(to_sram)
+    .to_sram_rq_wr              (to_sram_rq_wr),
+    .to_sram_rq_valid           (to_sram_rq_valid),
+    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_addr               (to_sram_addr),
+    .from_sram_rq_ready         (from_sram_rq_ready),
+    .from_sram_rd_valid         (from_sram_rd_valid),
+    .from_sram_rd_data          (from_sram_rd_data)
 );
 
 twos_to_bipolar #(
@@ -107,6 +118,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
         piso_buffer_p_q <= '0;
     end else begin
         if (mac_valid_i && ready_o) begin
+            `ifdef TRACK_STATISTICS
+            stats.statSeqAccOperations++;
+            `endif
             piso_buffer_n_q <= piso_buffer_n_d;
             piso_buffer_p_q <= piso_buffer_p_d;
         end else begin

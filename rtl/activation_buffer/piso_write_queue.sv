@@ -1,6 +1,8 @@
 // Write data_queue with parallel write and serial read
 `timescale 1ns / 1ps
 
+import qracc_pkg::*;
+
 module piso_write_queue #(
     parameter numParallelIn = 8,
     parameter writeInterfaceWidth = 32,
@@ -57,6 +59,11 @@ module piso_write_queue #(
         end else begin
             // Handle parallel write
             if (|valid_in && !queue_full) begin
+
+                `ifdef TRACK_STATISTICS
+                stats.statWQWrites += num_valids_this_cycle;
+                `endif
+
                 for (int i = 0 ; i < numParallelIn ; i++) begin
                     if (valid_in[i]) begin
                         data_queue[(write_ptr+i) % queueDepth] <= data_in[i];
@@ -68,6 +75,11 @@ module piso_write_queue #(
 
             // Handle serial read
             if (!queue_empty) begin
+                
+                `ifdef TRACK_STATISTICS
+                stats.statWQReads++;
+                `endif
+
                 read_ptr <= (read_ptr + 1) % queueDepth;
             end
             count <= count + num_valids_this_cycle - (queue_empty ? 0 : 1);
