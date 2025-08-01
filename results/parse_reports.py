@@ -24,10 +24,13 @@ def plot_power_pie(df,startangle: int = 140):
         df_plot = df_plot[~mask]
         df_plot = pd.concat([df_plot, pd.DataFrame([others_row])], ignore_index=True)
 
+        # Add linebreaks for spaces in labels
+    df_plot['label'] = df_plot['hierarchy_clean'].str.replace(' ', '\n')
+
     fig, ax = plt.subplots(figsize=(8, 4), dpi=300)
     wedges, texts, autotexts = plt.pie(
         df_plot['total_power'],
-        labels=df_plot['hierarchy_clean'],
+        labels=df_plot['label'],
         autopct='%1.1f%%',
         startangle=startangle,
         explode=[0.05]*len(df_plot),

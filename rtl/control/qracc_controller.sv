@@ -619,4 +619,22 @@ always_ff @( posedge clk or negedge nrst ) begin : scalerLogic
     end
 end
 
+`ifdef TRACK_STATISTICS
+always_ff @( posedge clk ) begin : statsTracker
+    // Statistics tracking
+    case(state_q)
+        S_IDLE:                  stats.cyclesIdle <= stats.cyclesIdle + 1;
+        S_LOADACTS:              stats.cyclesLoadActivation <= stats.cyclesLoadActivation + 1;
+        S_LOADSCALER:            stats.cyclesLoadScaler <= stats.cyclesLoadScaler + 1;
+        S_LOADWEIGHTS:           stats.cyclesLoadWeights <= stats.cyclesLoadWeights + 1;
+        S_COMPUTE_ANALOG:        stats.cyclesComputeAnalog <= stats.cyclesComputeAnalog + 1;
+        S_READACTS:              stats.cyclesReadActivation <= stats.cyclesReadActivation + 1;
+        S_LOADBIAS:              stats.cyclesLoadBias <= stats.cyclesLoadBias + 1;
+        S_COMPUTE_DIGITAL:       stats.cyclesComputeDigital <= stats.cyclesComputeDigital + 1;
+        S_LOAD_DIGITAL_WEIGHTS:  stats.cyclesLoadWeightsDigital <= stats.cyclesLoadWeightsDigital + 1;
+        default: ;
+    endcase
+end
+`endif // TRACK_STATISTICS
+
 endmodule

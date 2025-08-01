@@ -11,7 +11,7 @@ class QrAccNodeCode(object):
 
     def __init__(self, mapped_node : core.MappedQRAccNode, mapped_bin : core.MappedBin, ifmap, imc_core_size = (256,256), ws_core_size = 32, ifmap_bits = 8, ofmap_bits = 8, nx_model : onnx.ModelProto = None):
 
-        self.ifmap = ifmap if ifmap.ndim != 1 else ifmap.reshape((1, -1, 1, 1))
+        self.ifmap = ifmap if ifmap.ndim == 4 else ifmap.reshape((1, -1, 1, 1))
 
         self.ofmap_shape = infer_ofmap_shape(
             ifmap_shape=self.ifmap.shape,
@@ -44,7 +44,7 @@ class QrAccNodeCode(object):
         
         self.toeplitz = compute.toeplitzize_input(
             in_tensor = self.ifmap.squeeze(axis=0), # Remove batch dimension for toeplitz
-            ksize=mapped_node.kernel.shape[-1],
+            kernel_shape=mapped_node.kernel.shape,
             strides=mapped_node.strides,
             pads=mapped_node.pads,
             zero_point=mapped_node.x_zp,
@@ -495,13 +495,15 @@ def traverse_and_compile_nx_graph(
     imc_core_size: tuple = (256, 256),
     dwc_core_size: int = 32,
     until        : int = None,
-    starting     : int = 0
+    starting     : int = 0,
+    packer = None
 ):
     
     u_nx_mapping = core.NxModelMapping(
         nx_model,
         imc_core_size=imc_core_size,
-        dwc_core_size=dwc_core_size
+        dwc_core_size=dwc_core_size,
+        packer = packer
     )
 
     if until is None:

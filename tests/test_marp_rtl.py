@@ -1,7 +1,7 @@
 import numpy as np
 from tests.stim_lib.stimulus_gen import *
 from tests.stim_lib.compile import *
-from hwacctools.comp_graph import compute, cgraph, cnodes, core
+from hwacctools.comp_graph import compute, cgraph, cnodes, core, packer_utils as pu
 from hwacctools.onnx_tools import onnx_splitter
 import hwacctools.onnx_utils as onnx_utils
 import hwacctools.quantization.quant as quant
@@ -99,6 +99,7 @@ def test_qracc_with_onnx_single_node(
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
+        "MODEL_MEM": 1, # This only works with the model memory :D
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
@@ -238,14 +239,59 @@ def test_qracc_with_all_onnx_single_node(
     })
     snr_df.to_csv('snr_results.csv', index=False)
 
-def test_qracc_run_mbv2(
+@pytest.mark.parametrize(
+    "nx_model_and_name",
+    [
+        ("MBV2", onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx')),
+        ("ResNet", onnx.load('hwacc_design_garage/onnx_models/ic_quantized_int8.onnx')),
+        ("FCAE", onnx.load('hwacc_design_garage/onnx_models/ad_quantized_int8.onnx')),
+        ("DSCNN", onnx.load('hwacc_design_garage/onnx_models/ks_quantized_int8.onnx')),
+    ]
+)
+@pytest.mark.parametrize(
+    "packer_and_name",
+    [
+        ("Dense",rectpack.newPacker(
+            mode=rectpack.PackingMode.Offline,
+            # bin_algo=rectpack.PackingBin.BBF, 
+            rotation=False, 
+            pack_algo=rectpack.MaxRectsBssf
+        )),
+        ("Naive",pu.NaiveRectpackPacker(256,256, rotation=False)),
+        ("Tradeoff",rectpack.newPacker(
+            mode=rectpack.PackingMode.Online,
+            bin_algo=rectpack.PackingBin.BBF, 
+            rotation=False, 
+            pack_algo=rectpack.MaxRectsBssf
+        )),
+        ("Write Optimized",rectpack.newPacker(
+            mode=rectpack.PackingMode.Online,
+            bin_algo=rectpack.PackingBin.BNF, 
+            rotation=False, 
+            pack_algo=rectpack.MaxRectsBssf
+        )),
+    ]
+)
+def test_qracc_run_nx_model(
     simulator,
-    nx_model = onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx'),
+    nx_model_and_name,
+    packer_and_name,
     imc_core_size = (256,256),
     dwc_core_size = 32,
-    until = None      ,
-    starting = 0      ,
+    until = None,
+    starting = 0,
 ):    
+    model_name, nx_model = nx_model_and_name
+    packername, packer = packer_and_name
+
+    print('=' * 80)
+    print(f'QrAcc Running model {model_name} with packer {packername}')
+
+    print('=' * 80)
+
+    np.random.seed(0)  # For reproducibility
+    nx_model = onnx_utils.randomize_model_to_binary_weights(nx_model)
+    
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/activation_buffer/piso_write_queue.sv',
@@ -293,12 +339,23 @@ def test_qracc_run_mbv2(
         "NOIOFILES": 1, # Disable file I/O
         "SNOOP_OFMAP": 1, # Enable snooping of the output feature map
         "TRACK_STATISTICS": 1, # Enable tracking of statistics
+        "MODEL_MEM": 1, # This only works with the model memory :D
     }
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 
+    input_name = nx_model.graph.input[0].name
+    input_shape = [d.dim_value for d in nx_model.graph.input[0].type.tensor_type.shape.dim]
+
+    # If batch size > 1, set to 1
+    if input_shape[0] > 1:
+        nx_model.graph.input[0].type.tensor_type.shape.dim[0].dim_value = 1
+        input_shape[0] = 1
+
+    np.random.seed(0)
+    print(input_shape)
     input_dict = {
-        'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
+        input_name: np.random.rand(*input_shape).astype(np.float32)
     }
 
     commands = traverse_and_compile_nx_graph(
@@ -308,6 +365,7 @@ def test_qracc_run_mbv2(
         dwc_core_size = dwc_core_size,
         until         = until,
         starting      = starting,
+        packer        = packer
     )  
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
@@ -316,3 +374,11 @@ def test_qracc_run_mbv2(
 
     # Simulation
     run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
+
+    # Copy hw_output_path/qracc_statistics.csv to ../results/
+    os.makedirs('results', exist_ok=True)
+    stats_file = f'{hw_output_path}/qracc_statistics.csv'
+    stats_dest_name = f'results/qracc_statistics_{model_name}_{packername}.csv'
+    import shutil
+    shutil.copy(stats_file, stats_dest_name)
+        

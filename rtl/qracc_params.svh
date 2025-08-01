@@ -12,4 +12,5 @@
 `define NOIOFILES 1
 `define SNOOP_OFMAP 1
 `define TRACK_STATISTICS 1
+`define MODEL_MEM 1
 `endif // PARAMETERS_FILE

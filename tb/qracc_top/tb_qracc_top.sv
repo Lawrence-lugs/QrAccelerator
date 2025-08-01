@@ -721,6 +721,13 @@ task bus_write_loop();
         $fscanf(fd,"%s", command);
         case(command)
             "INFO": begin
+                `ifdef TRACK_STATISTICS
+                // Save statistics of the previous node
+                if (node_name != "") begin
+                    append_stats_to_csv({output_path,"qracc_statistics",".csv"},node_name);
+                    reset_statistics();
+                end
+                `endif
                 $display("=== NODE INFORMATION ===");
                 $fscanf(fd,"\n%s", node_name);
                 // $fgets(node_name, fd);
@@ -776,9 +783,6 @@ task bus_write_loop();
                 `endif
                 `ifdef SNOOP_OFMAP
                 magic_export_ofmap(node_name);
-                `endif
-                `ifdef TRACK_STATISTICS
-                append_stats_to_csv({output_path,"qracc_statistics",".csv"},node_name);
                 `endif
             end
             "WAITREAD": begin

@@ -231,6 +231,17 @@ package qracc_pkg;
 
         int statWQWrites;
         int statWQReads;
+
+        int cyclesIdle;
+        int cyclesLoadActivation;
+        int cyclesLoadScaler;
+        int cyclesLoadWeights;
+        int cyclesComputeAnalog;
+        int cyclesReadActivation;
+        int cyclesLoadBias;
+        int cyclesComputeDigital;
+        int cyclesLoadWeightsDigital;
+
     } qracc_statistics_t;
 
     `ifdef TRACK_STATISTICS
@@ -258,9 +269,20 @@ package qracc_pkg;
             $fwrite(file_handle, "\nSequential Accelerator Statistics:\n");
             $fwrite(file_handle, "  Weight Writes: %0d\n", stats.statSeqAccWeightWrites);
             $fwrite(file_handle, "  Operations:    %0d\n", stats.statSeqAccOperations);
+            $fwrite(file_handle, "  MACs:          %0d\n", stats.statSeqAccMacs);
             $fwrite(file_handle, "\nWeight Queue Statistics:\n");
             $fwrite(file_handle, "  WQ Writes: %0d\n", stats.statWQWrites);
             $fwrite(file_handle, "  WQ Reads:  %0d\n", stats.statWQReads);
+            $fwrite(file_handle, "\nCycle Count Statistics:\n");
+            $fwrite(file_handle, "  Idle:                   %0d\n", stats.cyclesIdle);
+            $fwrite(file_handle, "  Load Activation:        %0d\n", stats.cyclesLoadActivation);
+            $fwrite(file_handle, "  Load Scaler:            %0d\n", stats.cyclesLoadScaler);
+            $fwrite(file_handle, "  Load Weights:           %0d\n", stats.cyclesLoadWeights);
+            $fwrite(file_handle, "  Compute Analog:         %0d\n", stats.cyclesComputeAnalog);
+            $fwrite(file_handle, "  Read Activation:        %0d\n", stats.cyclesReadActivation);
+            $fwrite(file_handle, "  Load Bias:              %0d\n", stats.cyclesLoadBias);
+            $fwrite(file_handle, "  Compute Digital:        %0d\n", stats.cyclesComputeDigital);
+            $fwrite(file_handle, "  Load Weights Digital:   %0d\n", stats.cyclesLoadWeightsDigital);
             $fclose(file_handle);
             $display("Statistics written to file: %s", filename);
         end else begin
@@ -276,7 +298,7 @@ package qracc_pkg;
         if (!header_written) begin
             file_handle = $fopen(filename, "w");
             if (file_handle) begin
-                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,SeqAccMacs,WQWrites,WQReads\n");
+                $fwrite(file_handle, "EventName,Time,ActmemExtReads,ActmemExtWrites,ActmemIntReads,ActmemIntWrites,FLReads,FLWrites,SeqAccWeightWrites,SeqAccOperations,SeqAccMacs,WQWrites,WQReads,cyclesIdle,cyclesLoadActivation,cyclesLoadScaler,cyclesLoadWeights,cyclesComputeAnalog,cyclesReadActivation,cyclesLoadBias,cyclesComputeDigital,cyclesLoadWeightsDigital\n");
                 $fclose(file_handle);
                 header_written = 1;
             end
@@ -284,7 +306,7 @@ package qracc_pkg;
         
         file_handle = $fopen(filename, "a");
         if (file_handle) begin
-            $fwrite(file_handle, "%s,%t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
+            $fwrite(file_handle, "%s,%t,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n", 
                     event_name, 
                     $time,
                     stats.statActmemExtPortReads,
@@ -297,12 +319,22 @@ package qracc_pkg;
                     stats.statSeqAccOperations,
                     stats.statSeqAccMacs,
                     stats.statWQWrites,
-                    stats.statWQReads);
+                    stats.statWQReads,
+                    stats.cyclesIdle,
+                    stats.cyclesLoadActivation,
+                    stats.cyclesLoadScaler,
+                    stats.cyclesLoadWeights,
+                    stats.cyclesComputeAnalog,
+                    stats.cyclesReadActivation,
+                    stats.cyclesLoadBias,
+                    stats.cyclesComputeDigital,
+                    stats.cyclesLoadWeightsDigital);
             $fclose(file_handle);
         end else begin
             $error("Could not open file %s for appending", filename);
         end
     endtask
+
     `endif // TRACK STATISTICS
 
     // END STATISTICS BROKERS
