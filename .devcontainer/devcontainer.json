@@ -1,0 +1,22 @@
+{
+    "name": "QrAccelerator",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "postCreateCommand": "git submodule update --init --recursive && conda run -n ic_dec pip install -e ./hwacc_design_garage",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/miniforge3/envs/ic_dec/bin/python",
+                "python.terminal.activateEnvironment": true
+            },
+            "extensions": [
+                "ms-python.python",
+                "chipsalliance.verible",
+                "eirikpre.systemverilog",
+                "wavetrace.vaporview"
+            ]
+        }
+    }
+}
