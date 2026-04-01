@@ -23,8 +23,8 @@ jobs:
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
             qracc-dev \
-            conda run --no-capture-output -n ic_dec \
-            pip install -e ./third_party/MARP
+            bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
+              conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP"
 
       - name: Run Python model tests
         run: |
