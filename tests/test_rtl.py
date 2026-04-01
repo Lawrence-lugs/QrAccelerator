@@ -63,6 +63,11 @@ def test_qr_acc_top_single_load(
     """End-to-end test of the full qr_acc_top pipeline for a single convolution load."""
     
     run_read_but_noio = False
+
+    if simulator == 'verilator':
+        post_synth = False # Verilator does not support post-synthesis netlists
+        # And this was synthesized in proprietary 22nm.
+
     if post_synth: 
         model_mem = False # Post-synthesis does not support model memory
         notplitztrack = True # Post-synthesis does not support toeplitz tracking
@@ -77,7 +82,7 @@ def test_qr_acc_top_single_load(
 
     add_libs = not model_mem or post_synth
   
-    lib_list = [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if add_libs else []
+    lib_list = [x for x in [os.getenv('SYNTH_LIB'), os.getenv('SRAM_FILES')] if x is not None] if add_libs else []
     package_list = lib_list + ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
     rtl_file_list = [
         '../rtl/activation_buffer/piso_write_queue.sv',
