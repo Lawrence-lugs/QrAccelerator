@@ -1,10 +1,11 @@
 import numpy as np
-from tests.stim_lib.stimulus_gen import *
-from tests.stim_lib.compile import *
-from hwacctools.comp_graph import compute, cgraph, cnodes, core
-from hwacctools.onnx_tools import onnx_splitter
-import hwacctools.onnx_utils as onnx_utils
-import hwacctools.quantization.quant as quant
+from marp.compile.stimulus_gen import *
+from marp.compile.compile import *
+from marp.compile import compute
+from marp.mapping import core
+from marp.onnx_tools import onnx_splitter
+from marp.onnx_tools import onnx_utils
+import marp.quantization.quant as quant
 import pytest
 
 def test_create_nx_mapping():

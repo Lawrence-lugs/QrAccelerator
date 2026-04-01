@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build devcontainer image
+        run: |
+          docker build -t qracc-dev -f .devcontainer/Dockerfile .
+
+      - name: Install submodule package
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            pip install -e ./third_party/MARP
+
+      - name: Run Python model tests
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            python -m pytest tests/test_marp.py -v --tb=short
+
+      - name: Run Verilator RTL tests (seq_acc)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            python -m pytest tests/test_rtl.py::test_seq_acc --simulator verilator \
+              -k "binary and 2-32-128-8" -v --tb=short
+
+      - name: Run Verilator RTL tests (tb_qracc)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            python -m pytest tests/test_rtl.py::test_tb_qracc --simulator verilator \
+              -v --tb=short
+
+      - name: Run Verilator RTL tests (tb_column)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            python -m pytest tests/test_rtl.py::test_tb_column --simulator verilator \
+              -v --tb=short
+
+      - name: Run MARP tests
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+            qracc-dev \
+            conda run --no-capture-output -n ic_dec \
+            python -m pytest third_party/MARP/tests/ -v --tb=short \
+              -k "not test_from_qlinearconv"

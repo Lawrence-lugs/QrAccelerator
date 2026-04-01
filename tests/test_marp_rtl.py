@@ -1,10 +1,12 @@
 import numpy as np
-from tests.stim_lib.stimulus_gen import *
-from tests.stim_lib.compile import *
-from hwacctools.comp_graph import compute, cgraph, cnodes, core, packer_utils as pu
-from hwacctools.onnx_tools import onnx_splitter
-import hwacctools.onnx_utils as onnx_utils
-import hwacctools.quantization.quant as quant
+from marp.compile.stimulus_gen import *
+from marp.compile.compile import *
+from marp.compile import compute
+from marp.mapping import core
+from marp.mapping import packer_utils as pu
+from marp.onnx_tools import onnx_splitter
+from marp.onnx_tools import onnx_utils
+import marp.quantization.quant as quant
 import pytest
 from .utils import *
 
@@ -243,9 +245,9 @@ def test_qracc_with_all_onnx_single_node(
     "nx_model_and_name",
     [
         ("MBV2", onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx')),
-        ("ResNet", onnx.load('hwacc_design_garage/onnx_models/ic_quantized_int8.onnx')),
-        ("FCAE", onnx.load('hwacc_design_garage/onnx_models/ad_quantized_int8.onnx')),
-        ("DSCNN", onnx.load('hwacc_design_garage/onnx_models/ks_quantized_int8.onnx')),
+        ("ResNet", onnx.load('third_party/MARP/onnx_models/ic_quantized_int8.onnx')),
+        ("FCAE", onnx.load('third_party/MARP/onnx_models/ad_quantized_int8.onnx')),
+        ("DSCNN", onnx.load('third_party/MARP/onnx_models/ks_quantized_int8.onnx')),
     ]
 )
 @pytest.mark.parametrize(
@@ -335,12 +337,14 @@ def test_qracc_run_nx_model(
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
         "NODUMP": 1,  # Disable dumping of VPD and VCD
-        "NOTPLITZTRACK": 1, # Disable toeplitz tracking 
         "NOIOFILES": 1, # Disable file I/O
-        "SNOOP_OFMAP": 1, # Enable snooping of the output feature map
         "TRACK_STATISTICS": 1, # Enable tracking of statistics
         "MODEL_MEM": 1, # This only works with the model memory :D
     }
+    if simulator != "verilator": # These debug features cause issues with verilator
+        parameter_list["NOTPLITZTRACK"] = 1
+        parameter_list["SNOOP_OFMAP"] = 1
+
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 

@@ -124,7 +124,7 @@ package qracc_pkg;
         logic [7:0] padding_value;              // 11:4
     } qracc_config_t;
 
-    typedef struct {
+    typedef struct packed {
         // SWITCH MATRIX
         logic [numRows-1:0] VDR_SEL;
         logic [numRows-1:0] VDR_SELB;
@@ -194,13 +194,13 @@ package qracc_pkg;
         logic [compCount*outputElements-1:0] ADC_OUT;
     } from_analog_t;
 
-    typedef struct {
+    typedef struct packed {
         logic rq_ready_o; // if ready and valid; request is taken
         logic rd_valid_o; // once asserted; rdata is valid for read requests
         logic [numCols-1:0] rd_data_o;
     } from_sram_t;
 
-    typedef struct {
+    typedef struct packed {
         logic rq_wr_i; // write or read request
         logic rq_valid_i; // request is valid
         logic [numCols-1:0] wr_data_i;

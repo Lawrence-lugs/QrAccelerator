@@ -27,7 +27,8 @@ logic [elementWidth-1:0] staging_register [numElements];
 always_ff @( posedge clk or negedge nrst ) begin : writeDecode
     if (!nrst) begin
         for (int i = 0; i < numElements; i++) begin
-            staging_register[i] <= 0;
+            // For verilator, nonblocking assignments cause issues inside for loops (%Error-BLKLOOPINIT)
+            staging_register[i] = 0;
         end
     end else begin
         if (wr_en) begin            
@@ -35,7 +36,8 @@ always_ff @( posedge clk or negedge nrst ) begin : writeDecode
             stats.statFLWrites++;
             `endif
             for (int i = 0; i < inputWidth/elementWidth; i++) begin
-                staging_register[addr_i + i] <= data_i[(inputWidth/elementWidth-1-i)*elementWidth +: elementWidth];
+                // For verilator, nonblocking assignments cause issues inside for loops (%Error-BLKLOOPINIT)
+                staging_register[addr_i + i] = data_i[(inputWidth/elementWidth-1-i)*elementWidth +: elementWidth];
             end
         end
     end

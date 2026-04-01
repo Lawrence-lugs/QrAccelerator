@@ -105,8 +105,13 @@ qr_acc_wrapper #(
     .data_p_i(data_p_i),
     .data_n_i(data_n_i),
     // DIGITAL INTERFACE: SRAM
-    .from_sram(from_sram),
-    .to_sram(to_sram)
+    .to_sram_rq_wr(to_sram.rq_wr_i),
+    .to_sram_rq_valid(to_sram.rq_valid_i),
+    .to_sram_wr_data(to_sram.wr_data_i),
+    .to_sram_addr(to_sram.addr_i),
+    .from_sram_rq_ready(from_sram.rq_ready_o),
+    .from_sram_rd_valid(from_sram.rd_valid_o),
+    .from_sram_rd_data(from_sram.rd_data_o)
 );
 
 logic [numRows-1:0] PSM_VDR_SEL;
@@ -161,7 +166,16 @@ assign WR_DATA = to_analog.WR_DATA;
 assign WRITE = to_analog.WRITE;
 assign CSEL = to_analog.CSEL;
 assign SAEN = to_analog.SAEN;
+// VERILATOR FIX: transparent latch to hold valid ADC output during clk HIGH phase
+`ifdef VERILATOR
+logic [compCount*numCols-1:0] ADC_OUT_held;
+always_latch begin
+    if (!clk) ADC_OUT_held = ADC_OUT;
+end
+assign from_analog.ADC_OUT = ADC_OUT_held;
+`else
 assign from_analog.ADC_OUT = ADC_OUT;
+`endif
 assign NF = to_analog.NF;
 assign NFB = to_analog.NFB;
 assign M2A = to_analog.M2A;
@@ -174,7 +188,8 @@ ts_qracc #(
     .numRows(SRAM_ROWS),
     .numCols(SRAM_COLS),
     .numAdcBits(numAdcBits)
-) u_ts_qracc (    
+) u_ts_qracc (
+    .adc_ref_range_shifts(qracc_cfg.adc_ref_range_shifts),
     .PSM_VDR_SEL(PSM_VDR_SEL),
     .PSM_VDR_SELB(PSM_VDR_SELB),
     .PSM_VSS_SEL(PSM_VSS_SEL),
@@ -204,14 +219,27 @@ ts_qracc #(
     .CLK(clk)
 );
 
+// Full-width bipolar outputs (inBits wide per lane), then extract bit 0 for 1-bit data lines.
+// This avoids a packed-array width mismatch that VCS handles per-element but Verilator does not.
+logic [numRows-1:0][xBits-1:0] bipolar_p_full;
+logic [numRows-1:0][xBits-1:0] bipolar_n_full;
+
 twos_to_bipolar #(
-    .inBits(2),
+    .inBits(xBits),
     .numLanes(numRows)
 ) u_twos_to_bipolar (
     .twos(x_data),
-    .bipolar_p(data_p_i),
-    .bipolar_n(data_n_i)
+    .input_bits(4'(xBits)),
+    .bipolar_p(bipolar_p_full),
+    .bipolar_n(bipolar_n_full)
 );
+
+always_comb begin
+    for (int i = 0; i < numRows; i++) begin
+        data_p_i[i] = bipolar_p_full[i][0];
+        data_n_i[i] = bipolar_n_full[i][0];
+    end
+end
 
 task sram_write(
     input logic [$clog2(numRows)-1:0] t_addr,
@@ -272,10 +300,12 @@ initial begin
     $dumpvars(0);
 end
 `endif
+`ifndef SYNOPSYS
 initial begin
     $dumpfile("tb_qracc.vcd");
     $dumpvars(0);
 end
+`endif
 
 task print_adc_out;
     $write("[");
@@ -292,14 +322,15 @@ task save_adc_out;
     $fwrite(f_adc_out, "\n");
 endtask
 
-// yes my directory is visible, but i do not care.
-static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc/inputs/";
+// File paths use relative paths from the simulation directory (sims/)
+static string path = "../tb/qracc/inputs/";
 
 initial begin
 
     test_phase = P_INIT;
 
     qracc_cfg.binary_cfg = macMode;
+    qracc_cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
     if (qracc_cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
     else $display("MAC MODE: BIPOLAR");
 
@@ -368,10 +399,16 @@ initial begin
     $display("Performing MACs...");
     for (int h = 0; h < xBatches; h++) begin
         for (int i = 0; i < numRows; i++) begin
-            $fscanf(f_x, "%d", x_data[i]);
+            int tmp;
+            $fscanf(f_x, "%d", tmp);
+            x_data[i] = tmp[xBits-1:0];
         end
+        `ifdef VERILATOR
+        // Wait for negedge so the ADC latch captures the new value
+        @(negedge clk);
+        #1;
+        `endif
         for (int i = 0; i < xBits-1; i++) begin
-            #(CLK_PERIOD);
             print_adc_out();
             save_adc_out();
         end

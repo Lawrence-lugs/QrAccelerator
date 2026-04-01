@@ -1,7 +1,14 @@
+"""Behavioral model of the Aligned Feature Loader (AFL).
+
+The AFL shifts and loads activation data into a 2-D register file so that
+Toeplitz-formatted inputs can be fed column-by-column to the QR accelerator
+array.  This module is a pure-Python reference used by higher-level tests.
+"""
+
 import numpy as np
 import pandas as pd
 df = pd.DataFrame
-import hwacctools.comp_graph.compute as compute
+import marp.compile.compute as compute
 
 def roll_arithmetic_2d(a, shift : tuple[int]):
     '''
@@ -86,6 +93,16 @@ def generate_shift_control_matrices(shape : tuple[int],ksize=3):
     return np.array(shift_matrices)
 
 class Afl():
+    """Software model of the Aligned Feature Loader register file.
+
+    Parameters
+    ----------
+    dimX : int
+        Number of columns (loader depth).
+    dimY : int
+        Number of rows (vector width).
+    """
+
     def __init__(self, dimX, dimY):
         self.dimX = dimX
         self.dimY = dimY

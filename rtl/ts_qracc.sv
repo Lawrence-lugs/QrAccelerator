@@ -60,7 +60,7 @@ always_ff @( posedge CLK ) begin :  sramModel
         if (WRITE) begin
             for (int i = 0; i < numRows; i++) begin
                 if (WL[i]) begin 
-                    mem[i] <= WR_DATA;
+                    mem[i] = WR_DATA; // blocking assignment in behavioral SRAM model
                     // $display("WR_DATA: %d, %d", WR_DATA, mem[i]);
                 end
             end
@@ -148,7 +148,7 @@ always_comb begin : toMBL
         end
     end
     
-    ADC_OUT <= comp_out;
+    ADC_OUT = comp_out;
 end
 
 endmodule

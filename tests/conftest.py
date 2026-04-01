@@ -1,10 +1,24 @@
+"""Pytest configuration and fixtures for QrAccelerator RTL and model tests.
+
+Defines CLI options (--simulator, --seed, --mode, etc.), parametrization
+logic, and shared fixtures for ONNX model loading and image preprocessing.
+"""
+
 from torchvision import transforms
 from PIL import Image
+import shutil
 import pytest
 import numpy as np
 import onnx
 
-valid_simulators = ['xrun','vcs']
+valid_simulators = ['xrun', 'vcs', 'verilator']
+
+def _detect_default_simulator():
+    """Auto-detect an available HDL simulator, preferring VCS > Xcelium > Verilator."""
+    for sim in ['vcs', 'xrun', 'verilator']:
+        if shutil.which(sim):
+            return sim
+    return 'verilator'  # fallback even if not found; will fail at runtime with clear error
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -65,7 +79,7 @@ def pytest_generate_tests(metafunc):
                     f'Invalid simulator: {metafunc.config.getoption("simulator")}. Valid simulators: {valid_simulators}'
                 )
         if metafunc.config.getoption("simulator") == []:
-            metafunc.parametrize("simulator", ['vcs'])
+            metafunc.parametrize("simulator", [_detect_default_simulator()])
         else:
             metafunc.parametrize("simulator", metafunc.config.getoption("simulator"))
 
@@ -89,7 +103,7 @@ def pytest_generate_tests(metafunc):
 
     if "modelpath" in metafunc.fixturenames:
         if metafunc.config.getoption("modelpath") == []:
-            metafunc.parametrize("modelpath", ['hwacc_design_garage/onnx_models/mbv2_cifar10_int8.onnx'])
+            metafunc.parametrize("modelpath", ['onnx_models/mbv2_cifar10_int8.onnx'])
         else:
             metafunc.parametrize("modelpath", metafunc.config.getoption("modelpath"))
 
@@ -103,7 +117,7 @@ t_normalize = transforms.Compose([
 
 @pytest.fixture
 def img_array():    
-    img = Image.open('hwacc_design_garage/images/cifar10_test_bird4.jpg')
+    img = Image.open('onnx_models/cifar10_test_bird4.jpg')
     img_array = t_normalize(img).unsqueeze(0).numpy()
     return img_array
 

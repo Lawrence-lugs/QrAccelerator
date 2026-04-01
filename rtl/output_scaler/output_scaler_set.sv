@@ -58,10 +58,11 @@ logic [addrWidth-1:0] bias_w_addr;
 always_ff @( posedge clk or negedge nrst) begin : scalerMemory
     if (!nrst) begin
         for (int i = 0; i < numElements; i = i + 1) begin
-            output_scale[i] <= 0;
-            output_shift[i] <= 0;
-            output_offset[i] <= 0;
-            output_bias[i] <= 0;
+            // For verilator, nonblocking assignments cause issues inside for loops (%Error-BLKLOOPINIT)
+            output_scale[i] = 0;
+            output_shift[i] = 0;
+            output_offset[i] = 0;
+            output_bias[i] = 0;
         end
         scale_w_addr <= 0;
         shift_w_addr <= 0;

@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
 
+// Force NOTPLITZTRACK when compiling with verilator, since it
+// doesn't support the tasks used in toeplitz tracking.
+`ifdef VERILATOR
+`ifndef NOTPLITZTRACK
+`define NOTPLITZTRACK
+`endif
+`endif
+
 import qracc_pkg::*;
 
 module tb_qracc_top #(
@@ -285,8 +293,8 @@ end
 // TESTING BOILERPLATE
 /////////////
 
-static string files_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/inputs/";
-static string output_path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/qracc_top/outputs/";
+static string files_path = "../tb/qracc_top/inputs/";
+static string output_path = "../tb/qracc_top/outputs/";
 static string tb_name = "tb_qracc_top";
 
 // Waveform Dumping
@@ -298,10 +306,12 @@ initial begin
     $vcdplusmemon();
 end
 `endif
-// initial begin
-//     $dumpfile({tb_name,".vcd"});
-//     $dumpvars(0);
-// end
+`ifdef VERILATOR
+initial begin
+    $dumpfile("tb_qracc_top.vcd");
+    $dumpvars(0, tb_qracc_top);
+end
+`endif
 `endif
 
 
@@ -363,6 +373,7 @@ function int input_files(input string file_name);
     return file_descriptors[get_index_of_file(file_name)];
 endfunction 
 
+`ifndef VERILATOR
 class NumpyArray;
 
     int array [];
@@ -451,15 +462,19 @@ class NumpyArray;
     endfunction
 
 endclass
+`endif // VERILATOR
 
 /////////////
 // TASKS & TEST SCRIPT
 /////////////
 
+`ifndef VERILATOR
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
+`endif // VERILATOR
 int errcnt = 0;
 
 `ifndef POST_SYNTH
+`ifndef VERILATOR
 task display_config();
 
     $display("=== CONFIGURATION ===");
@@ -658,6 +673,7 @@ task check_acts();
 endtask
 
 `endif // MODEL_MEM
+`endif // VERILATOR
 
 task export_l2();
 
@@ -774,12 +790,12 @@ task bus_write_loop();
             end
             "WAITBUSY": begin
                 $display("Waiting for QRAcc Computation, time:", $time);
+                `ifndef NOTPLITZTRACK
                 $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
-                `ifdef NOTPLITZTRACK
-                wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
-                `else
                 display_config();
                 track_toeplitz();
+                `else
+                wait_busy_silent(32'h0000_0010); // CSR_REG_MAIN_ADDR
                 `endif
                 `ifdef SNOOP_OFMAP
                 magic_export_ofmap(node_name);
@@ -965,11 +981,13 @@ initial begin
 
     // Get files needed for inferring test
     `ifndef NOIOFILES
+    `ifndef VERILATOR
     ifmap = new("ifmap");
     weight_matrix = new("matrix");
     toeplitz = new("toeplitz");
     scaler_data = new("scaler_data");
     biases = new("biases");
+    `endif // VERILATOR
     `endif // NOIOFILES
 
     #(2.5);
@@ -978,11 +996,9 @@ initial begin
 
     bus_write_loop();
     
-    `ifndef NOIOFILES
     `ifndef POST_SYNTH
     export_l2();
     `endif // POST_SYNTH
-    `endif // NOIOFILES
 
     end_sim();
 

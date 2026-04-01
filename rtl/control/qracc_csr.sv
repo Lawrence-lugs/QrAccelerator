@@ -47,15 +47,15 @@ always_comb begin : csrAddressed
     kausap_ako = (bus_req_i.addr & CSR_BASE_MASK) == CSR_BASE_ADDR;
     handshake_success = bus_req_i.valid && kausap_ako; 
     csr_addr = bus_req_i.addr[3:0]; // Extracting the lower 4 bits for CSR address
-    bus_resp_o.ready = 1; // The CSR is always ready to respond
 end
 
 // CSR Write & Reads
 always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
     if (!nrst) begin
         for(int i = 0; i < numCsr; i++) begin
-            csr_set[i] <= 0;
+            csr_set[i] = 0;
         end
+        bus_resp_o.ready <= 1;
         bus_resp_o.rd_data_valid <= 1'b0;
     end else begin
         if (handshake_success) begin

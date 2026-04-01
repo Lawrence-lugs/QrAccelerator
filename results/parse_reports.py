@@ -1,3 +1,10 @@
+"""Parsers and plotters for Synopsys synthesis and power reports.
+
+This module reads text-format Synopsys Design Compiler / PrimeTime reports
+and produces dataframes and publication-quality figures (pie charts, bar plots,
+etc.) summarising area, power, and timing.
+"""
+
 import pandas as pd
 import re
 from typing import List, Dict, Optional, Tuple, Union

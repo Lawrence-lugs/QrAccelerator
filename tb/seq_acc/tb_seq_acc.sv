@@ -47,6 +47,8 @@ logic signed [numRows-1:0][maxInputBits-1:0] mac_data;
 // logic signed [numRows-1:0][15:0] mac_data;
 logic signed mac_data_valid;
 logic signed [numCols-1:0][accumulatorBits-1:0] mac_result;
+logic ready_o;
+logic valid_o;
 
 integer i;
 
@@ -125,7 +127,20 @@ assign WR_DATA = to_analog.WR_DATA;
 assign WRITE = to_analog.WRITE;
 assign CSEL = to_analog.CSEL;
 assign SAEN = to_analog.SAEN;
+// VERILATOR FIX: Verilator evaluates the combinational chain (including clk-gated
+// switch matrix in qr_acc_wrapper) BEFORE posedge FFs capture. This zeroes the ADC
+// result before the ADC register in the wrapper can sample it. A transparent latch
+// passes ADC_OUT through during clk LOW (when data is valid) and holds the valid
+// value when clk goes HIGH, preventing the switch matrix reset from corrupting it.
+`ifdef VERILATOR
+logic [compCount*numCols-1:0] ADC_OUT_held;
+always_latch begin
+    if (!clk) ADC_OUT_held = ADC_OUT;
+end
+assign from_analog.ADC_OUT = ADC_OUT_held;
+`else
 assign from_analog.ADC_OUT = ADC_OUT;
+`endif
 assign NF = to_analog.NF;
 assign NFB = to_analog.NFB;
 assign M2A = to_analog.M2A;
@@ -167,8 +182,13 @@ seq_acc #(
     // Passthrough Signals
     .to_analog_o(to_analog),
     .from_analog_i(from_analog),
-    .from_sram(from_sram),
-    .to_sram(to_sram)
+    .to_sram_rq_wr(to_sram.rq_wr_i),
+    .to_sram_rq_valid(to_sram.rq_valid_i),
+    .to_sram_wr_data(to_sram.wr_data_i),
+    .to_sram_addr(to_sram.addr_i),
+    .from_sram_rq_ready(from_sram.rq_ready_o),
+    .from_sram_rd_valid(from_sram.rd_valid_o),
+    .from_sram_rd_data(from_sram.rd_data_o)
 );
 
 // TS = Test Schematic
@@ -178,6 +198,7 @@ ts_qracc #(
     .numCols(SRAM_COLS),
     .numAdcBits(numAdcBits)
 ) u_ts_qracc (
+    .adc_ref_range_shifts(cfg.adc_ref_range_shifts),
     .PSM_VDR_SEL(PSM_VDR_SEL),
     .PSM_VDR_SELB(PSM_VDR_SELB),
     .PSM_VSS_SEL(PSM_VSS_SEL),
@@ -294,14 +315,15 @@ initial begin
     $dumpvars(0);
 end
 `endif
+`ifndef SYNOPSYS
 initial begin
     $dumpfile("tb_seq_acc.vcd");
-    $vcdplusmemon();
     $dumpvars(0);
 end
+`endif
 
-// yes my directory is visible, but i do not care.
-static string path = "/home/lquizon/lawrence-workspace/SRAM_test/qrAcc2/qr_acc_2_digital/tb/seq_acc/inputs/";
+// File paths use relative paths from the simulation directory (sims/)
+static string path = "../tb/seq_acc/inputs/";
 
 initial begin
 

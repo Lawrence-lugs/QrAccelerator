@@ -4,7 +4,7 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "postCreateCommand": "git submodule update --init --recursive && conda run -n ic_dec pip install -e ./hwacc_design_garage",
+    "postCreateCommand": "git submodule update --init --recursive && conda run -n ic_dec pip install -e ./third_party/MARP",
     "customizations": {
         "vscode": {
             "settings": {

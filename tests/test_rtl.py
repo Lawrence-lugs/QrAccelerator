@@ -1,16 +1,22 @@
+"""RTL simulation tests for QrAccelerator sub-blocks and top-level.
+
+Each test generates stimulus, invokes the chosen HDL simulator
+(VCS / Xcelium / Verilator), and compares the output against a
+Python golden model using RMSE / SNR metrics.
+"""
 
 import subprocess
 import os
 import sys
-import hwacctools.quantization.quant as q
+import marp.quantization.quant as q
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pytest
 sns.set_theme()
-from tests.stim_lib.stimulus_gen import *
-from tests.stim_lib.compile import *
+from marp.compile.stimulus_gen import *
+from marp.compile.compile import *
 from .utils import *
 
 @pytest.mark.parametrize(
@@ -54,6 +60,7 @@ def test_qr_acc_top_single_load(
     noiofiles     = True,
     notplitztrack = True,
 ): 
+    """End-to-end test of the full qr_acc_top pipeline for a single convolution load."""
     
     run_read_but_noio = False
     if post_synth: 
@@ -203,6 +210,7 @@ def test_qracc_ams(
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
 ):
+    """AMS co-simulation test for the qr_acc_wrapper block."""
 
     w,x,wx_outBits = generate_qracc_inputs(
         wDimX = wDimX,
@@ -292,6 +300,7 @@ def test_seq_acc(
     col_symmetric = False,
     x_repeat = False
 ):
+    """Test the sequential accumulator (seq_acc) with Verilator / VCS / Xcelium."""
     mac_mode = 1 if weight_mode == 'binary' else 0
   
     package_list = ['../rtl/qracc_pkg.svh']
@@ -307,7 +316,7 @@ def test_seq_acc(
     stimulus_output_path = f'tb/{tb_path}/inputs'
 
     # Pre-simulation
-    from tests.stim_lib.stimulus_gen import generate_qracc_inputs
+    from marp.compile.stimulus_gen import generate_qracc_inputs
 
     xTrits = xBits if unsigned_acts else xBits - 1
 
@@ -370,34 +379,8 @@ def test_seq_acc(
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
-    if simulator == 'vcs':
-        parameter_list = [f'-pvalue+{tb_name}.'+p for p in parameter_list]
-    else:
-        parameter_list = []
-
     # Simulation
-
-    command = [
-            simulator,
-            *package_list,
-            tb_file
-        ] + sim_args[simulator] + rtl_file_list + parameter_list
-
-    # print command as list with strings
-    print('=====VCS COMMAND=====')
-    print(' '.join(command))
-    print('=====================')
-
-    print(log_file)
-    if run:
-        with open(log_file,'w+') as f:
-            sim = subprocess.Popen(
-            command, 
-            shell=False,
-            cwd='./sims',
-            stdout=f
-            )
-        assert not sim.wait(), get_log_tail(log_file,10)
+    run_simulation(simulator, parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
 
     # Post-simulation
 
@@ -407,11 +390,6 @@ def test_seq_acc(
     save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_{weight_mode}')
 
     assert snr > snr_limit, f'SNR: {snr}'
-
-    with open(log_file,'r+') as f:
-        f.seek(0)
-        out = [line for line in f.readlines()]
-        assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
 
     return
 
@@ -429,6 +407,7 @@ def test_tb_qracc(
     run = True, # Set to False to skip RTL simulation
     x_repeat = False
 ):
+    """Test the qr_acc_wrapper block (digital RTL only, no AMS)."""
     mac_mode = 1 if weight_mode == 'binary' else 0
   
     package_list = ['../rtl/qracc_pkg.svh']
@@ -443,7 +422,7 @@ def test_tb_qracc(
     stimulus_output_path = 'tb/qracc/inputs'
 
     # Pre-simulation
-    from tests.stim_lib.stimulus_gen import generate_qracc_inputs
+    from marp.compile.stimulus_gen import generate_qracc_inputs
 
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
@@ -497,30 +476,8 @@ def test_tb_qracc(
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
-    if simulator == 'vcs':
-        parameter_list = [f'-pvalue+{tb_name}.'+p for p in parameter_list]
-    else:
-        parameter_list = []
-
     # Simulation
-
-    command = [
-            simulator,
-            *package_list,
-            tb_file
-        ] + sim_args[simulator] + rtl_file_list + parameter_list
-
-    print(command)
-    print(log_file)
-    if run:
-        with open(log_file,'w+') as f:
-            sim = subprocess.Popen(
-            command, 
-            shell=False,
-            cwd='./sims',
-            stdout=f
-            )
-        assert not sim.wait(), get_log_tail(log_file,10)
+    run_simulation(simulator, parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
 
     # Post-simulation
 
@@ -531,14 +488,10 @@ def test_tb_qracc(
 
     assert snr > snr_limit, f'SNR: {snr}'
 
-    with open(log_file,'r+') as f:
-        f.seek(0)
-        out = [line for line in f.readlines()]
-        assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
-
     return
 
 def test_tb_column(simulator,run=True):
+    """Smoke-test for a single SRAM column wrapper."""
     package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         "../rtl/column_wrapper.sv", 
@@ -548,33 +501,11 @@ def test_tb_column(simulator,run=True):
     tb_name = 'tb_column'
     tb_file = f'../tb/{tb_name}.sv'
     log_file = f'tests/logs/{tb_name}.log'
-    parameter_list = []
-
-    command = [
-            simulator,
-            *package_list,
-            tb_file
-        ] + sim_args[simulator] + rtl_file_list + parameter_list
     
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
-    print(command)
-
-    if run:
-        with open(log_file,'w+') as f:
-            sim = subprocess.Popen(
-            command, 
-            shell=False,
-            cwd='./sims',
-            stdout=f
-            )
-            assert not sim.wait(), get_log_tail(log_file,10)
-
-    with open(log_file,'r+') as f:
-        f.seek(0)
-        out = [line for line in f.readlines()]
-        assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
+    run_simulation(simulator, [], package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
 
 def test_tb_q_redis():
 

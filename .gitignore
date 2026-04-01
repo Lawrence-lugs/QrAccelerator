@@ -5,6 +5,7 @@ xcelium
 synth
 .env
 sims/*
+!sims/.gitkeep
 vams/*
 tests/sclibs.py
 tests/logs
@@ -15,10 +16,16 @@ ams
 psf
 tb/*/*inputs*
 .pytest_cache
-.env
 AN.DB
 ams*
 *scratch*
 tb/*/*outputs*
 *.svg
 results/*
+*.vcd
+*.vpd
+obj_dir*/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
