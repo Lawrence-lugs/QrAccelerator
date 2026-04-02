@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies and verilator
 RUN apt-get update && apt-get install -y \
     git \
-    curl \
+    curl \ 
     wget \
     build-essential \
     verilator \
