@@ -58,10 +58,10 @@ def get_single_node_marp_code(
 def test_qracc_with_onnx_single_node(
     simulator,
     mnode_index,
+    figures,
     modelpath = 'onnx_models/mbv2_cifar10_int8_binary.onnx',
     imc_core_size = (256, 256),
     dwc_core_size = 32,
-    figures = False,
 ):    
     
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
@@ -326,7 +326,7 @@ def test_qracc_run_nx_model(
     packer = packers[packer_name]
 
     print('=' * 80)
-    print(f'QrAcc Running model {model_name} with packer {packername}')
+    print(f'QrAcc Running model {model_name} with packer {packer_name}')
 
     print('=' * 80)
 
@@ -421,7 +421,7 @@ def test_qracc_run_nx_model(
     # Copy hw_output_path/qracc_statistics.csv to ../results/
     os.makedirs('results', exist_ok=True)
     stats_file = f'{hw_output_path}/qracc_statistics.csv'
-    stats_dest_name = f'results/qracc_statistics_{model_name}_{packername}.csv'
+    stats_dest_name = f'results/qracc_statistics_{model_name}_{packer_name}.csv'
     import shutil
     shutil.copy(stats_file, stats_dest_name)
         

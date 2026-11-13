@@ -214,6 +214,7 @@ def test_qracc_ams(
     simulator,
     seed,
     weight_mode,
+    figures,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
@@ -222,7 +223,6 @@ def test_qracc_ams(
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False,
-    figures = False,
 ):
     """AMS co-simulation test for the qr_acc_wrapper block."""
 
@@ -255,6 +255,7 @@ def test_seq_acc_ams(
     simulator,
     seed,
     weight_mode,
+    figures,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
@@ -263,7 +264,6 @@ def test_seq_acc_ams(
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False,
-    figures = False,
 ):
     tb_path = 'seq_acc'
     stimulus_output_path = f'tb/{tb_path}/inputs'
@@ -311,12 +311,12 @@ def test_seq_acc(
     wDimX, #nColumns
     wDimY, #nRows
     outBits,
+    figures,
     xBatches = 10,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     col_symmetric = False,
     x_repeat = False,
-    figures = False,
 ):
     """Test the sequential accumulator (seq_acc) with Verilator / VCS / Xcelium."""
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -418,6 +418,7 @@ def test_tb_qracc(
     simulator,
     seed,
     weight_mode,
+    figures,
     wDimX = 32, #nColumns
     wDimY = 128, #nRows
     xBatches = 10,
@@ -426,7 +427,6 @@ def test_tb_qracc(
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False,
-    figures = False,
 ):
     """Test the qr_acc_wrapper block (digital RTL only, no AMS)."""
     mac_mode = 1 if weight_mode == 'binary' else 0
