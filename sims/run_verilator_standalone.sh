@@ -4,7 +4,7 @@
 # Usage:
 #   bash sims/run_verilator_standalone.sh <tb_name> [--help]
 #
-# Testbench classes (see P3.4 in the repo-health plan):
+# Testbench classes:
 #   RUNS STANDALONE      : tb_column, tb_afl        (no input files)
 #   CLEAN ERROR          : tb_qracc, tb_seq_acc, tb_qracc_top  (need generated inputs)
 #   PROPRIETARY          : tb_q_redis               (xrun only, not verilator)
