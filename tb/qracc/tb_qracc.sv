@@ -352,10 +352,12 @@ initial begin
     end
 
     `ifdef AMS
-        if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
-        if (f_adc_out == 0) begin
-            $display("[TB ERROR] cannot create output file %s", {path, "adc_out_ams_binary.txt"});
-            $fatal(1, "cannot create output file");
+        if (qracc_cfg.binary_cfg == 1) begin
+            f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
+            if (f_adc_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "adc_out_ams_binary.txt"});
+                $fatal(1, "cannot create output file");
+            end
         end
         else begin
             f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
@@ -365,10 +367,12 @@ initial begin
             end
         end
     `else
-        if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_rtl_binary.txt"}, "w");
-        if (f_adc_out == 0) begin
-            $display("[TB ERROR] cannot create output file %s", {path, "adc_out_rtl_binary.txt"});
-            $fatal(1, "cannot create output file");
+        if (qracc_cfg.binary_cfg == 1) begin
+            f_adc_out = $fopen({path, "adc_out_rtl_binary.txt"}, "w");
+            if (f_adc_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "adc_out_rtl_binary.txt"});
+                $fatal(1, "cannot create output file");
+            end
         end
         else begin
             f_adc_out = $fopen({path, "adc_out_rtl_bipolar.txt"}, "w");

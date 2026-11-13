@@ -353,10 +353,12 @@ initial begin
     end
 
     `ifdef AMS
-        if (cfg.binary_cfg == 1) f_mac_out = $fopen({path, "mac_out_ams_binary.txt"}, "w");
-        if (f_mac_out == 0) begin
-            $display("[TB ERROR] cannot create output file %s", {path, "mac_out_ams_binary.txt"});
-            $fatal(1, "cannot create output file");
+        if (cfg.binary_cfg == 1) begin
+            f_mac_out = $fopen({path, "mac_out_ams_binary.txt"}, "w");
+            if (f_mac_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "mac_out_ams_binary.txt"});
+                $fatal(1, "cannot create output file");
+            end
         end
         else begin
             f_mac_out = $fopen({path, "mac_out_ams_bipolar.txt"}, "w");
@@ -366,10 +368,12 @@ initial begin
             end
         end
     `else
-        if (cfg.binary_cfg == 1) f_mac_out = $fopen({path, "mac_out_rtl_binary.txt"}, "w");
-        if (f_mac_out == 0) begin
-            $display("[TB ERROR] cannot create output file %s", {path, "mac_out_rtl_binary.txt"});
-            $fatal(1, "cannot create output file");
+        if (cfg.binary_cfg == 1) begin
+            f_mac_out = $fopen({path, "mac_out_rtl_binary.txt"}, "w");
+            if (f_mac_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "mac_out_rtl_binary.txt"});
+                $fatal(1, "cannot create output file");
+            end
         end
         else begin
             f_mac_out = $fopen({path, "mac_out_rtl_bipolar.txt"}, "w");
