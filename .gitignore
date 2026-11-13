@@ -22,6 +22,7 @@ AN.DB
 *scratch*
 *.svg
 results/*
+!results/README.md
 *.vcd
 *.vpd
 obj_dir*/

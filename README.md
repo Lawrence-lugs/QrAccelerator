@@ -1,81 +1,210 @@
 # Charge-Redistribution based accelerator in 22nm (the digital part)
 
-This repository contains the digital design for a 22nm Charge-Redistribution In-memory Computing based accelerator with a 10T1C SRAM bitcell.
+Digital (RTL + testbench + Python verification) side of a charge-redistribution
+in-memory-computing accelerator built on 10T1C SRAM in 22nm. The architecture
+uses a QR-based charge-redistribution IMC scheme over a 128x32 subarray with a
+4-bit ADC. This repository covers the digital part only: the analog/mixed-signal
+front end is out of scope here.
 
-Implements QR-based IMC with a 128x32 10T1C SRAM subarray with a 4-bit ADC.
+See [`results.md`](results.md) for the measured/quantitative results.
 
-See the [results](results.md) document to get a rundown of metrics.
+Continuous integration: [`ci.yml`](.github/workflows/ci.yml). No badge until CI is green.
 
-## Setup
+## Repository layout
 
-Setup a working conda or [mamba](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html) installation.
+| Path | Purpose |
+|------|---------|
+| `rtl/` | SystemVerilog RTL for the accelerator (qr_acc_top, qracc pipeline, seq_acc, column wrapper, SRAM/activation buffer, feature loader, control). |
+| `tb/` | Verilog/SystemVerilog testbenches (tb_column, tb_qracc, tb_qracc_top, tb_seq_acc, tb_afl, tb_q_redis). |
+| `tests/` | Pytest suite (test_rtl.py, test_marp.py, test_marp_rtl.py) plus conftest.py and utils.py (simulation driver, RMSE/SNR, figure helpers). |
+| `results/` | Tracked result data (CSVs) and `parse_reports.py` (Synopsys report parsers/plotters). |
+| `hw_model/` | Behavioral Python model (`afl_model.py`); imports MARP; not used by the tests. |
+| `onnx_models/` | ONNX models + `cifar10_test_bird4.jpg` used by MARP-driven tests (see `onnx_models/README.md`). |
+| `images/` | Generated PNGs/SVGs (gitignored; regenerate with `pytest --figures`). |
+| `archive/` | Frozen 2025 scratch notebooks and stale artifacts (unmodified; see `archive/README.md`). |
+| `sims/` | Simulation working directory (gitignored except `sims/.gitkeep` and `sims/run_verilator_standalone.sh`). |
+| `third_party/MARP` | Empty gitlink to the MARP compiler; initialize with `git submodule update --init --recursive`. |
+| `.devcontainer/` | Devcontainer image definition (verilator, miniforge/conda `ic_dec` env). |
+| `.github/workflows/` | CI workflow (`ci.yml`) and devcontainer image build (`build-devcontainer.yml`). |
 
-1. `conda env create --file=env.yml`
+## Quick start (devcontainer, recommended)
 
-To run VCS or XCelium simulations:
-1. Setup a terminal that works with either simulator first. 
-2. Create a .env file: `env > .env`
+Open the repository in VS Code with the devcontainer extension. The
+`postCreateCommand` runs `git submodule update --init --recursive` and installs
+MARP (`pip install -e ./third_party/MARP`) into the `ic_dec` conda environment,
+so no manual conda setup is needed.
 
-This step should allow pytest to find the programs correctly everytime.
-
-## Running Tests
-
-The following command will test all RTL files:
-`pytest`
-
-You should run a test before moving on to Cadence AMS simulations to create the necessary input files.
-
-Tests are executed using Pytest. The test infrastructure:
-1. Compiles and runs SystemVerilog testbenches using Cadence xrun
-2. Generates log files in `tests/logs/`
-3. Verifies test success by checking for "TEST SUCCESS" in the output
-
-## Testing Infrastructure
-
-The repository includes a comprehensive testing setup for the QR Accelerator design
-
-### Test Files
-- `tb_column.sv`: SystemVerilog testbench for testing ts_column (single ADC column)
-- `tb_qr_acc.sv`: SystemVerilog testbench for testing the main QR Accelerator wrapper
-- `tb_seq_acc.sv`: SystemVerilog testbench for testing sequential accumulator module
-- `test_rtl.py`: Pytest files that performs input generation pre-test and post-test data processing. Runs the simulators as subprocess.
-
-### Key Components Under Test
-- QR Accelerator wrapper (`qr_acc_wrapper.sv`) which includes:
-  - ADC encoding with 15-bit input to multi-level output (-5 to 7)
-  - Switch matrix control logic
-  - MAC (Multiply-Accumulate) interface
-  - SRAM interface with read/write capabilities
-
-```python
-# Run all tests of all testbenches
-python -m pytest
-# Or specific parts
-python -m pytest -k qracc # or seq_acc or column or ams
+```
+git clone --recurse-submodules git@github.com:Lawrence-lugs/QrAccelerator.git
+cd QrAccelerator
+# then: open in VS Code -> "Reopen in Container"
 ```
 
-### Required Tools
-- Cadence xrun simulator
-- Python 3.x
-- SystemVerilog compatible simulator
+## Manual setup
 
-### Latest Simulations:
+```
+conda env create --file=env.yml        # Python 3.12 (pinned in env.yml)
+conda activate ic_dec
+git submodule update --init --recursive
+pip install -e third_party/MARP        # MARP compiler
+```
 
-1b Module (qr_acc_wrapper.py) RTL vs AMS
+Install an HDL simulator on PATH: verilator (open source, used in CI), or
+Cadence xrun / Synopsys vcs (proprietary; required for `tb_q_redis` and
+post-synthesis runs). Tests requiring an unavailable simulator are skipped with
+a clear reason.
 
-![alt](images/rtl_vs_ams.svg)
+pytest does not read a `.env` file; do not create one.
 
+## Simulators
 
-### sec_acc datapath
+| Simulator | Notes |
+|-----------|-------|
+| verilator | Open source; used in CI; auto-detected last among vcs > xrun > verilator. |
+| vcs | Synopsys proprietary; needs edits to `set_synopsys_bash.sh` (a template, not functional). |
+| xrun | Cadence proprietary; needed by `tb/q_redis.sv`. |
 
-![alt text](images/seq_acc_bd.png)
+Select a simulator with `pytest --simulator <name>`. Auto-detection order is
+vcs > xrun > verilator. When none is on PATH, simulator-dependent tests are
+skipped (exit code 5 if everything is deselected), never crashed.
 
-![alt text](images/seq_acc_pipeline.png)
+## Running tests
 
-### Results notes
+From the repository root:
 
-* The binary mode seq_acc output can have disastrously bad SNR (~9dB) with only slight changes (~3-4dB) in the qrAcc result. The result seems to immediately shoot up to ~20dB SNR if the qrAcc result is improved. Is this a fact of life on noisy 4b inputs accumulated into an 8b input? Is there a jump in 8b SNR when the 4b SNR is swept?
+```
+pytest -rs                      # run everything that can run locally
+pytest --figures                # regenerate PNGs in images/png/ (opt-in)
+pytest --heavy                  # long full-model MARP simulations (16 runs)
+pytest --proprietary            # Cadence/Synopsys-only tests (xrun/vcs)
+pytest --mode all               # random + max + min modes
+pytest --seed 0 1 2             # RNG seeds
+```
 
-## Todo
+Logs are written under `sims/` (see `tests/utils.py` `run_simulation`, cwd
+`./sims`). Testbench input files are generated by pytest inside
+`tb/<block>/inputs/` before each RTL run.
 
-* Replace default parameters with compiler directives
+## Standalone simulation (no Python)
+
+A verilator-only runner is provided so a simulation can be launched without the
+Python orchestrator:
+
+```
+bash sims/run_verilator_standalone.sh <tb>
+```
+
+Run classes:
+
+| Testbench | Class | Standalone behaviour |
+|-----------|-------|----------------------|
+| `tb_column` | Runs standalone | Prints `TEST SUCCESS`; no input files needed. |
+| `tb_afl` | Runs standalone | No input files needed. |
+| `tb_qracc` | Needs generated inputs | Without `tb/qracc/inputs/{w.txt,x.txt,wx_4b.txt}` prints `[TB ERROR] cannot open input file ...` and exits non-zero. |
+| `tb_seq_acc` | Needs generated inputs | Without `tb/seq_acc/inputs/{w.txt,x.txt,wx_clipped.txt}` prints `[TB ERROR] cannot open input file ...` and exits non-zero. |
+| `tb_qracc_top` | Needs generated inputs | Missing inputs give `[TB ERROR] cannot open input file ...` (commands.txt missing -> clean error). |
+| `tb_q_redis` | Proprietary | xrun-only; not standalone. |
+
+Input-dependent testbenches must never end with a raw missing-file exception:
+every input `$fopen` checks `== 0` and `$fatal`s with `[TB ERROR] cannot open
+input file`. Generated inputs are produced by the pytest run for the matching
+test (`tb/<block>/inputs/`).
+
+Sample inputs under `tb/examples/` are NOT committed (Q1 default: NO).
+
+## Test inventory
+
+| Test | Needs | Runs where | Decision |
+|------|-------|------------|----------|
+| `tests/test_marp.py::*` | MARP, onnx, torch | devcontainer | keep; guarded with `pytest.importorskip('marp')` |
+| `tests/test_rtl.py::test_seq_acc` | verilator | devcontainer | keep |
+| `tests/test_rtl.py::test_tb_qracc` | verilator | devcontainer | keep |
+| `tests/test_rtl.py::test_tb_column` | verilator | devcontainer | keep |
+| `tests/test_rtl.py::test_qr_acc_top_single_load` (verilator) | verilator | devcontainer | keep |
+| `tests/test_rtl.py::test_qr_acc_top_single_load` (xrun/vcs) | Cadence + synthesized netlist | nowhere | marked `proprietary` |
+| `tests/test_rtl.py::test_qracc_ams`, `test_seq_acc_ams` | Cadence AMS artifacts (absent) | nowhere | marked `ams`, skip when file missing |
+| `tests/test_rtl.py::test_tb_q_redis` | xrun, hardcoded | nowhere | marked `proprietary` |
+| `tests/test_marp_rtl.py::test_qracc_with_onnx_single_node` | MARP + verilator | devcontainer | keep |
+| `tests/test_marp_rtl.py::test_qracc_with_all_onnx_single_node` | MARP + verilator | devcontainer | marked `heavy` |
+| `tests/test_marp_rtl.py::test_qracc_run_nx_model` | MARP + verilator, 16 heavy runs | devcontainer | marked `heavy`, `--heavy` only |
+| `third_party/MARP/tests/` | MARP repo | devcontainer | keep (MARP's own tests) |
+
+Markers: `proprietary`, `ams`, `heavy`, `needs_verilator`. Use `--proprietary`,
+`--heavy` to opt in.
+
+## Continuous integration
+
+CI (`.github/workflows/ci.yml`) builds the devcontainer image from
+`.devcontainer/Dockerfile`, installs MARP, then runs:
+
+1. `pytest tests/test_marp.py -v --tb=short`
+2. `pytest tests/test_rtl.py::test_seq_acc --simulator verilator -k "binary and 2-32-128-8" -v --tb=short`
+3. `pytest tests/test_rtl.py::test_tb_qracc --simulator verilator -v --tb=short`
+4. `pytest tests/test_rtl.py::test_tb_column --simulator verilator -v --tb=short`
+5. `pytest third_party/MARP/tests/ -v --tb=short -k "not test_from_qlinearconv"`
+
+A `notebook-hygiene` job verifies all non-archived `.ipynb` outputs are stripped
+via `nbstripout --verify`. The devcontainer image is rebuilt by
+`build-devcontainer.yml` on changes to `.devcontainer/Dockerfile` or `env.yml`.
+
+## Notebooks and archive
+
+Scratch notebooks from the 2025 work were moved to `archive/notebooks/` (frozen,
+unmodified) so the historical thesis results remain reproducible. Current results
+live in `results.md` and `images/png/`.
+
+Output stripping is enforced going forward: `.gitattributes` routes `*.ipynb`
+through `nbstripout`, and a CI `notebook-hygiene` job verifies stripped outputs.
+Setup locally:
+
+```
+pip install pre-commit nbstripout
+pre-commit install
+nbstripout --install
+```
+
+Archived notebooks are intentionally not stripped (frozen record).
+
+## Results
+
+See [`results.md`](results.md) for the measured/quantitative results. Tracked
+result data lives in `tests/results/` (CSVs, thesis data — not gitignored) and
+`results/` (untracked generated artifacts; `results/parse_reports.py` parses
+Synopsys reports).
+
+## Models
+
+All five ONNX/model files used by the MARP-driven tests (see `onnx_models/README.md` for full details):
+
+| File | Notes |
+|------|-------|
+| `onnx_models/mbv2_cifar10_int8.onnx` | Base MobileNetV2 int8 model. |
+| `onnx_models/mbv2_cifar10_int8_binary.onnx` | Binary variant used by `tests/test_marp*.py`. |
+| `onnx_models/mbv2_cifar10_int8_binary_split.onnx` | Split binary variant used by `tests/test_marp*.py`. |
+| `onnx_models/mbv2_cifar10_int8_split_binarized.onnx` | Split binarized variant. |
+| `onnx_models/cifar10_test_bird4.jpg` | Test image used by `tests/test_marp*.py`. |
+
+"Binary" and "split" are described only as far as the code shows (grep `binary`
+/ `split` in `tests/test_marp*.py` and MARP usage); otherwise each is a variant
+used by `tests/test_marp*.py` and marked for user review.
+
+## Known issues
+
+- `NOTPLITZTRACK` / `notplitztrack` spelling: should be "Toeplitz". Kept as-is
+  across RTL and tests to avoid risky cross-file renames; documented here only.
+- `rtl/qr_acc_top.sv` line 72 contains a `// TODO: Remove?` comment; RTL logic
+  is not edited by this cleanup.
+- AMS figures (`images/rtl_vs_ams.svg`, `adc_out_ams_*`, `mac_out_ams_*`)
+  require Cadence AMS outputs that are not in the repo; the corresponding tests
+  are marked `ams` and skipped when the artifact files are missing.
+- `set_synopsys_bash.sh` is a template (echo placeholder only), not functional.
+- CI: previously failed because MARP was installed inside a discarded `--rm`
+  container and was unavailable to the pytest steps; fixed by installing MARP
+  before each pytest step (see CI root cause in the execution log). Verify the
+  latest CI run via the actions page link above.
+- Binary-mode SNR note: see `results.md` (grep `dB` there) before relying on
+  any binary-mode SNR claim.
+
+## License
+
+MIT. Copyright 2026 Lawrence Quizon (see `LICENSE`).
