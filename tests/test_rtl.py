@@ -202,7 +202,7 @@ def test_qr_acc_top_single_load(
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
-    # save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr")
+    # save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"{test_name}_snr", enabled=figures)
     # plot_diff_channels(acc_result - u_code.reference_output, tensor_format='NHWC', filename=f'{test_name}_channels')
     assert snr > snr_limit, f'SNR: {snr}'
 
