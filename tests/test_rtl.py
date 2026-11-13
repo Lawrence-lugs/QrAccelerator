@@ -8,17 +8,24 @@ Python golden model using RMSE / SNR metrics.
 import subprocess
 import os
 import sys
-import marp.quantization.quant as q
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    import seaborn as sns
+except ImportError:
+    sns = None
 import pytest
-sns.set_theme()
+marp = pytest.importorskip("marp")
+import marp.quantization.quant as q
+if sns is not None:
+    sns.set_theme()
 from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
 from .utils import *
 
+@pytest.mark.needs_verilator
+@pytest.mark.proprietary
 @pytest.mark.parametrize(
     "test_name,         ifmap_shape,   kernel_shape,   core_shape, padding,    stride, mm_offset_x,mm_offset_y, depthwise",[
     ('singlebank',      (1,3,16,16),   (32,3,3,3),     (256,32),   1,          1,      0,          0,          False),           
@@ -201,6 +208,7 @@ def test_qr_acc_top_single_load(
 
     return
 
+@pytest.mark.ams
 def test_qracc_ams(
     col_symmetric,
     simulator,
@@ -213,7 +221,8 @@ def test_qracc_ams(
     outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
-    x_repeat = False
+    x_repeat = False,
+    figures = False,
 ):
     """AMS co-simulation test for the qr_acc_wrapper block."""
 
@@ -236,10 +245,11 @@ def test_qracc_ams(
     actual = np.loadtxt(f'{stimulus_output_path}/adc_out_ams_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
-    save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_ams_{weight_mode}')
+    save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_ams_{weight_mode}',enabled=figures)
 
     assert snr > snr_limit, f'SNR: {snr}'
 
+@pytest.mark.ams
 def test_seq_acc_ams(
     col_symmetric,
     simulator,
@@ -252,7 +262,8 @@ def test_seq_acc_ams(
     outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
-    x_repeat = False
+    x_repeat = False,
+    figures = False,
 ):
     tb_path = 'seq_acc'
     stimulus_output_path = f'tb/{tb_path}/inputs'
@@ -274,13 +285,14 @@ def test_seq_acc_ams(
     actual = np.loadtxt(f'{stimulus_output_path}/mac_out_ams_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
-    save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_ams_{weight_mode}')
+    save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_ams_{weight_mode}',enabled=figures)
 
     assert snr > snr_limit, f'SNR: {snr}'
 
 # @pytest.mark.parametrize("unsigned_acts", [True, False])
 # @pytest.mark.parametrize("xTrits", [1, 3, 7])
 
+@pytest.mark.needs_verilator
 @pytest.mark.parametrize(
      "unsigned_acts,xBits,wDimX,wDimY,outBits", [
     (         False,    2,   32,  128,       8,),
@@ -303,7 +315,8 @@ def test_seq_acc(
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
     col_symmetric = False,
-    x_repeat = False
+    x_repeat = False,
+    figures = False,
 ):
     """Test the sequential accumulator (seq_acc) with Verilator / VCS / Xcelium."""
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -392,12 +405,13 @@ def test_seq_acc(
     actual = np.loadtxt(f'{stimulus_output_path}/mac_out_rtl_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
-    save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_{weight_mode}')
+    save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_{weight_mode}',enabled=figures)
 
     assert snr > snr_limit, f'SNR: {snr}'
 
     return
 
+@pytest.mark.needs_verilator
 def test_tb_qracc(
     col_symmetric,
     simulator,
@@ -410,7 +424,8 @@ def test_tb_qracc(
     outBits = 4,
     snr_limit = 8,
     run = True, # Set to False to skip RTL simulation
-    x_repeat = False
+    x_repeat = False,
+    figures = False,
 ):
     """Test the qr_acc_wrapper block (digital RTL only, no AMS)."""
     mac_mode = 1 if weight_mode == 'binary' else 0
@@ -489,12 +504,13 @@ def test_tb_qracc(
     actual = np.loadtxt(f'{stimulus_output_path}/adc_out_rtl_{weight_mode}.txt',dtype=int)
     expected = wx_outBits.T[::-1].T    
     rmse, snr = rmse_snr(expected,actual)
-    save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_{weight_mode}')
+    save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_{weight_mode}',enabled=figures)
 
     assert snr > snr_limit, f'SNR: {snr}'
 
     return
 
+@pytest.mark.needs_verilator
 def test_tb_column(simulator,run=True):
     """Smoke-test for a single SRAM column wrapper."""
     package_list = ['../rtl/qracc_pkg.svh']
@@ -512,6 +528,7 @@ def test_tb_column(simulator,run=True):
 
     run_simulation(simulator, [], package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
 
+@pytest.mark.proprietary
 def test_tb_q_redis():
 
     rtl_file_list = [ ]

@@ -1,4 +1,6 @@
 import numpy as np
+import pytest
+marp = pytest.importorskip("marp")
 from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
 from marp.compile import compute
@@ -6,7 +8,6 @@ from marp.mapping import core
 from marp.onnx_tools import onnx_splitter
 from marp.onnx_tools import onnx_utils
 import marp.quantization.quant as quant
-import pytest
 
 def test_create_nx_mapping():
 
@@ -101,10 +102,11 @@ def test_marp_compilation_all_nodes_in_onnx(
             commands += u_code.compile(include_ifmap_writes=False, add_read=False)
 
 def test_marp_run_entire_mbv2(
-    nx_model = onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx'),
+    modelpath = 'onnx_models/mbv2_cifar10_int8_binary.onnx',
     imc_core_size = (256,256),
     dwc_core_size = 32
 ):
+    nx_model = onnx.load(modelpath)
 
     u_nx_mapping = core.NxModelMapping(
         nx_model,

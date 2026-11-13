@@ -1,4 +1,6 @@
 import numpy as np
+import pytest
+marp = pytest.importorskip("marp")
 from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
 from marp.compile import compute
@@ -7,7 +9,6 @@ from marp.mapping import packer_utils as pu
 from marp.onnx_tools import onnx_splitter
 from marp.onnx_tools import onnx_utils
 import marp.quantization.quant as quant
-import pytest
 from .utils import *
 
 def get_single_node_marp_code(
@@ -49,6 +50,7 @@ def get_single_node_marp_code(
 
     return u_code
 
+@pytest.mark.needs_verilator
 @pytest.mark.parametrize(
     "mnode_index",
     [0, 1, 2, 3, 4, 308, 309, 310]
@@ -59,6 +61,7 @@ def test_qracc_with_onnx_single_node(
     modelpath = 'onnx_models/mbv2_cifar10_int8_binary.onnx',
     imc_core_size = (256, 256),
     dwc_core_size = 32,
+    figures = False,
 ):    
     
     package_list = ['../rtl/qracc_params.svh','../rtl/qracc_pkg.svh']
@@ -130,7 +133,7 @@ def test_qracc_with_onnx_single_node(
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
-    save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"nx_singlenode_snr")
+    save_scatter_fig(expected = u_code.reference_output,actual = acc_result, title = f"{u_code.matrix.shape} SNR {snr:.3f} dB",filename =  f"nx_singlenode_snr", enabled=figures)
     print(acc_result.shape, u_code.reference_output.shape)
     # plot_diff_channels(acc_result - u_code.reference_output, tensor_format='NHWC', filename=f'nx_singlenode_channels')
     
@@ -143,6 +146,7 @@ def test_qracc_with_onnx_single_node(
 
     return
 
+@pytest.mark.heavy
 def test_qracc_with_all_onnx_single_node(
     simulator,
     modelpath = 'onnx_models/mbv2_cifar10_int8_binary.onnx',
@@ -201,9 +205,18 @@ def test_qracc_with_all_onnx_single_node(
     print(f'Parameter list: {parameter_list}')
     write_parameter_definition_file(parameter_list,param_file_path)
 
-    snrs = np.zeros(len(u_code.mapped_nodes))
-    rmses = np.zeros(len(u_code.mapped_nodes))
-    for mnode_index in range(len(u_code.mapped_nodes)):
+    # Determine node count up-front (avoids UnboundLocalError: u_code used
+    # before assignment in the loop below).
+    _probe_model = onnx.load(modelpath)
+    _probe_mapping = core.NxModelMapping(
+        _probe_model,
+        imc_core_size=imc_core_size,
+        dwc_core_size=dwc_core_size
+    )
+    num_nodes = len(_probe_mapping.mapped_nodes)
+    snrs = np.zeros(num_nodes)
+    rmses = np.zeros(num_nodes)
+    for mnode_index in range(num_nodes):
 
         u_code = get_single_node_marp_code(
             mnode_index = mnode_index,
@@ -239,52 +252,78 @@ def test_qracc_with_all_onnx_single_node(
         'snr': snrs,
         'rmse': rmses
     })
-    snr_df.to_csv('snr_results.csv', index=False)
+    snr_df.to_csv('sims/snr_results.csv', index=False)
 
+
+def make_packers():
+    """Return a fresh dict of rectpack packers (one instance per name).
+
+    Packer objects are stateful, so a new instance is created on every call
+    to avoid cross-model contamination.
+    """
+    import rectpack
+    from marp.mapping import packer_utils as pu
+    return {
+        "Dense": rectpack.newPacker(
+            mode=rectpack.PackingMode.Offline,
+            rotation=False,
+            pack_algo=rectpack.MaxRectsBssf
+        ),
+        "Naive": pu.NaiveRectpackPacker(256, 256, rotation=False),
+        "Tradeoff": rectpack.newPacker(
+            mode=rectpack.PackingMode.Online,
+            bin_algo=rectpack.PackingBin.BBF,
+            rotation=False,
+            pack_algo=rectpack.MaxRectsBssf
+        ),
+        "Write Optimized": rectpack.newPacker(
+            mode=rectpack.PackingMode.Online,
+            bin_algo=rectpack.PackingBin.BNF,
+            rotation=False,
+            pack_algo=rectpack.MaxRectsBssf
+        ),
+    }
+
+
+@pytest.mark.heavy
 @pytest.mark.parametrize(
     "nx_model_and_name",
     [
-        ("MBV2", onnx.load('onnx_models/mbv2_cifar10_int8_binary.onnx')),
-        ("ResNet", onnx.load('third_party/MARP/onnx_models/ic_quantized_int8.onnx')),
-        ("FCAE", onnx.load('third_party/MARP/onnx_models/ad_quantized_int8.onnx')),
-        ("DSCNN", onnx.load('third_party/MARP/onnx_models/ks_quantized_int8.onnx')),
+        ("MBV2", 'onnx_models/mbv2_cifar10_int8_binary.onnx'),
+        ("ResNet", 'third_party/MARP/onnx_models/ic_quantized_int8.onnx'),
+        ("FCAE", 'third_party/MARP/onnx_models/ad_quantized_int8.onnx'),
+        ("DSCNN", 'third_party/MARP/onnx_models/ks_quantized_int8.onnx'),
     ]
 )
 @pytest.mark.parametrize(
-    "packer_and_name",
+    "packer_name",
     [
-        ("Dense",rectpack.newPacker(
-            mode=rectpack.PackingMode.Offline,
-            # bin_algo=rectpack.PackingBin.BBF, 
-            rotation=False, 
-            pack_algo=rectpack.MaxRectsBssf
-        )),
-        ("Naive",pu.NaiveRectpackPacker(256,256, rotation=False)),
-        ("Tradeoff",rectpack.newPacker(
-            mode=rectpack.PackingMode.Online,
-            bin_algo=rectpack.PackingBin.BBF, 
-            rotation=False, 
-            pack_algo=rectpack.MaxRectsBssf
-        )),
-        ("Write Optimized",rectpack.newPacker(
-            mode=rectpack.PackingMode.Online,
-            bin_algo=rectpack.PackingBin.BNF, 
-            rotation=False, 
-            pack_algo=rectpack.MaxRectsBssf
-        )),
+        "Dense",
+        "Naive",
+        "Tradeoff",
+        "Write Optimized",
     ]
 )
 def test_qracc_run_nx_model(
     simulator,
     nx_model_and_name,
-    packer_and_name,
+    packer_name,
     imc_core_size = (256,256),
     dwc_core_size = 32,
     until = None,
     starting = 0,
 ):    
-    model_name, nx_model = nx_model_and_name
-    packername, packer = packer_and_name
+    model_name, nx_model_path = nx_model_and_name
+
+    import pathlib
+    if not pathlib.Path(nx_model_path).exists():
+        pytest.skip("MARP submodule not initialised: run git submodule update --init --recursive")
+    nx_model = onnx.load(nx_model_path)
+
+    # Fresh packer per model invocation (module-level packer objects were
+    # stateful and reused across models, which is a bug).
+    packers = make_packers()
+    packer = packers[packer_name]
 
     print('=' * 80)
     print(f'QrAcc Running model {model_name} with packer {packername}')

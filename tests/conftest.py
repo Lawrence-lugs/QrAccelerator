@@ -4,12 +4,18 @@ Defines CLI options (--simulator, --seed, --mode, etc.), parametrization
 logic, and shared fixtures for ONNX model loading and image preprocessing.
 """
 
-from torchvision import transforms
+try:
+    from torchvision import transforms
+except ImportError:
+    transforms = None
 from PIL import Image
 import shutil
 import pytest
 import numpy as np
-import onnx
+try:
+    import onnx
+except ImportError:
+    onnx = None
 
 valid_simulators = ['xrun', 'vcs', 'verilator']
 
@@ -18,7 +24,7 @@ def _detect_default_simulator():
     for sim in ['vcs', 'xrun', 'verilator']:
         if shutil.which(sim):
             return sim
-    return 'verilator'  # fallback even if not found; will fail at runtime with clear error
+    return None
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -69,6 +75,24 @@ def pytest_addoption(parser):
         default=[(256,256)],
         help="core size for accelerator",
     )
+    parser.addoption(
+        "--figures",
+        action="store_true",
+        default=False,
+        help="enable figure generation (PNGs in images/png/)",
+    )
+    parser.addoption(
+        "--heavy",
+        action="store_true",
+        default=False,
+        help="run long full-model simulations",
+    )
+    parser.addoption(
+        "--proprietary",
+        action="store_true",
+        default=False,
+        help="run tests needing Cadence/Synopsys tools or synthesized netlists",
+    )
 
 def pytest_generate_tests(metafunc):
     if "simulator" in metafunc.fixturenames:
@@ -110,10 +134,34 @@ def pytest_generate_tests(metafunc):
     if "core_size" in metafunc.fixturenames:
         metafunc.parametrize("core_size", metafunc.config.getoption("core_size"))
 
-t_normalize = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
+def pytest_collection_modifyitems(config, items):
+    heavy = config.getoption("--heavy")
+    proprietary = config.getoption("--proprietary")
+    verilator_available = shutil.which('verilator') is not None
+    for item in items:
+        # proprietary marker
+        if item.get_closest_marker("proprietary") and not proprietary:
+            item.add_marker(pytest.mark.skip(reason="proprietary test: needs Cadence/Synopsys tools or synthesized netlists; run with --proprietary"))
+        # heavy marker
+        if item.get_closest_marker("heavy") and not heavy:
+            item.add_marker(pytest.mark.skip(reason="heavy test: long full-model simulations; run with --heavy"))
+        # needs_verilator marker
+        if item.get_closest_marker("needs_verilator") and not verilator_available:
+            item.add_marker(pytest.mark.skip(reason="verilator not found on PATH (install verilator or run inside the devcontainer)"))
+        # simulator parameter: skip if the requested binary is not on PATH, or no simulator was auto-detected
+        simulator = item.callspec.params.get('simulator') if hasattr(item, 'callspec') else None
+        if simulator is None:
+            item.add_marker(pytest.mark.skip(reason="no HDL simulator (verilator/vcs/xrun) found on PATH"))
+        elif simulator in ('xrun', 'vcs') and shutil.which(simulator) is None:
+            item.add_marker(pytest.mark.skip(reason=f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)"))
+
+if transforms is not None:
+    t_normalize = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+else:
+    t_normalize = None
 
 @pytest.fixture
 def img_array():    
@@ -131,3 +179,7 @@ def nx_input_dict(nx_model, img_array):
     input_name = nx_model.graph.input[0].name
     input_dict = {input_name: img_array}
     return input_dict
+
+@pytest.fixture
+def figures(request):
+    return request.config.getoption("--figures")

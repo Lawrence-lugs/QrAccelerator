@@ -13,9 +13,13 @@ import marp.quantization.quant as q
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    import seaborn as sns
+except ImportError:
+    sns = None
 import pytest
-sns.set_theme()
+if sns is not None:
+    sns.set_theme()
 from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
 
@@ -98,6 +102,9 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
         Explicit top-module name; inferred from *tb_file* when None.
     """
     os.makedirs('./sims', exist_ok=True)
+
+    if shutil.which(simulator) is None:
+        pytest.skip(f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)")
 
     if simulator == 'verilator':
         _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run, top_module)
@@ -246,8 +253,10 @@ def rmse_snr(expected, actual):
     print(f'RMSE:{rmse}, SNR:{snr}')
     return rmse, snr
 
-def save_scatter_fig(expected, actual, title, filename):
+def save_scatter_fig(expected, actual, title, filename, enabled=False):
     """Save an expected-vs-actual scatter plot to ``images/png/<filename>.png``."""
+    if not enabled:
+        return
     fig, ax = plt.subplots()
     plt.figure(figsize=(4,4))
     ax = sns.scatterplot(
@@ -266,7 +275,7 @@ def save_scatter_fig(expected, actual, title, filename):
     plt.savefig(f'images/png/{filename}.png')
     plt.close()
  
-def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8, save=True):
+def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bitPrecision=8, save=False):
     """
     Plots all channels of the diff tensor in a subplot grid.
 
@@ -274,7 +283,10 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
     - diff: numpy.ndarray, the tensor to plot
     - tensor_format: str, format of the tensor ('NCHW' or 'NHWC')
     - bitPrecision: int, bit precision for value range (default 8)
+    - save: bool, if False, do not create or save any figure
     """
+    if not save:
+        return
     diff_2plot = np.abs(diff) 
     if tensor_format == 'NHWC':
         diff_2plot = diff_2plot.transpose(0, 3, 1, 2)  # Convert to NCHW format for plotting
