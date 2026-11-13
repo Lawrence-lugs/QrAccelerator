@@ -332,6 +332,7 @@ def test_seq_acc(
     tb_name = 'tb_seq_acc'
     tb_path = 'seq_acc'
     stimulus_output_path = f'tb/{tb_path}/inputs'
+    os.makedirs(stimulus_output_path, exist_ok=True)
 
     # Pre-simulation
     from marp.compile.stimulus_gen import generate_qracc_inputs
@@ -440,6 +441,7 @@ def test_tb_qracc(
     tb_name = 'tb_qracc'
     tb_path = 'qracc'
     stimulus_output_path = 'tb/qracc/inputs'
+    os.makedirs(stimulus_output_path, exist_ok=True)
 
     # Pre-simulation
     from marp.compile.stimulus_gen import generate_qracc_inputs

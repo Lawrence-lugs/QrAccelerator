@@ -17,6 +17,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+cd sims
 
 VERILATOR_ARGS=(
     --binary --timing -j 0 -sv
@@ -146,5 +147,4 @@ verilator "${VERILATOR_ARGS[@]}" \
     --Mdir "obj_dir_${TOP_MODULE}"
 
 echo "=====VERILATOR RUN ($TB)====="
-cd sims
 "./obj_dir_${TOP_MODULE}/V${TOP_MODULE}"

@@ -124,12 +124,14 @@ def pytest_collection_modifyitems(config, items):
         # needs_verilator marker
         if item.get_closest_marker("needs_verilator") and not verilator_available:
             item.add_marker(pytest.mark.skip(reason="verilator not found on PATH (install verilator or run inside the devcontainer)"))
-        # simulator parameter: skip if the requested binary is not on PATH, or no simulator was auto-detected
-        simulator = item.callspec.params.get('simulator') if hasattr(item, 'callspec') else None
-        if simulator is None:
-            item.add_marker(pytest.mark.skip(reason="no HDL simulator (verilator/vcs/xrun) found on PATH"))
-        elif simulator in ('xrun', 'vcs') and shutil.which(simulator) is None:
-            item.add_marker(pytest.mark.skip(reason=f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)"))
+        # simulator parameter: skip only for tests parametrized by `simulator`
+        simulator_params = item.callspec.params if hasattr(item, 'callspec') else {}
+        if 'simulator' in simulator_params:
+            simulator = simulator_params['simulator']
+            if simulator is None:
+                item.add_marker(pytest.mark.skip(reason="no HDL simulator (verilator/vcs/xrun) found on PATH"))
+            elif simulator in ('xrun', 'vcs') and shutil.which(simulator) is None:
+                item.add_marker(pytest.mark.skip(reason=f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)"))
 
 if transforms is not None:
     t_normalize = transforms.Compose([
