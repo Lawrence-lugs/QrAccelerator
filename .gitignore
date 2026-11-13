@@ -7,7 +7,6 @@ synth
 sims/*
 !sims/.gitkeep
 !sims/run_verilator_standalone.sh
-!sims/run_verilator_standalone.sh
 vams/*
 tests/sclibs.py
 tests/logs
@@ -17,12 +16,18 @@ DVEfiles
 psf
 tb/*/inputs/*ams*
 tb/*/outputs/*ams*
+tb/*/inputs/
+tb/*/outputs/
+tb/*/*inputs*
+tb/*/*outputs*
 .pytest_cache
 AN.DB
 *scratch*
 *.svg
 results/*
 !results/README.md
+!results/__init__.py
+!results/parse_reports.py
 *.vcd
 *.vpd
 obj_dir*/
