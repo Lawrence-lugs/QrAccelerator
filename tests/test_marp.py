@@ -3,11 +3,8 @@ import pytest
 marp = pytest.importorskip("marp")
 from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
-from marp.compile import compute
 from marp.mapping import core
-from marp.onnx_tools import onnx_splitter
 from marp.onnx_tools import onnx_utils
-import marp.quantization.quant as quant
 
 def test_create_nx_mapping():
 
@@ -15,7 +12,6 @@ def test_create_nx_mapping():
 
     imc_core_size = (256,256)
     dwc_core_size = 32
-    mnode_index = 2
 
     u_nx_mapping = core.NxModelMapping(
         nx_model,

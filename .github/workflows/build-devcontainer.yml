@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - ".devcontainer/Dockerfile"
-      - "environment.yml"
+      - "env.yml"
 
 env:
   IMAGE: ghcr.io/lawrence-lugs/qraccelerator

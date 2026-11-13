@@ -34,22 +34,10 @@ def pytest_addoption(parser):
         help="simulator to test with",
     )
     parser.addoption(
-        "--synth",
-        action="append",
-        default=False,
-        help="performs synthesis during tests",
-    )
-    parser.addoption(
         "--col_symmetric",
         action="store_true",
         default=False,
         help="all columns are tested the same",
-    )
-    parser.addoption(
-        "--postsynth",
-        action="store_true",
-        default=False,
-        help="performs post-synthesis simulation during tests",
     )
     parser.addoption(
         "--seed",
@@ -68,12 +56,6 @@ def pytest_addoption(parser):
         action="append",
         default=[],
         help="onnx model file path",
-    )
-    parser.addoption(
-        "--core_size",
-        action="append",
-        default=[(256,256)],
-        help="core size for accelerator",
     )
     parser.addoption(
         "--figures",
@@ -119,9 +101,6 @@ def pytest_generate_tests(metafunc):
     if 'seed' in metafunc.fixturenames:
         metafunc.parametrize("seed", metafunc.config.getoption("seed"))
 
-    if 'synth' in metafunc.fixturenames:
-        metafunc.parametrize("synth", metafunc.config.getoption("synth"))
-
     if 'weight_mode' in metafunc.fixturenames:
         metafunc.parametrize("weight_mode", ['bipolar','binary'])
 
@@ -130,9 +109,6 @@ def pytest_generate_tests(metafunc):
             metafunc.parametrize("modelpath", ['onnx_models/mbv2_cifar10_int8.onnx'])
         else:
             metafunc.parametrize("modelpath", metafunc.config.getoption("modelpath"))
-
-    if "core_size" in metafunc.fixturenames:
-        metafunc.parametrize("core_size", metafunc.config.getoption("core_size"))
 
 def pytest_collection_modifyitems(config, items):
     heavy = config.getoption("--heavy")
