@@ -336,15 +336,47 @@ initial begin
 
     // Open files        
     f_w = $fopen({path, "w.txt"}, "r");
+    if (f_w == 0) begin
+        $display("[TB ERROR] cannot open input file %s", {path, "w.txt"});
+        $fatal(1, "missing input file: generate it with pytest (see README) or provide it");
+    end
     f_x = $fopen({path, "x.txt"}, "r");
+    if (f_x == 0) begin
+        $display("[TB ERROR] cannot open input file %s", {path, "x.txt"});
+        $fatal(1, "missing input file: generate it with pytest (see README) or provide it");
+    end
     f_wx = $fopen({path, "wx_4b.txt"}, "r");
+    if (f_wx == 0) begin
+        $display("[TB ERROR] cannot open input file %s", {path, "wx_4b.txt"});
+        $fatal(1, "missing input file: generate it with pytest (see README) or provide it");
+    end
 
     `ifdef AMS
         if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_ams_binary.txt"}, "w");
-        else f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
+        if (f_adc_out == 0) begin
+            $display("[TB ERROR] cannot create output file %s", {path, "adc_out_ams_binary.txt"});
+            $fatal(1, "cannot create output file");
+        end
+        else begin
+            f_adc_out = $fopen({path, "adc_out_ams_bipolar.txt"}, "w");
+            if (f_adc_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "adc_out_ams_bipolar.txt"});
+                $fatal(1, "cannot create output file");
+            end
+        end
     `else
         if (qracc_cfg.binary_cfg == 1) f_adc_out = $fopen({path, "adc_out_rtl_binary.txt"}, "w");
-        else f_adc_out = $fopen({path, "adc_out_rtl_bipolar.txt"}, "w");
+        if (f_adc_out == 0) begin
+            $display("[TB ERROR] cannot create output file %s", {path, "adc_out_rtl_binary.txt"});
+            $fatal(1, "cannot create output file");
+        end
+        else begin
+            f_adc_out = $fopen({path, "adc_out_rtl_bipolar.txt"}, "w");
+            if (f_adc_out == 0) begin
+                $display("[TB ERROR] cannot create output file %s", {path, "adc_out_rtl_bipolar.txt"});
+                $fatal(1, "cannot create output file");
+            end
+        end
     `endif
 
     // Initialize

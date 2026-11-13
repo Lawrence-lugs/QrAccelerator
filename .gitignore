@@ -6,6 +6,7 @@ synth
 .env
 sims/*
 !sims/.gitkeep
+!sims/run_verilator_standalone.sh
 vams/*
 tests/sclibs.py
 tests/logs

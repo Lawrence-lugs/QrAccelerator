@@ -24,6 +24,7 @@ from marp.compile.stimulus_gen import *
 from marp.compile.compile import *
 
 sim_args = {'vcs':  [
+                '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '-full64',
                 '-debug_pp',
                 '-debug_access',
@@ -35,9 +36,11 @@ sim_args = {'vcs':  [
                 '+incdir+../rtl',
             ],
             'xrun': [
+                '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '+access+r'
             ],
             'verilator': [
+                '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '--binary',
                 '--timing',
                 '-j', '0',

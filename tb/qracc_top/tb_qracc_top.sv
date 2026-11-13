@@ -630,6 +630,10 @@ task magic_export_ofmap();
     $display("Exporting ofmap to file %s at time %t", {output_path,output_file_name,".txt"}, $time);
 
     fd = $fopen({output_path,output_file_name,".txt"},"w");
+    if (fd == 0) begin
+        $display("[TB ERROR] cannot create output file %s", {output_path,output_file_name,".txt"});
+        $fatal(1, "cannot create output file");
+    end
     for(i=0;i<ofmap_size;i++) begin
         // Later on this would be wrong if the output isn't 8b
         // and the 4b or 2b version is packed.
@@ -686,6 +690,10 @@ task export_l2();
     $display("Exporting ofmap at time %t", $time);
 
     fd = $fopen({output_path,"hw_ofmap",".txt"},"w");
+    if (fd == 0) begin
+        $display("[TB ERROR] cannot create output file %s", {output_path,"hw_ofmap",".txt"});
+        $fatal(1, "cannot create output file");
+    end
     for(i=0;i<ofmap_size;i++) begin
         $fwrite(fd,"%d\n",l2_mem[i]);
     end

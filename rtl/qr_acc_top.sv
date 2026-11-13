@@ -4,7 +4,11 @@ uses n cycles to complete an n-bit input mac
 asdasd
 */
 
-`include "qracc_params.svh"
+`ifdef QRACC_PARAMS_FILE
+`include `QRACC_PARAMS_FILE
+`else
+`include "qracc_params_defaults.svh"
+`endif
 
 `timescale 1ns/1ps
 
