@@ -70,3 +70,20 @@ jobs:
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest third_party/MARP/tests/ -v --tb=short \
                 -k "not test_from_qlinearconv""
+
+  notebook-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install nbstripout
+        run: |
+          pip install nbstripout==0.9.1
+
+      - name: Verify notebooks are stripped (excluding archive/)
+        shell: bash
+        run: |
+          nbstripout --verify $(git ls-files '*.ipynb' | grep -v '^archive/')
