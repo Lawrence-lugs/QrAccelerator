@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
-marp = pytest.importorskip("marp")
-from marp.compile.stimulus_gen import *
-from marp.compile.compile import *
-from marp.compile import compute
-from marp.mapping import core
-from marp.mapping import packer_utils as pu
-from marp.onnx_tools import onnx_splitter
-from marp.onnx_tools import onnx_utils
-import marp.quantization.quant as quant
+marp = pytest.importorskip("qracc_marp")
+from qracc_marp.compile.stimulus_gen import *
+from qracc_marp.compile.compile import *
+from qracc_marp.compile import compute
+from qracc_marp.mapping import core
+from qracc_marp.mapping import packer_utils as pu
+from qracc_marp.onnx_tools import onnx_splitter
+from qracc_marp.onnx_tools import onnx_utils
+import qracc_marp.quantization.quant as quant
 from .utils import *
 
 def get_single_node_marp_code(
@@ -262,7 +262,7 @@ def make_packers():
     to avoid cross-model contamination.
     """
     import rectpack
-    from marp.mapping import packer_utils as pu
+    from qracc_marp.mapping import packer_utils as pu
     return {
         "Dense": rectpack.newPacker(
             mode=rectpack.PackingMode.Offline,
@@ -425,3 +425,4 @@ def test_qracc_run_nx_model(
     import shutil
     shutil.copy(stats_file, stats_dest_name)
         
+

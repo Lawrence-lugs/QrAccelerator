@@ -4,10 +4,6 @@ Defines CLI options (--simulator, --seed, --mode, etc.), parametrization
 logic, and shared fixtures for ONNX model loading and image preprocessing.
 """
 
-try:
-    from torchvision import transforms
-except ImportError:
-    transforms = None
 from PIL import Image
 import shutil
 import pytest
@@ -133,19 +129,16 @@ def pytest_collection_modifyitems(config, items):
             elif simulator in ('xrun', 'vcs') and shutil.which(simulator) is None:
                 item.add_marker(pytest.mark.skip(reason=f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)"))
 
-if transforms is not None:
-    t_normalize = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
-else:
-    t_normalize = None
+def _normalize_cifar(path):
+    img = np.asarray(Image.open(path).convert('RGB'), dtype=np.float32) / 255.0
+    mean = np.array((0.4914, 0.4822, 0.4465), dtype=np.float32)
+    std = np.array((0.2023, 0.1994, 0.2010), dtype=np.float32)
+    img = (img - mean) / std
+    return img.transpose(2, 0, 1)[np.newaxis]
 
 @pytest.fixture
 def img_array():    
-    img = Image.open('onnx_models/cifar10_test_bird4.jpg')
-    img_array = t_normalize(img).unsqueeze(0).numpy()
-    return img_array
+    return _normalize_cifar('onnx_models/cifar10_test_bird4.jpg')
 
 @pytest.fixture
 def nx_model(modelpath):

@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
-marp = pytest.importorskip("marp")
-from marp.compile.stimulus_gen import *
-from marp.compile.compile import *
-from marp.mapping import core
-from marp.onnx_tools import onnx_utils
+marp = pytest.importorskip("qracc_marp")
+from qracc_marp.compile.stimulus_gen import *
+from qracc_marp.compile.compile import *
+from qracc_marp.mapping import core
+from qracc_marp.onnx_tools import onnx_utils
 
 def test_create_nx_mapping():
 
@@ -157,3 +157,5 @@ def test_marp_run_entire_mbv2(
             print(f'Skipping {nx_node.name} as it is not compilable...')
 
         prev_node = nx_node
+
+

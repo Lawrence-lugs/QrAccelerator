@@ -16,12 +16,12 @@ try:
 except ImportError:
     sns = None
 import pytest
-marp = pytest.importorskip("marp")
-import marp.quantization.quant as q
+marp = pytest.importorskip("qracc_marp")
+import qracc_marp.quantization.quant as q
 if sns is not None:
     sns.set_theme()
-from marp.compile.stimulus_gen import *
-from marp.compile.compile import *
+from qracc_marp.compile.stimulus_gen import *
+from qracc_marp.compile.compile import *
 from .utils import *
 
 @pytest.mark.needs_verilator
@@ -335,7 +335,7 @@ def test_seq_acc(
     os.makedirs(stimulus_output_path, exist_ok=True)
 
     # Pre-simulation
-    from marp.compile.stimulus_gen import generate_qracc_inputs
+    from qracc_marp.compile.stimulus_gen import generate_qracc_inputs
 
     xTrits = xBits if unsigned_acts else xBits - 1
 
@@ -444,7 +444,7 @@ def test_tb_qracc(
     os.makedirs(stimulus_output_path, exist_ok=True)
 
     # Pre-simulation
-    from marp.compile.stimulus_gen import generate_qracc_inputs
+    from qracc_marp.compile.stimulus_gen import generate_qracc_inputs
 
     parameter_list = [
         f'SRAM_ROWS={wDimY}',
@@ -560,3 +560,5 @@ def test_tb_q_redis():
         f.seek(0)
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
+
+
