@@ -67,10 +67,10 @@ sim_args = {'vcs':  [
 
 def empty_directory(directory):
     """
-    Empty the directory if it exists.
+    Empty the directory, creating it if necessary.
     """
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
+    os.makedirs(directory, exist_ok=True)
+    for filename in os.listdir(directory):
             file_path = os.path.join(directory, filename)
             try:
                 if os.path.isfile(file_path) or os.path.islink(file_path):

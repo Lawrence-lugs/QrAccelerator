@@ -89,6 +89,7 @@ def test_qracc_with_onnx_single_node(
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     empty_directory(stimulus_output_path)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -183,6 +184,7 @@ def test_qracc_with_all_onnx_single_node(
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     empty_directory(stimulus_output_path)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths

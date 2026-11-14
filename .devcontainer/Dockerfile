@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=verilator-build /opt/verilator /opt/verilator
 ENV PATH="/opt/verilator/bin:${PATH}"
 ENV VERILATOR_ROOT=/opt/verilator/share/verilator
+RUN mkdir -p /usr/share/verilator && ln -sf /opt/verilator/share/verilator/include /usr/share/verilator/include
 
 RUN curl -L -o /tmp/miniforge.sh \
     "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-$(uname -m).sh" \

@@ -125,6 +125,7 @@ def test_qr_acc_top_single_load(
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     empty_directory(stimulus_output_path)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -333,6 +334,7 @@ def test_seq_acc(
     tb_path = 'seq_acc'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     os.makedirs(stimulus_output_path, exist_ok=True)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
 
     # Pre-simulation
     from qracc_marp.compile.stimulus_gen import generate_qracc_inputs
