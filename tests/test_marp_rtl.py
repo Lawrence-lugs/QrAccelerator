@@ -292,9 +292,9 @@ def make_packers():
     "nx_model_and_name",
     [
         ("MBV2", 'onnx_models/mbv2_cifar10_int8_binary.onnx'),
-        ("ResNet", 'third_party/MARP/onnx_models/ic_quantized_int8.onnx'),
-        ("FCAE", 'third_party/MARP/onnx_models/ad_quantized_int8.onnx'),
-        ("DSCNN", 'third_party/MARP/onnx_models/ks_quantized_int8.onnx'),
+        ("ResNet", 'artifacts/onnx_models/ic_quantized_int8.onnx'),
+        ("FCAE", 'artifacts/onnx_models/ad_quantized_int8.onnx'),
+        ("DSCNN", 'artifacts/onnx_models/ks_quantized_int8.onnx'),
     ]
 )
 @pytest.mark.parametrize(
@@ -319,7 +319,7 @@ def test_qracc_run_nx_model(
 
     import pathlib
     if not pathlib.Path(nx_model_path).exists():
-        pytest.skip(f"ONNX model {nx_model_path} not vendored in-repo (was in removed MARP submodule)")
+        pytest.skip(f"ONNX model {nx_model_path} not found; generate it in the MARP container and place it under artifacts/onnx_models/")
     nx_model = onnx.load(nx_model_path)
 
     # Fresh packer per model invocation (module-level packer objects were
