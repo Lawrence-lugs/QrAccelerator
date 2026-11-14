@@ -1,0 +1,18 @@
+services:
+  marp:
+    build:
+      context: ../MARP
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ./artifacts:/artifacts
+    command: sleep infinity
+
+  qracc:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspaces/QrAccelerator
+      - ./artifacts:/artifacts:ro
+    working_dir: /workspaces/QrAccelerator
+    command: sleep infinity
