@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM ubuntu:24.04 AS verilator-build
 
-ARG VERILATOR_VERSION=5.054
+ARG VERILATOR_VERSION=5.020
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,7 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=verilator-build /opt/verilator /opt/verilator
 ENV PATH="/opt/verilator/bin:${PATH}"
-ENV VERILATOR_ROOT=/opt/verilator/share/verilator
 RUN mkdir -p /usr/share/verilator && ln -sf /opt/verilator/share/verilator/include /usr/share/verilator/include
 
 RUN curl -L -o /tmp/miniforge.sh \
