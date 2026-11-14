@@ -57,6 +57,20 @@ def kernel_to_writes(kernel, channels, hexes=True):
             kernel_writes[i] += (kernel_flat[i,3] & 0xFF) << 24 | (kernel_flat[i,2] & 0xFF) << 16 | (kernel_flat[i,1] & 0xFF) << 8 | (kernel_flat[i,0] & 0xFF)
     return kernel_writes
 
+def _conv2d_int(x, w, padding=0, stride=1):
+    x = np.pad(x.astype(np.int64), ((0,0),(0,0),(padding,padding),(padding,padding)))
+    w = w.astype(np.int64)
+    n, _, h, wd = x.shape
+    o, _, kh, kw = w.shape
+    oh = (h - kh) // stride + 1
+    ow = (wd - kw) // stride + 1
+    out = np.zeros((n, o, oh, ow), dtype=np.int64)
+    for i in range(oh):
+        for j in range(ow):
+            patch = x[:, :, i*stride:i*stride+kh, j*stride:j*stride+kw]
+            out[:, :, i, j] = np.einsum('ncij,ocij->no', patch, w)
+    return out.astype(np.int32)
+
 def generate_random_torch_conv(
     ifmap_shape,
     ifmap_bits,
