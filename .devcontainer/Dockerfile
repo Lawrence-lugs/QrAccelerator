@@ -20,7 +20,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl wget build-essential ca-certificates libfl2 perl \
+    git curl wget build-essential ca-certificates libfl2 perl python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=verilator-build /opt/verilator /opt/verilator
