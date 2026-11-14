@@ -114,6 +114,9 @@ def pytest_collection_modifyitems(config, items):
         # proprietary marker
         if item.get_closest_marker("proprietary") and not proprietary:
             item.add_marker(pytest.mark.skip(reason="proprietary test: needs Cadence/Synopsys tools or synthesized netlists; run with --proprietary"))
+        # ams marker: needs analog co-simulation outputs that are not in the repo
+        if item.get_closest_marker("ams") and not proprietary:
+            item.add_marker(pytest.mark.skip(reason="ams test: needs AMS co-simulation outputs in tb/*/inputs (not in repo); run with --proprietary"))
         # heavy marker
         if item.get_closest_marker("heavy") and not heavy:
             item.add_marker(pytest.mark.skip(reason="heavy test: long full-model simulations; run with --heavy"))
