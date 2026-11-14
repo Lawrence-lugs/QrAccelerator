@@ -43,7 +43,7 @@ sim_args = {'vcs':  [
                 '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '--binary',
                 '--timing',
-                '-j', '0',
+                '-j', '4',
                 '-sv',
                 '+incdir+../rtl',
                 '-Wno-fatal',
