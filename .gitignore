@@ -38,3 +38,4 @@ build/
 rtl/qracc_params.svh
 snr_results.csv
 sims/snr_results.csv
+artifacts/
