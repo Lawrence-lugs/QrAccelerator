@@ -11,6 +11,8 @@ vams/*
 tests/sclibs.py
 tests/logs
 tests/scratch.py
+tests/tb/
+tests/tests/
 *__pycache__*
 DVEfiles
 psf

@@ -1,12 +1,4 @@
 services:
-  marp:
-    build:
-      context: ../MARP
-      dockerfile: .devcontainer/Dockerfile
-    volumes:
-      - ./artifacts:/artifacts
-    command: sleep infinity
-
   qracc:
     build:
       context: .

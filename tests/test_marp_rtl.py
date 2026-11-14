@@ -319,7 +319,7 @@ def test_qracc_run_nx_model(
 
     import pathlib
     if not pathlib.Path(nx_model_path).exists():
-        pytest.skip("MARP submodule not initialised: run git submodule update --init --recursive")
+        pytest.skip(f"ONNX model {nx_model_path} not vendored in-repo (was in removed MARP submodule)")
     nx_model = onnx.load(nx_model_path)
 
     # Fresh packer per model invocation (module-level packer objects were
