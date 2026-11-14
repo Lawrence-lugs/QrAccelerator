@@ -41,5 +41,6 @@ RUN conda env create -f /tmp/env.yml \
 
 RUN conda init bash \
     && echo "conda activate ic_dec" >> /root/.bashrc
+ENV PATH="/opt/miniforge3/envs/ic_dec/bin:${PATH}"
 
 SHELL ["conda", "run", "-n", "ic_dec", "/bin/bash", "-c"]
