@@ -9,7 +9,7 @@ import onnx
 import rectpack
 
 from qracc_marp.compile import compute
-from qracc_marp.constants import DWC_CORE_SIZE, NUM_BANK_COLS
+from qracc_marp.constants import DATA_WRITE_ADDR, DWC_CORE_SIZE, NUM_BANK_COLS
 from qracc_marp.onnx_tools import onnx_utils
 from qracc_marp.quantization import quant
 
