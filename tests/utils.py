@@ -9,7 +9,7 @@ import subprocess
 import os
 import sys
 import shutil
-import marp.quantization.quant as q
+import qracc_marp.quantization.quant as q
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -20,8 +20,8 @@ except ImportError:
 import pytest
 if sns is not None:
     sns.set_theme()
-from marp.compile.stimulus_gen import *
-from marp.compile.compile import *
+from qracc_marp.compile.stimulus_gen import *
+from qracc_marp.compile.compile import *
 
 sim_args = {'vcs':  [
                 '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
@@ -43,7 +43,7 @@ sim_args = {'vcs':  [
                 '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '--binary',
                 '--timing',
-                '-j', '0',
+                '-j', '4',
                 '-sv',
                 '+incdir+../rtl',
                 '-Wno-fatal',
@@ -67,10 +67,10 @@ sim_args = {'vcs':  [
 
 def empty_directory(directory):
     """
-    Empty the directory if it exists.
+    Empty the directory, creating it if necessary.
     """
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
+    os.makedirs(directory, exist_ok=True)
+    for filename in os.listdir(directory):
             file_path = os.path.join(directory, filename)
             try:
                 if os.path.isfile(file_path) or os.path.islink(file_path):
@@ -320,3 +320,4 @@ def plot_diff_channels(diff, tensor_format='NCHW', filename='diff_channels', bit
         plt.savefig(f'images/{filename}.svg', bbox_inches='tight')
         plt.savefig(f'images/png/{filename}.png', bbox_inches='tight')
     plt.close()
+

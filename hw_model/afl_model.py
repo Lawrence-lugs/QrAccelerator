@@ -8,7 +8,7 @@ array.  This module is a pure-Python reference used by higher-level tests.
 import numpy as np
 import pandas as pd
 df = pd.DataFrame
-import marp.compile.compute as compute
+import qracc_marp.compile.compute as compute
 
 def roll_arithmetic_2d(a, shift : tuple[int]):
     '''

@@ -5,7 +5,6 @@
         "context": "..",
         "cacheFrom": "ghcr.io/lawrence-lugs/qraccelerator"
     },
-    "postCreateCommand": "git submodule update --init --recursive && conda run -n ic_dec pip install -e ./third_party/MARP",
     "customizations": {
         "vscode": {
             "settings": {

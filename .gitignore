@@ -11,6 +11,8 @@ vams/*
 tests/sclibs.py
 tests/logs
 tests/scratch.py
+tests/tb/
+tests/tests/
 *__pycache__*
 DVEfiles
 psf
@@ -38,3 +40,4 @@ build/
 rtl/qracc_params.svh
 snr_results.csv
 sims/snr_results.csv
+artifacts/

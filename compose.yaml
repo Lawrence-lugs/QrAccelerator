@@ -1,0 +1,10 @@
+services:
+  qracc:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspaces/QrAccelerator
+      - ./artifacts:/artifacts:ro
+    working_dir: /workspaces/QrAccelerator
+    command: sleep infinity

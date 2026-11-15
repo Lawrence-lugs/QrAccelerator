@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
-marp = pytest.importorskip("marp")
-from marp.compile.stimulus_gen import *
-from marp.compile.compile import *
-from marp.compile import compute
-from marp.mapping import core
-from marp.mapping import packer_utils as pu
-from marp.onnx_tools import onnx_splitter
-from marp.onnx_tools import onnx_utils
-import marp.quantization.quant as quant
+marp = pytest.importorskip("qracc_marp")
+from qracc_marp.compile.stimulus_gen import *
+from qracc_marp.compile.compile import *
+from qracc_marp.compile import compute
+from qracc_marp.mapping import core
+from qracc_marp.mapping import packer_utils as pu
+from qracc_marp.onnx_tools import onnx_splitter
+from qracc_marp.onnx_tools import onnx_utils
+import qracc_marp.quantization.quant as quant
 from .utils import *
 
 def get_single_node_marp_code(
@@ -89,6 +89,7 @@ def test_qracc_with_onnx_single_node(
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     empty_directory(stimulus_output_path)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -183,6 +184,7 @@ def test_qracc_with_all_onnx_single_node(
     tb_path = 'qracc_top'
     stimulus_output_path = f'tb/{tb_path}/inputs'
     empty_directory(stimulus_output_path)
+    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
     param_file_path = 'rtl/qracc_params.svh'
 
     # Setup log paths
@@ -262,7 +264,7 @@ def make_packers():
     to avoid cross-model contamination.
     """
     import rectpack
-    from marp.mapping import packer_utils as pu
+    from qracc_marp.mapping import packer_utils as pu
     return {
         "Dense": rectpack.newPacker(
             mode=rectpack.PackingMode.Offline,
@@ -290,9 +292,9 @@ def make_packers():
     "nx_model_and_name",
     [
         ("MBV2", 'onnx_models/mbv2_cifar10_int8_binary.onnx'),
-        ("ResNet", 'third_party/MARP/onnx_models/ic_quantized_int8.onnx'),
-        ("FCAE", 'third_party/MARP/onnx_models/ad_quantized_int8.onnx'),
-        ("DSCNN", 'third_party/MARP/onnx_models/ks_quantized_int8.onnx'),
+        ("ResNet", 'artifacts/onnx_models/ic_quantized_int8.onnx'),
+        ("FCAE", 'artifacts/onnx_models/ad_quantized_int8.onnx'),
+        ("DSCNN", 'artifacts/onnx_models/ks_quantized_int8.onnx'),
     ]
 )
 @pytest.mark.parametrize(
@@ -317,7 +319,7 @@ def test_qracc_run_nx_model(
 
     import pathlib
     if not pathlib.Path(nx_model_path).exists():
-        pytest.skip("MARP submodule not initialised: run git submodule update --init --recursive")
+        pytest.skip(f"ONNX model {nx_model_path} not found; generate it in the MARP container and place it under artifacts/onnx_models/")
     nx_model = onnx.load(nx_model_path)
 
     # Fresh packer per model invocation (module-level packer objects were
@@ -425,3 +427,4 @@ def test_qracc_run_nx_model(
     import shutil
     shutil.copy(stats_file, stats_dest_name)
         
+

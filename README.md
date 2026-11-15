@@ -18,24 +18,22 @@ Continuous integration: [`ci.yml`](.github/workflows/ci.yml). No badge until CI 
 | `tb/` | Verilog/SystemVerilog testbenches (tb_column, tb_qracc, tb_qracc_top, tb_seq_acc, tb_afl, tb_q_redis). |
 | `tests/` | Pytest suite (test_rtl.py, test_marp.py, test_marp_rtl.py) plus conftest.py and utils.py (simulation driver, RMSE/SNR, figure helpers). |
 | `results/` | Tracked result data (CSVs) and `parse_reports.py` (Synopsys report parsers/plotters). |
-| `hw_model/` | Behavioral Python model (`afl_model.py`); imports MARP; not used by the tests. |
+| `hw_model/` | Behavioral Python model (`afl_model.py`); imports qracc_marp; not used by the tests. |
 | `onnx_models/` | ONNX models + `cifar10_test_bird4.jpg` used by MARP-driven tests (see `onnx_models/README.md`). |
 | `images/` | Generated PNGs/SVGs (gitignored; regenerate with `pytest --figures`). |
 | `archive/` | Frozen 2025 scratch notebooks and stale artifacts (unmodified; see `archive/README.md`). |
 | `sims/` | Simulation working directory (gitignored except `sims/.gitkeep` and `sims/run_verilator_standalone.sh`). |
-| `third_party/MARP` | Empty gitlink to the MARP compiler; initialize with `git submodule update --init --recursive`. |
 | `.devcontainer/` | Devcontainer image definition (verilator, miniforge/conda `ic_dec` env). |
 | `.github/workflows/` | CI workflow (`ci.yml`) and devcontainer image build (`build-devcontainer.yml`). |
 
 ## Quick start (devcontainer, recommended)
 
-Open the repository in VS Code with the devcontainer extension. The
-`postCreateCommand` runs `git submodule update --init --recursive` and installs
-MARP (`pip install -e ./third_party/MARP`) into the `ic_dec` conda environment,
-so no manual conda setup is needed.
+Open the repository in VS Code with the devcontainer extension. The devcontainer
+builds the `ic_dec` conda environment (verilator + Python deps) from
+`.devcontainer/Dockerfile` and `env.yml`, so no manual conda setup is needed.
 
 ```
-git clone --recurse-submodules git@github.com:Lawrence-lugs/QrAccelerator.git
+git clone git@github.com:Lawrence-lugs/QrAccelerator.git
 cd QrAccelerator
 # then: open in VS Code -> "Reopen in Container"
 ```
@@ -45,8 +43,6 @@ cd QrAccelerator
 ```
 conda env create --file=env.yml        # Python 3.12 (pinned in env.yml)
 conda activate ic_dec
-git submodule update --init --recursive
-pip install -e third_party/MARP        # MARP compiler
 ```
 
 Install an HDL simulator on PATH: verilator (open source, used in CI), or
@@ -116,7 +112,7 @@ Sample inputs under `tb/examples/` are NOT committed (Q1 default: NO).
 
 | Test | Needs | Runs where | Decision |
 |------|-------|------------|----------|
-| `tests/test_marp.py::*` | MARP, onnx, torch | devcontainer | keep; guarded with `pytest.importorskip('marp')` |
+| `tests/test_marp.py::*` | qracc_marp, onnx | devcontainer | keep; guarded with `pytest.importorskip('qracc_marp')` |
 | `tests/test_rtl.py::test_seq_acc` | verilator | devcontainer | keep |
 | `tests/test_rtl.py::test_tb_qracc` | verilator | devcontainer | keep |
 | `tests/test_rtl.py::test_tb_column` | verilator | devcontainer | keep |
@@ -124,10 +120,9 @@ Sample inputs under `tb/examples/` are NOT committed (Q1 default: NO).
 | `tests/test_rtl.py::test_qr_acc_top_single_load` (xrun/vcs) | Cadence + synthesized netlist | nowhere | marked `proprietary` |
 | `tests/test_rtl.py::test_qracc_ams`, `test_seq_acc_ams` | Cadence AMS artifacts (absent) | nowhere | marked `ams`, skip when file missing |
 | `tests/test_rtl.py::test_tb_q_redis` | xrun, hardcoded | nowhere | marked `proprietary` |
-| `tests/test_marp_rtl.py::test_qracc_with_onnx_single_node` | MARP + verilator | devcontainer | keep |
-| `tests/test_marp_rtl.py::test_qracc_with_all_onnx_single_node` | MARP + verilator | devcontainer | marked `heavy` |
-| `tests/test_marp_rtl.py::test_qracc_run_nx_model` | MARP + verilator, 16 heavy runs | devcontainer | marked `heavy`, `--heavy` only |
-| `third_party/MARP/tests/` | MARP repo | devcontainer | keep (MARP's own tests) |
+| `tests/test_marp_rtl.py::test_qracc_with_onnx_single_node` | qracc_marp + verilator | devcontainer | keep |
+| `tests/test_marp_rtl.py::test_qracc_with_all_onnx_single_node` | qracc_marp + verilator | devcontainer | marked `heavy` |
+| `tests/test_marp_rtl.py::test_qracc_run_nx_model` | qracc_marp + verilator, 16 heavy runs | devcontainer | marked `heavy`, `--heavy` only |
 
 Markers: `proprietary`, `ams`, `heavy`, `needs_verilator`. Use `--proprietary`,
 `--heavy` to opt in.
@@ -135,13 +130,12 @@ Markers: `proprietary`, `ams`, `heavy`, `needs_verilator`. Use `--proprietary`,
 ## Continuous integration
 
 CI (`.github/workflows/ci.yml`) builds the devcontainer image from
-`.devcontainer/Dockerfile`, installs MARP, then runs:
+`.devcontainer/Dockerfile`, then runs:
 
 1. `pytest tests/test_marp.py -v --tb=short`
 2. `pytest tests/test_rtl.py::test_seq_acc --simulator verilator -k "binary and 2-32-128-8" -v --tb=short`
 3. `pytest tests/test_rtl.py::test_tb_qracc --simulator verilator -v --tb=short`
 4. `pytest tests/test_rtl.py::test_tb_column --simulator verilator -v --tb=short`
-5. `pytest third_party/MARP/tests/ -v --tb=short -k "not test_from_qlinearconv"`
 
 A `notebook-hygiene` job verifies all non-archived `.ipynb` outputs are stripped
 via `nbstripout --verify`. The devcontainer image is rebuilt by
@@ -198,10 +192,7 @@ used by `tests/test_marp*.py` and marked for user review.
   require Cadence AMS outputs that are not in the repo; the corresponding tests
   are marked `ams` and skipped when the artifact files are missing.
 - `set_synopsys_bash.sh` is a template (echo placeholder only), not functional.
-- CI: previously failed because MARP was installed inside a discarded `--rm`
-  container and was unavailable to the pytest steps; fixed by installing MARP
-  before each pytest step (see CI root cause in the execution log). Verify the
-  latest CI run via the actions page link above.
+- CI: see `.github/workflows/ci.yml` for the current test pipeline. Verify the latest CI run via the actions page link above.
 - Binary-mode SNR note: see `results.md` (grep `dB` there) before relying on
   any binary-mode SNR claim.
 
