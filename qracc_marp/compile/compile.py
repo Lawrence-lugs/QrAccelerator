@@ -52,6 +52,7 @@ class QrAccNodeCode(object):
         ws_core_size: int = DWC_CORE_SIZE,
         ifmap_bits: int = 8,
         ofmap_bits: int = 8,
+        weight_bits: int = 1,
         nx_model: onnx.ModelProto | None = None,
     ) -> None:
 
@@ -66,6 +67,7 @@ class QrAccNodeCode(object):
 
         self.ifmap_bits = ifmap_bits
         self.ofmap_bits = ofmap_bits
+        self.weight_bits = weight_bits
 
         self.ws_core_size = ws_core_size
         self.imc_core_size = imc_core_size
@@ -302,7 +304,10 @@ class QrAccNodeCode(object):
                 commands += make_trigger_write('TRIGGER_LOADWEIGHTS_DIGITAL', write_address=config_write_address)
             else:
                 commands += make_trigger_write('TRIGGER_LOADWEIGHTS', write_address=config_write_address)
-            commands += write_array_to_asm(self._get_weight_data()) 
+            if self.weight_bits > 1:
+                commands += write_weight_rows_to_asm(self._get_weight_data())
+            else:
+                commands += write_array_to_asm(self._get_weight_data()) 
         
         # Writing to the scaler is not optional
         commands += make_trigger_write('TRIGGER_LOAD_SCALER', write_address=config_write_address)
@@ -456,6 +461,21 @@ def write_array_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE
     asm = []
     for element in write_array:
         asm.append(f"LOAD {address} {vhex3(element)}")
+    return asm
+
+def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE_ADDR, words_per_row: int = 8) -> list[str]:
+    """Emit LOADs for multibit weight rows: words_per_row LOADs per row.
+    Address = DATA_WRITE_ADDR | (row << log2(words_per_row)) | word.
+    Word w holds row bits [w*hostBusBits +: hostBusBits] (plane w of the row).
+    Legacy binary emitter (write_array_to_asm) is unchanged."""
+    asm = []
+    base_addr = int(address, 16)
+    row_shift = (words_per_row - 1).bit_length()  # log2(words_per_row), e.g. 3 for 8 words
+    for idx, element in enumerate(write_array):
+        row = idx // words_per_row
+        word = idx % words_per_row
+        addr = base_addr | (row << row_shift) | word
+        asm.append(f"LOAD {addr:08x} {vhex3(element)}")
     return asm
 
 def get_config_from_mapped_node(

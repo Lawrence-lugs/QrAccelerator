@@ -19,6 +19,7 @@ module qr_acc_top #(
     //  Parameters: Interface
     parameter dataInterfaceSize = 32,
     parameter ctrlInterfaceSize = 32,
+    parameter int hostBusBits = 32,
 
     //  Parameters: CSRs
     // parameter csrWidth = 32,
@@ -114,6 +115,15 @@ logic from_sram_rq_ready;
 logic from_sram_rd_valid;
 logic [numCols-1:0] from_sram_rd_data;
 
+// Host-bus row staging: assemble numPlanes*numCols-bit rows from hostBusBits-wide LOADs
+logic [numPlanes*numCols-1:0] row_stage_q;
+logic [numCols-1:0] legacy_wr_data;
+
+// Controller-internal SRAM signals (muxed with staging logic at top level)
+logic wr_ctrl_rq_wr;
+logic wr_ctrl_rq_valid;
+logic [$clog2(numRows)-1:0] wr_ctrl_addr;
+
 // Signals : Activation Buffer
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_int_wr_data;
@@ -170,10 +180,10 @@ qracc_controller #(
     .bus_resp_o                 (controller_bus_resp),
 
     .ctrl_o                     (qracc_ctrl),
-    .to_sram_rq_wr              (to_sram_rq_wr),
-    .to_sram_rq_valid           (to_sram_rq_valid),
-    .to_sram_wr_data            (to_sram_wr_data_ctl),
-    .to_sram_addr               (to_sram_addr),
+    .to_sram_rq_wr              (wr_ctrl_rq_wr),
+    .to_sram_rq_valid           (wr_ctrl_rq_valid),
+    .to_sram_wr_data            (legacy_wr_data),
+    .to_sram_addr               (wr_ctrl_addr),
     .from_sram_rq_ready         (from_sram_rq_ready),
     .from_sram_rd_valid         (from_sram_rd_valid),
     .from_sram_rd_data          (from_sram_rd_data),
@@ -232,6 +242,54 @@ seq_acc #(
     .from_sram_rd_valid         (from_sram_rd_valid),
     .from_sram_rd_data          (from_sram_rd_data)
 );
+
+// Row staging: assemble numPlanes*numCols-bit rows from hostBusBits-wide LOADs
+always_ff @(posedge clk or negedge nrst) begin : rowStageRegs
+    if (!nrst) begin
+        row_stage_q <= '0;
+    end else begin
+        if (bus_req_i.valid && bus_req_i.wen
+            && (bus_req_i.addr & 32'hFFFFFF00) == 32'h00000100
+            && cfg.wr_bus_sel != 0) begin
+            int word_idx;
+            word_idx = bus_req_i.addr[2:0];
+            row_stage_q[word_idx*hostBusBits +: hostBusBits] <= bus_req_i.data_in;
+        end
+    end
+end
+
+// Row complete: last word of staged row
+wire row_complete_pulse = bus_req_i.valid && bus_req_i.wen
+    && (bus_req_i.addr & 32'hFFFFFF00) == 32'h00000100
+    && cfg.wr_bus_sel != 0
+    && bus_req_i.addr[2:0] == (numPlanes*numCols/hostBusBits - 1);
+
+// Complete row value including the current LOAD word (valid when row_complete_pulse)
+logic [numPlanes*numCols-1:0] complete_row;
+always_comb begin : completeRowComb
+    complete_row = row_stage_q;
+    if (row_complete_pulse)
+        complete_row[bus_req_i.addr[2:0]*hostBusBits +: hostBusBits] = bus_req_i.data_in;
+end
+
+// SRAM write mux: staging logic overrides controller during multibit row writes
+always_comb begin : sramWriteMux
+    to_sram_rq_wr = wr_ctrl_rq_wr;
+    to_sram_rq_valid = wr_ctrl_rq_valid;
+    to_sram_addr = wr_ctrl_addr;
+    to_sram_wr_data_ctl = '0;
+    to_sram_wr_data_ctl[31:0] = legacy_wr_data;
+
+    if (cfg.wr_bus_sel != 0 && row_complete_pulse) begin
+        int row;
+        row = bus_req_i.addr[10:3];
+        to_sram_rq_wr = 1'b1;
+        to_sram_rq_valid = 1'b1;
+        to_sram_addr = row;
+        to_sram_wr_data_ctl = '0;
+        to_sram_wr_data_ctl[row*256 +: 256] = complete_row;
+    end
+end
 
 always_comb begin : wsAccDataOrientation
     // Orient the data for the WSAcc PE cluster
