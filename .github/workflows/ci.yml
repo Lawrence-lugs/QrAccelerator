@@ -18,19 +18,19 @@ jobs:
 
       - name: Build devcontainer image
         run: |
-          docker build -t qracc-dev -f .devcontainer/Dockerfile .
+          docker compose build qracc
 
       - name: Install submodule package
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP"
 
       - name: Run Python model tests
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest tests/test_marp.py -v --tb=short"
@@ -38,7 +38,7 @@ jobs:
       - name: Run Verilator RTL tests (seq_acc)
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest tests/test_rtl.py::test_seq_acc --simulator verilator \
@@ -47,7 +47,7 @@ jobs:
       - name: Run Verilator RTL tests (tb_qracc)
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest tests/test_rtl.py::test_tb_qracc --simulator verilator \
@@ -56,7 +56,7 @@ jobs:
       - name: Run Verilator RTL tests (tb_column)
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest tests/test_rtl.py::test_tb_column --simulator verilator \
@@ -65,7 +65,7 @@ jobs:
       - name: Run MARP tests
         run: |
           docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
-            qracc-dev \
+            qraccelerator-qracc \
             bash -c "git config --global --add safe.directory /workspace/third_party/MARP && \
               conda run --no-capture-output -n ic_dec pip install -e ./third_party/MARP && \
               conda run --no-capture-output -n ic_dec python -m pytest third_party/MARP/tests/ -v --tb=short \
