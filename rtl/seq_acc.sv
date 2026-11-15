@@ -9,7 +9,7 @@ asdasd
 import qracc_pkg::*;
 
 module seq_acc #(
-    parameter maxInputBits = 8,
+    parameter maxInputBits = qrAccMaxInputBits,
     parameter inputElements = 128,
     parameter outputElements = 32,
     
@@ -64,9 +64,11 @@ logic signed [outputElements-1:0][adcBits+numPlanes-1:0] tree_sum;
 logic mac_en;
 logic [3:0] input_bits;
 logic [3:0] input_trits;
+logic [4:0] input_bits_raw;
 
 // If the activations are unsigned, the effective bits is +1
-assign input_bits = cfg.n_input_bits_cfg + {3'b0,cfg.unsigned_acts}; 
+assign input_bits_raw = cfg.n_input_bits_cfg + {1'b0,cfg.unsigned_acts};
+assign input_bits = (input_bits_raw > maxInputBits) ? maxInputBits[3:0] : input_bits_raw;
 assign input_trits = input_bits - 1;
 
 // Modules

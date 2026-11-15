@@ -25,7 +25,7 @@ module qr_acc_top #(
     // parameter numCsr = 4,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = 8,
+    parameter qrAccInputBits = qrAccMaxInputBits,
     parameter qrAccInputElements = 256,
     parameter qrAccOutputBits = 8,
     parameter qrAccOutputElements = 256,

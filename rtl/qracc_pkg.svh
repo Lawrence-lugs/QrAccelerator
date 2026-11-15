@@ -29,6 +29,7 @@ package qracc_pkg;
     parameter numBanks   = 256/numCols;
     parameter outputElements = 256;
     localparam int numPlanes = 8;
+    localparam int qrAccMaxInputBits = 9;
     
       // Output Scaler Parameters
     parameter accumulatorBits = 16;
@@ -101,7 +102,7 @@ package qracc_pkg;
         logic [3:0] filter_size_x;              // 15:12
         logic [3:0] stride_x;                   // 19:16
         logic [3:0] stride_y;                   // 23:20
-        logic [3:0] n_input_bits_cfg;           // 27:24 
+        logic [3:0] n_input_bits_cfg;           // 27:24, values above qrAccMaxInputBits are clamped in seq_acc
         logic [3:0] n_output_bits_cfg;          // 31:28
         logic [3:0] weight_bits_cfg;            // B in 1..8 (0 treated as 1); per weight bit-plane count
         logic weight_signed_cfg;                // 1: two's complement (MSB plane negated); 0: unsigned planes

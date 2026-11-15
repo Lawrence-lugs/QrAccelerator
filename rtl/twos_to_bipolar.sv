@@ -22,7 +22,9 @@ always_comb begin : dataPath
             bipolar_n[i] = 0;
         end
         else begin
-            if (twos[i][input_bits-1]) begin
+            int bit_idx;
+            bit_idx = (input_bits-1 < inBits) ? input_bits-1 : inBits-1;
+            if (twos[i][bit_idx]) begin
                 bipolar_p[i] = '0;
                 bipolar_n[i] = ntwos[i];
             end else begin
