@@ -321,6 +321,29 @@ def array_bin_to_int(array,signed=False,outBits=None):
     pows = np.array([2**i for i in range(shape[-1])])[::-1]
     return np.sum(pows*array,axis=1)
 
+def quantize_int8_to_bits(w_int8: np.ndarray, B: int, signed: bool) -> np.ndarray:
+    """Reduce an int8 array to B bits (arithmetic shift), with clamping."""
+    if B not in (1, 2, 4, 8):
+        raise ValueError(f"B must be in {{1, 2, 4, 8}}, got {B}")
+    if B == 8 and signed:
+        return w_int8.astype(np.int64)
+    if not signed:
+        # unsigned only legal for B == 1; legacy binary weights are 0/1
+        return (w_int8 != 0).astype(np.int64)
+    q = w_int8.astype(np.int64) >> (8 - B)
+    min_val = -(2 ** (B - 1))
+    max_val = 2 ** (B - 1) - 1
+    q = np.clip(q, min_val, max_val)
+    return q
+
+def weight_bit_planes(w_int8: np.ndarray, B: int, signed: bool) -> np.ndarray:
+    """Return 8 bit-planes of shape (8,)+w_int8.shape. Plane b = (q >> b) & 1 for b < B, else 0."""
+    q = quantize_int8_to_bits(w_int8, B, signed)
+    planes = np.zeros((8,) + w_int8.shape, dtype=np.uint8)
+    for b in range(B):
+        planes[b] = ((q >> b) & 1).astype(np.uint8)
+    return planes
+
 def int_to_bin(n, bits):
     " Convert an integer to a binary array "
     return np.moveaxis(np.array([n >> i & 1 for i in range(bits-1,-1,-1)]),0,-1)
