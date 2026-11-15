@@ -14,6 +14,7 @@ module seq_acc #(
     parameter outputElements = 32,
     
     parameter numCols = 32,
+    parameter int numPlanes = 8,
 
     parameter adcBits = 4,
     parameter accumulatorBits = 16
@@ -33,8 +34,8 @@ module seq_acc #(
     output logic [outputElements-1:0][accumulatorBits-1:0] mac_data_o,
 
     // Passthrough signals
-    output to_analog_t to_analog_o,
-    input from_analog_t from_analog_i,
+    output to_analog_t to_analog_o [numPlanes-1:0],
+    input from_analog_t from_analog_i [numPlanes-1:0],
     
     // SRAM signals
     input to_sram_rq_wr,
@@ -58,7 +59,8 @@ logic signed [inputElements-1:0][maxInputBits-1:0] piso_buffer_p_d;
 logic [outputElements-1:0][accumulatorBits-1:0] accumulator;
 logic [inputElements-1:0] data_p_i;
 logic [inputElements-1:0] data_n_i;
-logic [outputElements-1:0][adcBits-1:0] adc_out;
+logic signed [numPlanes-1:0][outputElements-1:0][adcBits-1:0] plane_adc_out;
+logic signed [outputElements-1:0][adcBits+numPlanes-1:0] tree_sum;
 logic mac_en;
 logic [3:0] input_bits;
 logic [3:0] input_trits;
@@ -68,35 +70,65 @@ assign input_bits = cfg.n_input_bits_cfg + {3'b0,cfg.unsigned_acts};
 assign input_trits = input_bits - 1;
 
 // Modules
-qr_acc_wrapper #(
-    .numRows(inputElements),
-    .numCols(numCols),
-    .outputElements(outputElements),
-    .numAdcBits(numAdcBits)
-) u_qr_acc_wrapper (
-    .clk(clk),
-    .nrst(nrst),
-    // CONFIG
-    .cfg(cfg),
-    
-    // ANALOG
-    .to_analog_o(to_analog_o),
-    .from_analog_i(from_analog_i),
+genvar planeIdx;
+generate
+    for (planeIdx = 0; planeIdx < numPlanes; planeIdx++) begin : g_plane
+        qr_acc_wrapper #(
+            .numRows(inputElements),
+            .numCols(numCols),
+            .outputElements(outputElements),
+            .numAdcBits(numAdcBits)
+        ) u_qr_acc_wrapper (
+            .clk(clk),
+            .nrst(nrst),
+            // CONFIG
+            .cfg(cfg),
+            
+            // ANALOG
+            .to_analog_o(to_analog_o[planeIdx]),
+            .from_analog_i(from_analog_i[planeIdx]),
 
-    // DIGITAL INTERFACE: MAC
-    .adc_out_o(adc_out),
-    .mac_en_i(mac_en),
-    .data_p_i(data_p_i),
-    .data_n_i(data_n_i),
+            // DIGITAL INTERFACE: MAC
+            .adc_out_o(plane_adc_out[planeIdx]),
+            .mac_en_i(mac_en),
+            .data_p_i(data_p_i),
+            .data_n_i(data_n_i),
 
-    // DIGITAL INTERFACE: SRAM
-    .to_sram_rq_wr              (to_sram_rq_wr),
-    .to_sram_rq_valid           (to_sram_rq_valid),
-    .to_sram_wr_data            (to_sram_wr_data),
-    .to_sram_addr               (to_sram_addr),
-    .from_sram_rq_ready         (from_sram_rq_ready),
-    .from_sram_rd_valid         (from_sram_rd_valid),
-    .from_sram_rd_data          (from_sram_rd_data)
+            // DIGITAL INTERFACE: SRAM
+            .to_sram_rq_wr              (to_sram_rq_wr),
+            .to_sram_rq_valid           (to_sram_rq_valid),
+            .to_sram_wr_data            (to_sram_wr_data),
+            .to_sram_addr               (to_sram_addr),
+            .from_sram_rq_ready         (from_sram_rq_ready_plane[planeIdx]),
+            .from_sram_rd_valid         (from_sram_rd_valid_plane[planeIdx]),
+            .from_sram_rd_data          (from_sram_rd_data_plane[planeIdx])
+        );
+    end
+endgenerate
+
+logic [numPlanes-1:0] from_sram_rq_ready_plane;
+logic [numPlanes-1:0] from_sram_rd_valid_plane;
+logic [numPlanes-1:0][numCols-1:0] from_sram_rd_data_plane;
+
+assign from_sram_rq_ready = |from_sram_rq_ready_plane;
+assign from_sram_rd_valid = |from_sram_rd_valid_plane;
+
+always_comb begin
+    from_sram_rd_data = '0;
+    for (int p = 0; p < numPlanes; p++) begin
+        from_sram_rd_data |= from_sram_rd_data_plane[p];
+    end
+end
+
+shift_add_tree #(
+    .numPlanes(numPlanes),
+    .numOutputs(outputElements),
+    .partialBits(adcBits)
+) u_shift_add_tree (
+    .weight_bits_i(cfg.weight_bits_cfg),
+    .weight_signed_i(cfg.weight_signed_cfg),
+    .partial_i(plane_adc_out),
+    .sum_o(tree_sum)
 );
 
 twos_to_bipolar #(
@@ -150,9 +182,9 @@ always_ff @( posedge clk ) begin : seqAccRegs
     end else begin
         for (int i = 0; i < outputElements; i++) begin
             if (pipeline_tracker[1]) begin // == 'h02
-                accumulator[i] <= accumulatorBits'(signed'(adc_out[i])) << (input_trits - 1); // bit 0 result
+                accumulator[i] <= accumulatorBits'(signed'(tree_sum[i])) << (input_trits - 1); // bit 0 result
             end else begin
-                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(adc_out[i])) << (input_trits - 1) );
+                accumulator[i] <= {accumulator[i][accumulatorBits-1],accumulator[i][accumulatorBits-1:1]} + ( accumulatorBits'(signed'(tree_sum[i])) << (input_trits - 1) );
             end
         end
     end

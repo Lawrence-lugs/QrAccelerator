@@ -11,6 +11,7 @@ module ts_qracc #(
     parameter numRows = 128,
     parameter numCols = 8,
     parameter numAdcBits = 4,
+    parameter int numPlanes = 8,
     localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (
     // DIGITAL SETTING

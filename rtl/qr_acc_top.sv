@@ -31,6 +31,7 @@ module qr_acc_top #(
     parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter int numPlanes = 8,
 
     //  Parameters: Per Bank
     parameter numRows = 256,
@@ -65,8 +66,8 @@ module qr_acc_top #(
     output bus_resp_t bus_resp_o,
 
     // Analog passthrough signals
-    output to_analog_t to_analog,
-    input from_analog_t from_analog,
+    output to_analog_t to_analog [numPlanes-1:0],
+    input from_analog_t from_analog [numPlanes-1:0],
     output [numBanks-1:0] bank_select
 
     // // CSR signals for testing for now

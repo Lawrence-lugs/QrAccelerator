@@ -28,6 +28,7 @@ package qracc_pkg;
     parameter numCfgBits = 8;
     parameter numBanks   = 256/numCols;
     parameter outputElements = 256;
+    localparam int numPlanes = 8;
     
       // Output Scaler Parameters
     parameter accumulatorBits = 16;
@@ -102,6 +103,10 @@ package qracc_pkg;
         logic [3:0] stride_y;                   // 23:20
         logic [3:0] n_input_bits_cfg;           // 27:24 
         logic [3:0] n_output_bits_cfg;          // 31:28
+        logic [3:0] weight_bits_cfg;            // B in 1..8 (0 treated as 1); per weight bit-plane count
+        logic weight_signed_cfg;                // 1: two's complement (MSB plane negated); 0: unsigned planes
+        logic [1:0] wr_bus_sel;                 // 0: 32B, 1: 64B, 2: 128B write bus
+        logic [3:0] adc_bits_cfg;         // per-plane ADC bits (8 planes x 4 bits), indexed [planeIdx*4 +: 4], default 4
 
         // CSR 2: Ifmap Dims
         logic [15:0] input_fmap_dimx;           // 15:0

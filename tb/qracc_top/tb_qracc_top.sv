@@ -34,6 +34,7 @@ module tb_qracc_top #(
     parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
     parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter int numPlanes = 8,
     
     //  Parameters: Per Bank
     parameter numRows = `SRAM_ROWS,
@@ -69,11 +70,11 @@ logic nrst;
 bus_req_t bus_req;
 bus_resp_t bus_resp;
 
-to_analog_t to_analog;
-from_analog_t from_analog;
+to_analog_t to_analog [numPlanes-1:0];
+from_analog_t from_analog [numPlanes-1:0];
 
-logic [3871:0] from_analog_wire;
-logic [3401:0] to_analog_wire;
+logic [numPlanes-1:0][3871:0] from_analog_wire;
+logic [numPlanes-1:0][3401:0] to_analog_wire;
 
 `ifdef POST_SYNTH
 assign from_analog_wire = from_analog;
@@ -133,34 +134,40 @@ logic CLK;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
+assign PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
 
-assign from_analog.SA_OUT = SA_OUT;
-assign WL = to_analog.WL;
-assign PCH = to_analog.PCH;
-assign WR_DATA = to_analog.WR_DATA;
-assign WRITE = to_analog.WRITE;
-assign CSEL = to_analog.CSEL;
-assign SAEN = to_analog.SAEN;
-assign from_analog.ADC_OUT = ADC_OUT;
-assign NF = to_analog.NF;
-assign NFB = to_analog.NFB;
-assign M2A = to_analog.M2A;
-assign M2AB = to_analog.M2AB;
-assign R2A = to_analog.R2A;
-assign R2AB = to_analog.R2AB;
-assign CLK = to_analog.CLK;
+assign from_analog[0].SA_OUT = SA_OUT;
+assign WL = to_analog[0].WL;
+assign PCH = to_analog[0].PCH;
+assign WR_DATA = to_analog[0].WR_DATA;
+assign WRITE = to_analog[0].WRITE;
+assign CSEL = to_analog[0].CSEL;
+assign SAEN = to_analog[0].SAEN;
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_from_analog_bcast
+        assign from_analog[p].SA_OUT = SA_OUT;
+        assign from_analog[p].ADC_OUT = ADC_OUT;
+    end
+endgenerate
+assign NF = to_analog[0].NF;
+assign NFB = to_analog[0].NFB;
+assign M2A = to_analog[0].M2A;
+assign M2AB = to_analog[0].M2AB;
+assign R2A = to_analog[0].R2A;
+assign R2AB = to_analog[0].R2AB;
+assign CLK = to_analog[0].CLK;
 
 // ======= END ANALOG SIGNALS =======
 

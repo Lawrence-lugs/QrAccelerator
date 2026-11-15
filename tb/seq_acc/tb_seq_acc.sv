@@ -13,6 +13,9 @@ module tb_seq_acc #(
     parameter xBits = 4, // Ternary bits + 1
     parameter xBatches = 10,
     parameter numAdcBits = 4,
+    parameter int numPlanes = 8,
+    parameter int weightBits = 1,
+    parameter int weightSigned = 0,
     parameter numCfgBits = 8,
     parameter macMode = 0,
     parameter outBits = 8,
@@ -38,8 +41,8 @@ localparam accumulatorBits = 16;
 // SIGNALS
 /////////////
 
-to_analog_t to_analog;
-from_analog_t from_analog;
+to_analog_t to_analog [numPlanes-1:0];
+from_analog_t from_analog [numPlanes-1:0];
 
 logic clk;
 logic nrst;
@@ -107,26 +110,26 @@ to_sram_t to_sram;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
+assign PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
 
-assign from_analog.SA_OUT = SA_OUT;
-assign WL = to_analog.WL;
-assign PCH = to_analog.PCH;
-assign WR_DATA = to_analog.WR_DATA;
-assign WRITE = to_analog.WRITE;
-assign CSEL = to_analog.CSEL;
-assign SAEN = to_analog.SAEN;
+assign from_analog[0].SA_OUT = SA_OUT;
+assign WL = to_analog[0].WL;
+assign PCH = to_analog[0].PCH;
+assign WR_DATA = to_analog[0].WR_DATA;
+assign WRITE = to_analog[0].WRITE;
+assign CSEL = to_analog[0].CSEL;
+assign SAEN = to_analog[0].SAEN;
 // VERILATOR FIX: Verilator evaluates the combinational chain (including clk-gated
 // switch matrix in qr_acc_wrapper) BEFORE posedge FFs capture. This zeroes the ADC
 // result before the ADC register in the wrapper can sample it. A transparent latch
@@ -137,17 +140,27 @@ logic [compCount*numCols-1:0] ADC_OUT_held;
 always_latch begin
     if (!clk) ADC_OUT_held = ADC_OUT;
 end
-assign from_analog.ADC_OUT = ADC_OUT_held;
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
+        assign from_analog[p].ADC_OUT = ADC_OUT_held;
+    end
+endgenerate
 `else
-assign from_analog.ADC_OUT = ADC_OUT;
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
+        assign from_analog[p].ADC_OUT = ADC_OUT;
+    end
+endgenerate
 `endif
-assign NF = to_analog.NF;
-assign NFB = to_analog.NFB;
-assign M2A = to_analog.M2A;
-assign M2AB = to_analog.M2AB;
-assign R2A = to_analog.R2A;
-assign R2AB = to_analog.R2AB;
-assign CLK = to_analog.CLK;
+assign NF = to_analog[0].NF;
+assign NFB = to_analog[0].NFB;
+assign M2A = to_analog[0].M2A;
+assign M2AB = to_analog[0].M2AB;
+assign R2A = to_analog[0].R2A;
+assign R2AB = to_analog[0].R2AB;
+assign CLK = to_analog[0].CLK;
 assign to_sram.rq_wr_i = rq_wr;
 assign to_sram.rq_valid_i = rq_valid;
 assign rq_ready = from_sram.rq_ready_o;
@@ -278,6 +291,8 @@ task set_config();
     cfg.binary_cfg = macMode;
     cfg.unsigned_acts = unsignedActs;
     cfg.n_input_bits_cfg = xBits;
+    cfg.weight_bits_cfg = weightBits;
+    cfg.weight_signed_cfg = weightSigned;
 endtask
 
 //////////////////////

@@ -13,7 +13,8 @@ module ts_qracc_multibank #(
     parameter numCols = 8,
     parameter numAdcBits = 4,
     localparam compCount = (2**numAdcBits)-1, // An ADC only has 2^numAdcBits-1 comparators
-    parameter numBanks = 8
+    parameter numBanks = 8,
+    parameter int numPlanes = 8
 ) (
 
     input logic [3:0] adc_ref_range_shifts,

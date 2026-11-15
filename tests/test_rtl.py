@@ -326,6 +326,7 @@ def test_seq_acc(
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
         '../rtl/seq_acc.sv',
+        '../rtl/shift_add_tree.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
         '../rtl/twos_to_bipolar.sv'
@@ -350,6 +351,8 @@ def test_seq_acc(
         f'macMode={mac_mode}',
         f'outBits={outBits}',
         f'unsignedActs={int(unsigned_acts)}',
+        f'weightBits=1',
+        f'weightSigned=0',
     ]
 
     print(f'col_symmetric:{col_symmetric}')
