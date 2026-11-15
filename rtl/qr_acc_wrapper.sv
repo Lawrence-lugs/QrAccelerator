@@ -118,11 +118,12 @@ wr_controller #(
 
     .write_i                (wc_write),    
     .read_i                 (wc_read),     
+    .wr_bus_sel_i           (cfg.wr_bus_sel),
     .addr_i                 (to_sram_addr),     
     .done                   (wc_done),  
     .ready                  (wr_controller_ready), 
 
-    .wr_data_i              (to_sram_wr_data),
+    .wr_data_i              ({{(4-1)*numCols{1'b0}}, to_sram_wr_data}),
     .wr_data_q              (to_analog_o.WR_DATA),
     
     // SRAM interface signals

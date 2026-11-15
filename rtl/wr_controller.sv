@@ -13,6 +13,8 @@
 // 3. Wait for done to be asserted
 //
 // Note: write_i and read_i should not be asserted simultaneously
+// wr_bus_sel_i selects the beat width in rows: 0 -> 1 row, 1 -> 2 rows, 2 -> 4 rows.
+// The whole beat is registered in beat_q and wr_data_q drives the current row slice.
 `timescale 1ns/1ps
 
 import qracc_pkg::*;
@@ -20,7 +22,8 @@ import qracc_pkg::*;
 module wr_controller #(
     parameter int numRows = 128,
     parameter int numCols = 32,
-    parameter int numPlanes = 8
+    parameter int numPlanes = 8,
+    parameter int numBeatRows = 4
 ) (
     input clk,
     input nrst,
@@ -30,12 +33,11 @@ module wr_controller #(
     input read_i,
     input [1:0] wr_bus_sel_i,
     input [$clog2(numRows)-1:0] addr_i,
-    input [numPlanes*numCols-1:0] wr_data_i,
+    input [numBeatRows*numCols-1:0] wr_data_i,
 
     output logic done, //asserted for just 1 CC
     output logic ready,
     output logic [numCols-1:0] wr_data_q,
-    output logic [numPlanes-1:0][numCols-1:0] row_wr_data_o,
 
     // writes and reads
     output logic [numCols-1:0] c3sram_csel_o,
@@ -57,6 +59,8 @@ wr_ctrl_state_t state_d;
 logic [1:0] pos_ctr;
 logic [$clog2(numRows)-1:0] addr_i_q;
 logic [1:0] rows_per_beat;
+logic [1:0] row_idx_q;
+logic [numBeatRows*numCols-1:0] beat_q;
 
 // FSM
 always_ff @(posedge clk or negedge nrst) begin
@@ -76,11 +80,10 @@ always_comb begin
             endcase
         end
         S_WRITING, S_READING: begin 
-            if (pos_ctr == 0) begin
+            if (pos_ctr == 0 && row_idx_q == rows_per_beat-1'b1)
                 state_d = S_IDLE;
-            end else begin
+            else
                 state_d = state_q;
-            end
         end 
         default: state_d = state_q;
     endcase
@@ -89,19 +92,32 @@ end
 // Data registering when writing
 always_ff @( posedge clk ) begin : wrDataReg
     if (!nrst) begin
-        wr_data_q <= 0;
+        beat_q <= 0;
         addr_i_q <= 0;
     end else begin
         if (state_q == S_IDLE) begin
             if (state_d == S_WRITING) begin
-                wr_data_q <= wr_data_i;
+                beat_q <= wr_data_i;
                 addr_i_q <= addr_i;
             end
             if (state_d == S_READING) begin
                 addr_i_q <= addr_i;
             end
         end 
+    end
+end
 
+// Row index within the current beat
+always_ff @(posedge clk or negedge nrst) begin : rowIndex
+    if (!nrst) begin
+        row_idx_q <= 0;
+    end else begin
+        if (state_q == S_IDLE) begin
+            row_idx_q <= 0;
+        end else if (state_q == S_WRITING || state_q == S_READING) begin
+            if (pos_ctr == 0 && row_idx_q != rows_per_beat-1'b1)
+                row_idx_q <= row_idx_q + 1;
+        end
     end
 end
 
@@ -127,13 +143,10 @@ always_comb begin
     endcase
 end
 
-// Plane slicing: plane b takes bits [b*numCols +: numCols] from wr_data_i
-genvar b;
-generate
-    for (b = 0; b < numPlanes; b++) begin : g_plane_slice
-        assign row_wr_data_o[b] = wr_data_i[b*numCols +: numCols];
-    end
-endgenerate
+// Output row of the current beat (combinational slice, no X on reset)
+always_comb begin
+    wr_data_q = beat_q[row_idx_q*numCols +: numCols];
+end
 
 localparam w2bWaveWr  = 4'b1111;
 localparam nprechargeWaveWr = 4'b1111;
@@ -160,7 +173,7 @@ always_comb  begin
             c3sram_saen_o = saenWaveRd[pos_ctr];
             c3sram_w2b_o = 0;
             c3sram_wl_o = 0;
-            c3sram_wl_o[addr_i_q] = targetWlWaveRd[pos_ctr];
+            c3sram_wl_o[addr_i_q + row_idx_q] = targetWlWaveRd[pos_ctr];
             c3sram_nprecharge_o = nprechargeWaveRd[pos_ctr];
         end
         S_WRITING: begin
@@ -168,20 +181,22 @@ always_comb  begin
             c3sram_saen_o = 0;
             c3sram_w2b_o = w2bWaveWr[pos_ctr];
             c3sram_wl_o = 0;
-            c3sram_wl_o[addr_i_q] = targetWlWaveWr[pos_ctr];
+            c3sram_wl_o[addr_i_q + row_idx_q] = targetWlWaveWr[pos_ctr];
             c3sram_nprecharge_o = nprechargeWaveWr[pos_ctr];
         end
     endcase
 end
 
-// Done
+// Done: asserted only on the last row
 always_comb ready = (state_q == S_IDLE) ? 1 : 0;
 always_comb begin 
+    logic last_row;
+    last_row = (row_idx_q == rows_per_beat-1'b1);
     case (state_q)
         S_READING:
-            done = (pos_ctr == 1);
+            done = (pos_ctr == 1) && last_row;
         default: begin
-            done = (pos_ctr == 0);
+            done = (pos_ctr == 0) && last_row;
         end
     endcase
 end
