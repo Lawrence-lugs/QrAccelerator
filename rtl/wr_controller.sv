@@ -15,9 +15,12 @@
 // Note: write_i and read_i should not be asserted simultaneously
 `timescale 1ns/1ps
 
+import qracc_pkg::*;
+
 module wr_controller #(
     parameter int numRows = 128,
-    parameter int numCols = 32
+    parameter int numCols = 32,
+    parameter int numPlanes = 8
 ) (
     input clk,
     input nrst,
@@ -25,12 +28,14 @@ module wr_controller #(
     // we don't passively read in the interest of energy
     input write_i,
     input read_i,
+    input [1:0] wr_bus_sel_i,
     input [$clog2(numRows)-1:0] addr_i,
-    input [numCols-1:0] wr_data_i,
+    input [numPlanes*numCols-1:0] wr_data_i,
 
     output logic done, //asserted for just 1 CC
     output logic ready,
     output logic [numCols-1:0] wr_data_q,
+    output logic [numPlanes-1:0][numCols-1:0] row_wr_data_o,
 
     // writes and reads
     output logic [numCols-1:0] c3sram_csel_o,
@@ -51,6 +56,7 @@ wr_ctrl_state_t state_d;
 
 logic [1:0] pos_ctr;
 logic [$clog2(numRows)-1:0] addr_i_q;
+logic [1:0] rows_per_beat;
 
 // FSM
 always_ff @(posedge clk or negedge nrst) begin
@@ -111,6 +117,23 @@ always_ff @(posedge clk or negedge nrst) begin : positionCounter
         endcase
     end
 end
+
+// Rows per beat based on bus select
+always_comb begin
+    case (wr_bus_sel_i)
+        2'd1: rows_per_beat = 2; // 64B beat
+        2'd2: rows_per_beat = 4; // 128B beat
+        default: rows_per_beat = 1; // 32B beat
+    endcase
+end
+
+// Plane slicing: plane b takes bits [b*numCols +: numCols] from wr_data_i
+genvar b;
+generate
+    for (b = 0; b < numPlanes; b++) begin : g_plane_slice
+        assign row_wr_data_o[b] = wr_data_i[b*numCols +: numCols];
+    end
+endgenerate
 
 localparam w2bWaveWr  = 4'b1111;
 localparam nprechargeWaveWr = 4'b1111;

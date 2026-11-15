@@ -40,7 +40,7 @@ module seq_acc #(
     // SRAM signals
     input to_sram_rq_wr,
     input to_sram_rq_valid,
-    input [numCols-1:0] to_sram_wr_data,
+    input [numPlanes-1:0][numCols-1:0] to_sram_wr_data,
     input [$clog2(numRows)-1:0] to_sram_addr,
     output logic from_sram_rq_ready,
     output logic from_sram_rd_valid,
@@ -99,7 +99,7 @@ generate
             // DIGITAL INTERFACE: SRAM
             .to_sram_rq_wr              (to_sram_rq_wr),
             .to_sram_rq_valid           (to_sram_rq_valid),
-            .to_sram_wr_data            (to_sram_wr_data),
+            .to_sram_wr_data            (to_sram_wr_data[planeIdx]),
             .to_sram_addr               (to_sram_addr),
             .from_sram_rq_ready         (from_sram_rq_ready_plane[planeIdx]),
             .from_sram_rd_valid         (from_sram_rd_valid_plane[planeIdx]),

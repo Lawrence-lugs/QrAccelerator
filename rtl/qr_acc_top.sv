@@ -106,7 +106,8 @@ logic qracc_ready;
 // SRAM Signals
 logic to_sram_rq_wr;
 logic to_sram_rq_valid;
-logic [numCols-1:0] to_sram_wr_data;
+logic [numCols-1:0] to_sram_wr_data_ctl;
+logic [numPlanes-1:0][numCols-1:0] to_sram_wr_data;
 logic [$clog2(numRows)-1:0] to_sram_addr;
 logic from_sram_rq_ready;
 logic from_sram_rd_valid;
@@ -170,7 +171,7 @@ qracc_controller #(
     .ctrl_o                     (qracc_ctrl),
     .to_sram_rq_wr              (to_sram_rq_wr),
     .to_sram_rq_valid           (to_sram_rq_valid),
-    .to_sram_wr_data            (to_sram_wr_data),
+    .to_sram_wr_data            (to_sram_wr_data_ctl),
     .to_sram_addr               (to_sram_addr),
     .from_sram_rq_ready         (from_sram_rq_ready),
     .from_sram_rd_valid         (from_sram_rd_valid),
@@ -192,6 +193,14 @@ qracc_controller #(
 
     .debug_pc_o                 () 
 );
+
+// Fan out controller write data to all planes
+genvar pb;
+generate
+    for (pb = 0; pb < numPlanes; pb++) begin : g_wr_data_fanout
+        assign to_sram_wr_data[pb] = to_sram_wr_data_ctl;
+    end
+endgenerate
 
 // Main matrix multiplication
 

@@ -74,6 +74,7 @@ logic rq_ready;
 logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
+logic [numPlanes-1:0][numCols-1:0] wr_data_planes;
 logic [$clog2(numRows)-1:0] addr;
 
 logic [numRows-1:0] PSM_VDR_SEL;
@@ -166,7 +167,15 @@ assign to_sram.rq_valid_i = rq_valid;
 assign rq_ready = from_sram.rq_ready_o;
 assign rd_valid = from_sram.rd_valid_o;
 assign rd_data = from_sram.rd_data_o;
-assign to_sram.wr_data_i = wr_data;
+
+// Fan out write data to all planes (same 32-bit row for every plane)
+genvar pw;
+generate
+    for (pw = 0; pw < numPlanes; pw++) begin : g_wr_data_planes
+        assign wr_data_planes[pw] = wr_data;
+    end
+endgenerate
+
 assign to_sram.addr_i = addr;
 
 //////////////////////
@@ -197,7 +206,7 @@ seq_acc #(
     .from_analog_i(from_analog),
     .to_sram_rq_wr(to_sram.rq_wr_i),
     .to_sram_rq_valid(to_sram.rq_valid_i),
-    .to_sram_wr_data(to_sram.wr_data_i),
+    .to_sram_wr_data(wr_data_planes),
     .to_sram_addr(to_sram.addr_i),
     .from_sram_rq_ready(from_sram.rq_ready_o),
     .from_sram_rd_valid(from_sram.rd_valid_o),
