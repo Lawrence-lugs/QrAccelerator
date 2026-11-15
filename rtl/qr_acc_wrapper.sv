@@ -9,6 +9,7 @@ module qr_acc_wrapper #(
     parameter outputElements = 128,
     parameter numCols = 32,
     parameter numAdcBits = 4,
+    parameter int numBeatRows = 4,
     parameter compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) ( 
     input clk,
@@ -29,7 +30,8 @@ module qr_acc_wrapper #(
     // SRAM signals
     input to_sram_rq_wr,
     input to_sram_rq_valid,
-    input [numCols-1:0] to_sram_wr_data,
+    input [1:0] wr_bus_sel_i,
+    input [numBeatRows*numCols-1:0] to_sram_wr_data,
     input [$clog2(numRows)-1:0] to_sram_addr,
     output logic from_sram_rq_ready,
     output logic from_sram_rd_valid,
@@ -118,12 +120,12 @@ wr_controller #(
 
     .write_i                (wc_write),    
     .read_i                 (wc_read),     
-    .wr_bus_sel_i           (cfg.wr_bus_sel),
+    .wr_bus_sel_i           (wr_bus_sel_i),
     .addr_i                 (to_sram_addr),     
     .done                   (wc_done),  
     .ready                  (wr_controller_ready), 
 
-    .wr_data_i              ({{(4-1)*numCols{1'b0}}, to_sram_wr_data}),
+    .wr_data_i              (to_sram_wr_data),
     .wr_data_q              (to_analog_o.WR_DATA),
     
     // SRAM interface signals

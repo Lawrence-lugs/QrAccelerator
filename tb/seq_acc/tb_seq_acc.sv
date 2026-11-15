@@ -14,6 +14,7 @@ module tb_seq_acc #(
     parameter xBatches = 10,
     parameter numAdcBits = 4,
     parameter int numPlanes = 8,
+    parameter int numBeatRows = 4,
     parameter int weightBits = 1,
     parameter int weightSigned = 0,
     parameter numCfgBits = 8,
@@ -74,7 +75,7 @@ logic rq_ready;
 logic rd_valid;
 logic [numCols-1:0] rd_data;
 logic [numCols-1:0] wr_data;
-logic [numPlanes-1:0][numCols-1:0] wr_data_planes;
+logic [numBeatRows*numPlanes*numCols-1:0] wr_data_planes;
 logic [$clog2(numRows)-1:0] addr;
 
 logic [numRows-1:0] PSM_VDR_SEL;
@@ -168,13 +169,14 @@ assign rq_ready = from_sram.rq_ready_o;
 assign rd_valid = from_sram.rd_valid_o;
 assign rd_data = from_sram.rd_data_o;
 
-// Fan out write data to all planes (same 32-bit row for every plane)
-genvar pw;
-generate
-    for (pw = 0; pw < numPlanes; pw++) begin : g_wr_data_planes
-        assign wr_data_planes[pw] = wr_data;
+// Build full beat from wr_data: legacy path replicates row 0 across all planes,
+// rows 1..numBeatRows-1 are zero.
+always_comb begin
+    wr_data_planes = '0;
+    for (int b = 0; b < numPlanes; b++) begin
+        wr_data_planes[b*numCols +: numCols] = wr_data;
     end
-endgenerate
+end
 
 assign to_sram.addr_i = addr;
 
@@ -206,6 +208,7 @@ seq_acc #(
     .from_analog_i(from_analog),
     .to_sram_rq_wr(to_sram.rq_wr_i),
     .to_sram_rq_valid(to_sram.rq_valid_i),
+    .wr_bus_sel_i(cfg.wr_bus_sel),
     .to_sram_wr_data(wr_data_planes),
     .to_sram_addr(to_sram.addr_i),
     .from_sram_rq_ready(from_sram.rq_ready_o),

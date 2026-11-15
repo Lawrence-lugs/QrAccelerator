@@ -15,6 +15,7 @@ module seq_acc #(
     
     parameter numCols = 32,
     parameter int numPlanes = 8,
+    parameter int numBeatRows = 4,
 
     parameter adcBits = 4,
     parameter accumulatorBits = 16
@@ -40,7 +41,8 @@ module seq_acc #(
     // SRAM signals
     input to_sram_rq_wr,
     input to_sram_rq_valid,
-    input [numPlanes-1:0][numCols-1:0] to_sram_wr_data,
+    input [1:0] wr_bus_sel_i,
+    input [numBeatRows*numPlanes*numCols-1:0] to_sram_wr_data,
     input [$clog2(numRows)-1:0] to_sram_addr,
     output logic from_sram_rq_ready,
     output logic from_sram_rd_valid,
@@ -75,6 +77,14 @@ assign input_trits = input_bits - 1;
 genvar planeIdx;
 generate
     for (planeIdx = 0; planeIdx < numPlanes; planeIdx++) begin : g_plane
+        logic [numBeatRows*numCols-1:0] planeWr;
+
+        always_comb begin
+            for (int r = 0; r < numBeatRows; r++) begin
+                planeWr[r*numCols +: numCols] = to_sram_wr_data[r*numPlanes*numCols + planeIdx*numCols +: numCols];
+            end
+        end
+
         qr_acc_wrapper #(
             .numRows(inputElements),
             .numCols(numCols),
@@ -97,9 +107,10 @@ generate
             .data_n_i(data_n_i),
 
             // DIGITAL INTERFACE: SRAM
+            .wr_bus_sel_i               (wr_bus_sel_i),
             .to_sram_rq_wr              (to_sram_rq_wr),
             .to_sram_rq_valid           (to_sram_rq_valid),
-            .to_sram_wr_data            (to_sram_wr_data[planeIdx]),
+            .to_sram_wr_data            (planeWr),
             .to_sram_addr               (to_sram_addr),
             .from_sram_rq_ready         (from_sram_rq_ready_plane[planeIdx]),
             .from_sram_rd_valid         (from_sram_rd_valid_plane[planeIdx]),
