@@ -219,17 +219,7 @@ class QrAccNodeCode(object):
                 physical_kernel = self.mapped_node.kernel
 
             physical_kernel_hwc = physical_kernel.transpose(1,2,3,0)  # Convert to KHWC format
-            # P10-DW DEVIATION: kernel_to_writes() shifts on uint8 elements
-            # (stimulus_gen.py:57), which overflows and zeroes bytes 1-3 of each word
-            # (only 1 channel/word survives instead of 4). Pack 4 channels per word with
-            # uint32 arithmetic so that byte (c%4) of word (tap*8 + c//4) == int8
-            # W[c,0,t//3,t%3] (two's complement as uint8), matching the ONNX depthwise
-            # weights. Depthwise node mnode1 / ONNX node2 (group=32, 3x3).
-            pk = np.asarray(physical_kernel_hwc, dtype=np.uint8).astype(np.uint32)  # (1,K,K,C) KHWC byte values
-            tap_ch = pk.reshape(-1, self.ws_core_size)                     # (K*K, C) tap-major
-            groups = tap_ch.reshape(-1, 4)                                 # (K*K*C/4, 4)
-            words = (groups[:, 3] << 24) | (groups[:, 2] << 16) | (groups[:, 1] << 8) | groups[:, 0]
-            return words.astype(np.uint32)
+            return kernel_to_writes(physical_kernel_hwc, channels=self.ws_core_size, hexes=False)
         else:
             return mapped_matrix_to_bank_writes(self.mapped_bin.weights,32)
         

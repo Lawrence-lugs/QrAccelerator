@@ -45,6 +45,9 @@ def kernel_to_writes(kernel, channels, hexes=True):
     kernel_flat = kernel.reshape(-1, channels)
     kernel_flat = np.pad(kernel_flat, ((0, 0), (0, 4 - (kernel_flat.shape[1] % 4) if kernel_flat.shape[1] % 4 != 0 else 0)), mode='constant', constant_values=0)
     kernel_flat = kernel_flat.reshape(-1, 4).astype(np.uint8)
+    # Build the packed word from Python ints: shifting uint8 values overflows
+    # and zeroes the high bytes, so the non-hex path must not shift on uint8.
+    kernel_int = kernel_flat.astype(np.int64) & 0xFF
     if hexes:
         kernel_packed = vhex3(kernel_flat, hexits=2)
         kernel_writes = []
@@ -54,7 +57,8 @@ def kernel_to_writes(kernel, channels, hexes=True):
         if hexes:
             kernel_writes.append(f'{kernel_packed[i,3]}{kernel_packed[i,2]}{kernel_packed[i,1]}{kernel_packed[i,0]}')
         else:
-            kernel_writes[i] += (kernel_flat[i,3] & 0xFF) << 24 | (kernel_flat[i,2] & 0xFF) << 16 | (kernel_flat[i,1] & 0xFF) << 8 | (kernel_flat[i,0] & 0xFF)
+            word = int(kernel_int[i,3]) << 24 | int(kernel_int[i,2]) << 16 | int(kernel_int[i,1]) << 8 | int(kernel_int[i,0])
+            kernel_writes[i] = np.uint32(word)
     return kernel_writes
 
 def _conv2d_int(x, w, padding=0, stride=1):
