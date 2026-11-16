@@ -27,6 +27,7 @@ from qracc_marp.constants import (
     CSR_REG_OFMAP_DIMS,
     CSR_REG_OFFSETS,
     CSR_REG_PADDING,
+    CSR_REG_WEIGHT,
     DATA_WRITE_ADDR,
     DEFAULT_CORE_SIZE,
     DWC_CORE_SIZE,
@@ -192,6 +193,8 @@ class QrAccNodeCode(object):
             "mapped_matrix_offset_y": mapped_node.offset_y,
             "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
             "padding_value": mapped_node.x_zp,  # Padding value for the input feature map
+            "weight_bits": int(self.weight_bits),
+            "weight_signed": int(bool(self.weight_signed)),
         }
 
         return config_dict
@@ -439,7 +442,7 @@ def bundle_config_into_write(
     config_dict: dict[str, int],
     config_write_address: str = CSR_BASE_ADDR_HEX,
 ) -> list[str]:
-    """Pack QRAcc configuration fields into six 32-bit CSR LOAD instructions."""
+    """Pack QRAcc configuration fields into seven 32-bit CSR LOAD instructions."""
     base_addr = int(config_write_address, 16)
 
     config_word = (
@@ -473,6 +476,10 @@ def bundle_config_into_write(
         ((int(config_dict['padding_value']) & MASK_16) << 4) |
         ((config_dict['padding'] & MASK_16) << 0)
     )
+    weight_word = (
+        ((config_dict.get('weight_bits', 1) & 0xF) << 0) |
+        ((config_dict.get('weight_signed', 0) & 0x1) << 4)
+    )
 
     config_writes = [
         f"LOAD {base_addr + CSR_REG_CONFIG:08x} {config_word:08x}",
@@ -481,6 +488,7 @@ def bundle_config_into_write(
         f"LOAD {base_addr + CSR_REG_CHANNELS:08x} {channels_word:08x}",
         f"LOAD {base_addr + CSR_REG_OFFSETS:08x} {offsets_word:08x}",
         f"LOAD {base_addr + CSR_REG_PADDING:08x} {padding_word:08x}",
+        f"LOAD {base_addr + CSR_REG_WEIGHT:08x} {weight_word:08x}",
     ]
 
     return config_writes

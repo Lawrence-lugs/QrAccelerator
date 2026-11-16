@@ -30,7 +30,8 @@ typedef enum logic [3:0] {
     CSR_REG_OFMAP_DIMS = 3,
     CSR_REG_CHANNELS = 4,
     CSR_REG_OFFSETS = 5,
-    CSR_REG_PADDING = 6
+    CSR_REG_PADDING = 6,
+    CSR_REG_WEIGHT = 7
 } csr_names_t;
 
 // Signals
@@ -132,6 +133,9 @@ always_comb begin : csrDecode
 
     cfg_o.padding       = csr_set[CSR_REG_PADDING][3:0];
     cfg_o.padding_value = csr_set[CSR_REG_PADDING][11:4];
+
+    cfg_o.weight_bits_cfg   = csr_set[CSR_REG_WEIGHT][3:0];
+    cfg_o.weight_signed_cfg = csr_set[CSR_REG_WEIGHT][4];
 end
 
 endmodule

@@ -32,6 +32,7 @@ DATA_WRITE_ADDR: str = "00000100"
 
 # CSR register offsets (from base address)
 CSR_REG_CONFIG: int = 1
+CSR_REG_WEIGHT: int = 7
 CSR_REG_IFMAP_DIMS: int = 2
 CSR_REG_OFMAP_DIMS: int = 3
 CSR_REG_CHANNELS: int = 4
