@@ -37,6 +37,30 @@ from qracc_marp.constants import (
 )
 from qracc_marp.mapping import core
 from qracc_marp.onnx_tools import onnx_utils
+import qracc_marp.quantization.quant as quant
+
+
+def pack_weight_planes(weights, B, signed):
+    """Pack per-plane weight bit-words for the B>1 emitter.
+
+    ``weight_bit_planes`` yields 8 planes (b < B real, b >= B zero). Each
+    plane is flattened, padded to rows of 32 columns, and each row is packed
+    MSB-first into a 32-bit word with ``array_bin_to_int``. Words are
+    returned flat in ``[bank_row, plane]`` order so word index ``i`` maps to
+    bank row ``i // 8`` and plane ``i % 8``; planes b >= weight_bits are zero
+    words ignored by the shift-add tree (b >= weight_bits_i contributes 0).
+    """
+    planes = quant.weight_bit_planes(weights, B, signed)
+    n_plane = planes.shape[0]
+    flat = planes.reshape(n_plane, -1)
+    pad = (-flat.shape[1]) % 32
+    if pad:
+        flat = np.pad(flat, ((0, 0), (0, pad)), constant_values=0)
+    rows = flat.reshape(n_plane, -1, 32)
+    words = quant.array_bin_to_int(rows.reshape(-1, 32))
+    words = words.reshape(n_plane, -1).transpose().reshape(-1)
+    return words
+
 
 class QrAccNodeCode(object):
     '''
@@ -54,6 +78,7 @@ class QrAccNodeCode(object):
         ifmap_bits: int = 8,
         ofmap_bits: int = 8,
         weight_bits: int = 1,
+        weight_signed: bool = False,
         nx_model: onnx.ModelProto | None = None,
     ) -> None:
 
@@ -69,6 +94,7 @@ class QrAccNodeCode(object):
         self.ifmap_bits = ifmap_bits
         self.ofmap_bits = ofmap_bits
         self.weight_bits = weight_bits
+        self.weight_signed = weight_signed
 
         self.ws_core_size = ws_core_size
         self.imc_core_size = imc_core_size
@@ -221,7 +247,9 @@ class QrAccNodeCode(object):
             physical_kernel_hwc = physical_kernel.transpose(1,2,3,0)  # Convert to KHWC format
             return kernel_to_writes(physical_kernel_hwc, channels=self.ws_core_size, hexes=False)
         else:
-            return mapped_matrix_to_bank_writes(self.mapped_bin.weights,32)
+            if self.weight_bits > 1:
+                return pack_weight_planes(self.mapped_bin.weights, B=self.weight_bits, signed=self.weight_signed)
+            return mapped_matrix_to_bank_writes(self.mapped_bin.weights, 32)
         
     def _get_scaler_data(self):
         return pad_scaler_writes(
@@ -306,7 +334,7 @@ class QrAccNodeCode(object):
             else:
                 commands += make_trigger_write('TRIGGER_LOADWEIGHTS', write_address=config_write_address)
             if self.weight_bits > 1:
-                commands += write_weight_rows_to_asm(self._get_weight_data())
+                commands += write_weight_rows_to_asm(self._get_weight_data(), signed=False)
             else:
                 commands += write_array_to_asm(self._get_weight_data()) 
         

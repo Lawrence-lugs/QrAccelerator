@@ -346,7 +346,7 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
     write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
     return write_array
 
-def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE_ADDR, words_per_row: int = 8) -> list[str]:
+def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE_ADDR, words_per_row: int = 8, signed: bool = False) -> list[str]:
     """Emit LOADs for multibit weight rows: words_per_row LOADs per row.
     Address = DATA_WRITE_ADDR | (row << log2(words_per_row)) | word.
     Word w holds row bits [w*hostBusBits +: hostBusBits] (plane w of the row).
@@ -358,7 +358,15 @@ def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA
         row = idx // words_per_row
         word = idx % words_per_row
         addr = base_addr | (row << row_shift) | word
-        asm.append(f"LOAD {addr:08x} {vhex3(element)}")
+        val = int(element)
+        if signed:
+            # Encode each weight byte as two's complement (int64 & 0xFF, like kernel_to_writes)
+            b0 = int(np.int64(val) & 0xFF)
+            b1 = int(np.int64(val) >> 8 & 0xFF)
+            b2 = int(np.int64(val) >> 16 & 0xFF)
+            b3 = int(np.int64(val) >> 24 & 0xFF)
+            val = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+        asm.append(f"LOAD {addr:08x} {vhex3(val)}")
     return asm
 
 def write_input_files(res_dict, savepath):
