@@ -233,7 +233,7 @@ def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_di
         # We check for TEST SUCCESS in the log instead of relying on return code
 
     # Read log file and check for success
-    with open(log_file, 'r') as f:
+    with open(log_file, 'r', errors='replace') as f:
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file, 10)
 
@@ -249,13 +249,13 @@ def write_parameter_definition_file(parameter_list,filepath):
 
 def get_log_tail(log_file,nlines):
     m = f'See {log_file} for details\n' 
-    with open(log_file,'r') as f:
+    with open(log_file,'r', errors='replace') as f:
         lines = f.readlines()[-nlines:]
         a = ''.join(lines)
     return '\n'.join([m,a])
 
 def get_log(log_file):
-    with open(log_file,'r') as f:
+    with open(log_file,'r', errors='replace') as f:
         print(f.read())
 
 def rmse_snr(expected, actual):
