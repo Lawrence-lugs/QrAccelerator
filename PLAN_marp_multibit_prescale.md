@@ -2,9 +2,9 @@
 
 ## Goal
 
-Compare the RTL's pre-shift MAC output (raw accumulator before `<< adc_ref_range_shifts` in `rtl/seq_acc.sv:227`) against a numpy-simulated QLinearConv golden model that computes the same pre-scaling MAC values directly through the multi-bit-plane path.
+Compare the RTL's pre-shift MAC output (raw accumulator before `<< adc_ref_range_shifts` in `rtl/seq_acc.sv:227`) against intermediate arrays from a numpy-simulated 8b x 8b ONNX QLinearConv golden model.
 
-The golden model must **match the ONNX QLinearConv output exactly** despite modelling the multi-bit-plane calculation — this is the simpler success metric, replacing the scale-fitting SNR approach used in `test_marp_multibit_prestack.py`.
+The golden model computes the **entire 8b x 8b ONNX QLinearConv computation**; for the test we simply take the intermediate pre-scaling MAC arrays from that simulation and compare them against the RTL's pre-shift accumulator values. This avoids the pipeline-stage mismatch that made `test_marp_multibit_prestack.py` (comparing pre-shift accumulator to ONNX final post-scaler output via scale fitting) produce negative SNR.
 
 ## Why
 
@@ -12,7 +12,14 @@ The existing `test_marp_multibit_prestack.py` compares the pre-shift accumulator
 
 ## Golden model (all in `qracc_marp`, no new library code)
 
+The golden model simulates the **entire 8b x 8b ONNX QLinearConv computation** using:
+- `compute.toeplitzize_input` to build the activation Toeplitz matrix
+- `quant.weight_bit_planes` for per-plane weight decomposition
+- Bit-plane dot products combined via shift-add with `twos_to_bipolar` on the MSB plane
+
 **Inputs** — same random `input_tensor` (uint8, NCHW) that the RTL testbench uses, and the mapped node's weight matrix.
+
+For the test we extract the **intermediate pre-scaling MAC arrays** (before any `<< adc_ref_range_shifts` or output scaling) from the golden model, and compare those against the RTL's pre-shift accumulator values.
 
 **B=1 (binary):**
 ```
