@@ -14,6 +14,7 @@ module qracc_controller #(
     parameter dataBusWidth = 32,
 
     parameter numBanks = 8,
+    parameter numPlanes = 8,
     parameter numColsPerBank = 32,
     localparam internalInterfaceElements = internalInterfaceWidth / 8
 ) (
@@ -114,6 +115,7 @@ logic read_acts_out_valid;
 // Write tracking signals
 logic [31:0] scaler_ptr;
 logic [31:0] weight_ptr;
+wire [31:0] weight_load_total = (cfg.weight_bits_cfg > 1) ? 32'(numRows*numBanks*numPlanes) : 32'(numRows*numBanks);
 
 // Padding
 logic [31:0] padding_address_offset;
@@ -141,6 +143,10 @@ state_t state_q;
 state_t state_d;
 state_t state_trigger;
 assign csr_main_internal_state = state_q;
+`ifdef DEBUG
+always_ff @(posedge clk) if (state_q == S_LOADWEIGHTS && state_d != S_LOADWEIGHTS)
+    $display("[DBG ctrl] weight load exit weight_ptr=%0d total=%0d mb=%0d", weight_ptr, weight_load_total, cfg.weight_bits_cfg);
+`endif
 
 always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
     if (!nrst) begin
@@ -267,7 +273,7 @@ always_comb begin : stateDecode
             state_d = state_trigger;
         end
         S_LOADWEIGHTS: begin
-            if (weight_ptr < numRows*numBanks) begin
+            if (weight_ptr < weight_load_total) begin
                 state_d = S_LOADWEIGHTS;
             end else begin
                 state_d = S_IDLE;

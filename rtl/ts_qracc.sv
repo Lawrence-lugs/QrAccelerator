@@ -56,12 +56,20 @@ module ts_qracc #(
 
 // SRAM modelling
 logic [numCols-1:0] mem [numRows];
+`ifdef DEBUG
+integer dbg_sram_wr = 0;
+`endif
 always_ff @( posedge CLK ) begin :  sramModel
     if (PCH) begin
         if (WRITE) begin
             for (int i = 0; i < numRows; i++) begin
                 if (WL[i]) begin 
                     mem[i] = WR_DATA; // blocking assignment in behavioral SRAM model
+`ifdef DEBUG
+                    dbg_sram_wr = dbg_sram_wr + 1;
+                    if (dbg_sram_wr <= 20 || (i >= 192 && i <= 218))
+                        $display("[DBG sram-wr] %m n=%0d row=%0d word=%h", dbg_sram_wr, i, WR_DATA);
+`endif
                     // $display("WR_DATA: %d, %d", WR_DATA, mem[i]);
                 end
             end
@@ -151,5 +159,14 @@ always_comb begin : toMBL
     
     ADC_OUT = comp_out;
 end
+
+`ifdef DEBUG
+final begin
+    for (int r = 0; r < numRows; r++) begin
+        if (mem[r] != '0)
+            $display("[DBG sram] %m r=%0d word=%h", r, mem[r]);
+    end
+end
+`endif
 
 endmodule

@@ -83,6 +83,12 @@ always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
     end
 end
 
+`ifdef DEBUG
+always_ff @(posedge clk) if (handshake_success && bus_req_i.wen && csr_addr == CSR_REG_WEIGHT) begin
+    $display("[DBG csr] write reg7 data=%h weight_bits=%0d signed=%0d", bus_req_i.data_in, bus_req_i.data_in[3:0], bus_req_i.data_in[4]);
+end
+`endif
+
 // CSR Decode
 always_comb begin : csrDecode
     csr_main_read_output = {

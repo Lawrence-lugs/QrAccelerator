@@ -234,4 +234,40 @@ always_comb begin : seqAccDpath
     end
 end
 
+`ifdef DEBUG
+int dbg_ev;
+int dbg_nz;
+int dbg_first;
+initial dbg_ev = 0;
+always @(posedge clk) begin
+  if (mac_valid_i && ready_o && dbg_ev < 2) begin
+    dbg_nz = 0;
+    dbg_first = -1;
+    for (int i = 0; i < inputElements; i++) begin
+      if (mac_data_i[i] != 0) begin
+        dbg_nz = dbg_nz + 1;
+        if (dbg_first < 0) dbg_first = i;
+      end
+    end
+    if (dbg_nz > 0) begin
+      $display("[DBG seq_acc] event=%0d nz_lanes=%0d first_lane=%0d", dbg_ev, dbg_nz, dbg_first);
+      for (int i = 0; i < inputElements; i++)
+        $display("[DBG seq_acc] event=%0d act[%0d]=%0d", dbg_ev, i, mac_data_i[i]);
+      for (int p = 0; p < numPlanes; p++)
+        $display("[DBG seq_acc] event=%0d plane=%0d adc_out[0]=%0d", dbg_ev, p, $signed(plane_adc_out[p][0]));
+      $display("[DBG seq_acc] event=%0d tree_sum[0]=%0d", dbg_ev, $signed(tree_sum[0]));
+      dbg_ev = dbg_ev + 1;
+    end
+  end
+end
+`endif
+
+`ifdef DEBUG
+int dbg_out_cnt = 0;
+always_ff @(posedge clk) if (valid_o && dbg_out_cnt < 2) begin
+    dbg_out_cnt <= dbg_out_cnt + 1;
+    $display("[DBG seq_acc] out n=%0d mac_data_o[0]=%0h mac_data_o[1]=%0h mac_data_o[2]=%0h mac_data_o[3]=%0h accumulator[0]=%0d", dbg_out_cnt, mac_data_o[0], mac_data_o[1], mac_data_o[2], mac_data_o[3], $signed(accumulator[0]));
+end
+`endif
+
 endmodule

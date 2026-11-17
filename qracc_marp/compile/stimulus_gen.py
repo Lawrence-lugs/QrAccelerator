@@ -307,6 +307,26 @@ def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits = 8):
 
     return adc_ref_range_shifts
 
+def infer_bitplane_adc_range_shifts(toeplitz_acts, weights, ifmap_bits=8, weight_bits=8, adc_bits=4):
+    """Smallest ADC range shift so every bit-plane partial fits the signed ADC.
+
+    toeplitz_acts: (windows, rows) unsigned activations; weights: (rows, cols) integers.
+    Partial P[j, b] = sum_r bit_j(x_r) * bit_b(w_r,c) over all windows and columns.
+    The signed ADC reads bits [s+adc_bits-1 : s], so it needs max(P) < 2**(adc_bits-1+s).
+    """
+    x = np.asarray(toeplitz_acts, dtype=np.int64)
+    w = np.asarray(weights, dtype=np.int64) & ((1 << weight_bits) - 1)
+    max_partial = 0
+    for j in range(ifmap_bits):
+        xj = (x >> j) & 1
+        for b in range(weight_bits):
+            wb = (w >> b) & 1
+            max_partial = max(max_partial, int((xj @ wb).max()))
+    if max_partial == 0:
+        return 0
+    shifts = int(np.ceil(np.log2(max_partial + 1))) - (adc_bits - 1)
+    return max(0, shifts)
+
 def minorize_pad_ifmap(t_ifmap, padding=1, act_zero_point=0):
     """
     Prepare the input feature map for convolution by padding it.
@@ -348,7 +368,7 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
 
 def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE_ADDR, words_per_row: int = 8, signed: bool = False) -> list[str]:
     """Emit LOADs for multibit weight rows: words_per_row LOADs per row.
-    Address = DATA_WRITE_ADDR | (row << log2(words_per_row)) | word.
+    Address = DATA_WRITE_ADDR + (row << log2(words_per_row)) + word.
     Word w holds row bits [w*hostBusBits +: hostBusBits] (plane w of the row).
     Legacy binary emitter (write_array_to_asm) is unchanged."""
     asm = []
@@ -357,7 +377,7 @@ def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA
     for idx, element in enumerate(write_array):
         row = idx // words_per_row
         word = idx % words_per_row
-        addr = base_addr | (row << row_shift) | word
+        addr = base_addr + (row << row_shift) + word
         val = int(element)
         if signed:
             # Encode each weight byte as two's complement (int64 & 0xFF, like kernel_to_writes)

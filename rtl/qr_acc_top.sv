@@ -31,7 +31,7 @@ module qr_acc_top #(
     parameter qrAccOutputBits = 8,
     parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
     parameter int numPlanes = 8,
 
     //  Parameters: Per Bank
@@ -111,6 +111,7 @@ logic to_sram_rq_valid;
 logic [numBeatRows*numPlanes*numCols-1:0] to_sram_wr_data_ctl;
 logic [numBeatRows*numPlanes*numCols-1:0] to_sram_wr_data;
 logic [$clog2(numRows)-1:0] to_sram_addr;
+logic [numBanks-1:0] legacy_bank_select;
 logic from_sram_rq_ready;
 logic from_sram_rd_valid;
 logic [numCols-1:0] from_sram_rd_data;
@@ -171,7 +172,8 @@ qracc_controller #(
     .numScalers                 (qrAccOutputElements),
     .numRows                    (qrAccInputElements),
     .internalInterfaceWidth     (globalBufferIntInterfaceWidth),
-    .numBanks                   (numBanks)
+    .numBanks                   (numBanks),
+    .numPlanes                  (numPlanes)
 ) u_qracc_controller (
     .clk                        (clk),
     .nrst                       (nrst),
@@ -187,7 +189,7 @@ qracc_controller #(
     .from_sram_rq_ready         (from_sram_rq_ready),
     .from_sram_rd_valid         (from_sram_rd_valid),
     .from_sram_rd_data          (from_sram_rd_data),
-    .bank_select                (bank_select),
+    .bank_select                (legacy_bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
@@ -235,7 +237,7 @@ seq_acc #(
     // SRAM
     .to_sram_rq_wr              (to_sram_rq_wr),
     .to_sram_rq_valid           (to_sram_rq_valid),
-    .wr_bus_sel_i               (cfg.wr_bus_sel),
+    .wr_bus_sel_i               ((cfg.weight_bits_cfg > 1) ? 2'd0 : cfg.wr_bus_sel),
     .to_sram_wr_data            (to_sram_wr_data_ctl),
     .to_sram_addr               (to_sram_addr),
     .from_sram_rq_ready         (from_sram_rq_ready),
@@ -243,14 +245,19 @@ seq_acc #(
     .from_sram_rd_data          (from_sram_rd_data)
 );
 
+// Multibit write window: DATA_WRITE_ADDR (0x100) .. 0x100 + 256 rows x 64 words - 1
+// addr[2:0] = plane, addr[5:3] = bank, addr[13:6] = SRAM row (matrix row)
+wire mb_mode = (cfg.weight_bits_cfg > 1);
+wire mb_weight_load = wr_ctrl_rq_wr && mb_mode
+    && (bus_req_i.addr >= 32'h00000100)
+    && (bus_req_i.addr < 32'h00000100 + 32'd16384);
+
 // Row staging: assemble numPlanes*numCols-bit rows from hostBusBits-wide LOADs
 always_ff @(posedge clk or negedge nrst) begin : rowStageRegs
     if (!nrst) begin
         row_stage_q <= '0;
     end else begin
-        if (bus_req_i.valid && bus_req_i.wen
-            && (bus_req_i.addr & 32'hFFFFFF00) == 32'h00000100
-            && cfg.wr_bus_sel != 0) begin
+        if (mb_weight_load) begin
             int word_idx;
             word_idx = bus_req_i.addr[2:0];
             row_stage_q[word_idx*hostBusBits +: hostBusBits] <= bus_req_i.data_in;
@@ -259,10 +266,23 @@ always_ff @(posedge clk or negedge nrst) begin : rowStageRegs
 end
 
 // Row complete: last word of staged row
-wire row_complete_pulse = bus_req_i.valid && bus_req_i.wen
-    && (bus_req_i.addr & 32'hFFFFFF00) == 32'h00000100
-    && cfg.wr_bus_sel != 0
+wire row_complete_pulse = mb_weight_load
     && bus_req_i.addr[2:0] == (numPlanes*numCols/hostBusBits - 1);
+
+// Hold the target bank for the wr_controller write window (4 cycles per row)
+logic [2:0] mb_wr_hold_q;
+logic [$clog2(numBanks)-1:0] mb_bank_q;
+always_ff @(posedge clk or negedge nrst) begin : mbWrHold
+    if (!nrst) begin
+        mb_wr_hold_q <= 0;
+    end else if (row_complete_pulse) begin
+        mb_wr_hold_q <= 3'd4;
+        mb_bank_q <= bus_req_i.addr[5:3];
+    end else if (mb_wr_hold_q != 0) begin
+        mb_wr_hold_q <= mb_wr_hold_q - 1'b1;
+    end
+end
+assign bank_select = (mb_wr_hold_q != 0) ? (numBanks'(1) << mb_bank_q) : legacy_bank_select;
 
 // Complete row value including the current LOAD word (valid when row_complete_pulse)
 logic [numPlanes*numCols-1:0] complete_row;
@@ -280,16 +300,40 @@ always_comb begin : sramWriteMux
     to_sram_wr_data_ctl = '0;
     to_sram_wr_data_ctl[31:0] = legacy_wr_data;
 
-    if (cfg.wr_bus_sel != 0 && row_complete_pulse) begin
+    if (mb_weight_load) begin
+        to_sram_rq_wr = 1'b0;
+        to_sram_rq_valid = 1'b0;
+    end
+
+    if (mb_mode && row_complete_pulse) begin
         int row;
-        row = bus_req_i.addr[10:3];
+        row = (bus_req_i.addr - 32'h00000100) >> 6;
         to_sram_rq_wr = 1'b1;
         to_sram_rq_valid = 1'b1;
         to_sram_addr = row;
         to_sram_wr_data_ctl = '0;
-        to_sram_wr_data_ctl[row*256 +: 256] = complete_row;
+        to_sram_wr_data_ctl[numPlanes*numCols-1:0] = complete_row;
     end
 end
+
+`ifdef DEBUG
+integer dbg_mb_writes = 0;
+integer dbg_mb_rows = 0;
+always_ff @(posedge clk) begin
+    if (bus_req_i.valid && bus_req_i.wen && bus_req_i.addr == 32'h00000017)
+        $display("[DBG top] reg7 write seen at top data=%h cfg.weight_bits=%0d", bus_req_i.data_in, cfg.weight_bits_cfg);
+    if (mb_weight_load) begin
+        dbg_mb_writes <= dbg_mb_writes + 1;
+        if (dbg_mb_writes < 6)
+            $display("[DBG mb] addr=%h data=%h p=%0d k=%0d r=%0d", bus_req_i.addr, bus_req_i.data_in, bus_req_i.addr[2:0], bus_req_i.addr[5:3], (bus_req_i.addr - 32'h00000100) >> 6);
+    end
+    if (row_complete_pulse) begin
+        dbg_mb_rows <= dbg_mb_rows + 1;
+        if (bus_req_i.addr >= 32'h00003100 || bus_req_i.addr == 32'h000040FF)
+            $display("[DBG mb] row complete addr=%h row=%0d bank=%0d ready=%0d wr_rq=%0d data_lo=%h rows=%0d writes=%0d", bus_req_i.addr, (bus_req_i.addr - 32'h00000100) >> 6, bus_req_i.addr[5:3], from_sram_rq_ready, wr_ctrl_rq_wr, complete_row[31:0], dbg_mb_rows + 1, dbg_mb_writes + 1);
+    end
+end
+`endif
 
 always_comb begin : wsAccDataOrientation
     // Orient the data for the WSAcc PE cluster
@@ -513,5 +557,13 @@ always_comb begin : busOutputManage
         bus_resp_o.data_out = abuf_rd_data; // Read from activation buffer
     end
 end
+
+`ifdef DEBUG
+int dbg_top_cnt = 0;
+always_ff @(posedge clk) if (qracc_output_valid && dbg_top_cnt < 2) begin
+    dbg_top_cnt <= dbg_top_cnt + 1;
+    $display("[DBG qr_acc_top] n=%0d oscaler_input[0]=%0d output_scaler_output[0]=%0d", dbg_top_cnt, oscaler_input[0], output_scaler_output[0]);
+end
+`endif
 
 endmodule

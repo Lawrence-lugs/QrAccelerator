@@ -26,7 +26,7 @@ module qr_acc_top_wrapper #(
     parameter qrAccOutputBits = 8,
     parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
     parameter int numPlanes = 8,
 
     //  Parameters: Per Bank

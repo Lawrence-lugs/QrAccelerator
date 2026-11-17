@@ -33,7 +33,7 @@ module tb_qracc_top #(
     parameter qrAccOutputBits = `QRACC_OUTPUT_BITS,
     parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
     parameter int numPlanes = 8,
     
     //  Parameters: Per Bank
@@ -102,72 +102,7 @@ int i,j,k,l,x,y;
 
 // ======= BEGIN ANALOG SIGNALS =======
 
-logic [numRows-1:0] PSM_VDR_SEL;
-logic [numRows-1:0] PSM_VDR_SELB;
-logic [numRows-1:0] PSM_VSS_SEL;
-logic [numRows-1:0] PSM_VSS_SELB;
-logic [numRows-1:0] PSM_VRST_SEL;
-logic [numRows-1:0] PSM_VRST_SELB;
-
-logic [numRows-1:0] NSM_VDR_SEL;
-logic [numRows-1:0] NSM_VDR_SELB;
-logic [numRows-1:0] NSM_VSS_SEL;
-logic [numRows-1:0] NSM_VSS_SELB;
-logic [numRows-1:0] NSM_VRST_SEL;
-logic [numRows-1:0] NSM_VRST_SELB;
-
-logic [numCols-1:0] SA_OUT;
-logic [numRows-1:0] WL;
-logic PCH;
-logic [numCols-1:0] WR_DATA;
-logic WRITE;
-logic [numCols-1:0] CSEL;
-logic SAEN;
-logic [compCount*qrAccOutputElements-1:0] ADC_OUT;
-logic NF;
-logic NFB;
-logic M2A;
-logic M2AB;
-logic R2A;
-logic R2AB;
-logic CLK;
-
-// We need to do this because
-// it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
-
-assign from_analog[0].SA_OUT = SA_OUT;
-assign WL = to_analog[0].WL;
-assign PCH = to_analog[0].PCH;
-assign WR_DATA = to_analog[0].WR_DATA;
-assign WRITE = to_analog[0].WRITE;
-assign CSEL = to_analog[0].CSEL;
-assign SAEN = to_analog[0].SAEN;
-genvar p;
-generate
-    for (p = 0; p < numPlanes; p++) begin : g_from_analog_bcast
-        assign from_analog[p].SA_OUT = SA_OUT;
-        assign from_analog[p].ADC_OUT = ADC_OUT;
-    end
-endgenerate
-assign NF = to_analog[0].NF;
-assign NFB = to_analog[0].NFB;
-assign M2A = to_analog[0].M2A;
-assign M2AB = to_analog[0].M2AB;
-assign R2A = to_analog[0].R2A;
-assign R2AB = to_analog[0].R2AB;
-assign CLK = to_analog[0].CLK;
+// One ts_qracc_multibank per plane; analog wires driven per-plane in g_ts.
 
 // ======= END ANALOG SIGNALS =======
 
@@ -239,45 +174,56 @@ qracc_csr #(
     .csr_main_internal_state    (0)
 );
 
-// Analog test schematic
-logic [3:0] adc_ref_range_shifts; 
+// Analog test schematic: one ts_qracc_multibank per plane
+logic [3:0] adc_ref_range_shifts;
 
-ts_qracc_multibank #(
-    .numRows(qrAccInputElements),
-    .numCols(numCols),
-    .numAdcBits(numAdcBits),
-    .numBanks(numBanks)
-) u_ts_qracc (
-    .adc_ref_range_shifts(adc_ref_range_shifts),
-    .bank_select(bank_select),
-    .PSM_VDR_SEL(PSM_VDR_SEL),
-    .PSM_VDR_SELB(PSM_VDR_SELB),
-    .PSM_VSS_SEL(PSM_VSS_SEL),
-    .PSM_VSS_SELB(PSM_VSS_SELB),
-    .PSM_VRST_SEL(PSM_VRST_SEL),
-    .PSM_VRST_SELB(PSM_VRST_SELB),
-    .NSM_VDR_SEL(NSM_VDR_SEL),
-    .NSM_VDR_SELB(NSM_VDR_SELB),
-    .NSM_VSS_SEL(NSM_VSS_SEL), 
-    .NSM_VSS_SELB(NSM_VSS_SELB),
-    .NSM_VRST_SEL(NSM_VRST_SEL),
-    .NSM_VRST_SELB(NSM_VRST_SELB),
-    .SA_OUT(SA_OUT),
-    .WL(WL),
-    .PCH(PCH),
-    .WR_DATA(WR_DATA),
-    .WRITE(WRITE),
-    .CSEL(CSEL),
-    .SAEN(SAEN),
-    .ADC_OUT(ADC_OUT),
-    .NF(NF),
-    .NFB(NFB),
-    .M2A(M2A),
-    .M2AB(M2AB),
-    .R2A(R2A),
-    .R2AB(R2AB),
-    .CLK(clk)
-);
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_ts
+        logic [numCols-1:0] SA_OUT_p;
+        logic [compCount*qrAccOutputElements-1:0] ADC_OUT_p;
+
+        ts_qracc_multibank #(
+            .numRows(qrAccInputElements),
+            .numCols(numCols),
+            .numAdcBits(numAdcBits),
+            .numBanks(numBanks)
+        ) u_ts_qracc (
+            .adc_ref_range_shifts(adc_ref_range_shifts),
+            .bank_select(bank_select),
+            .PSM_VDR_SEL(to_analog[p].PSM_VDR_SEL),
+            .PSM_VDR_SELB(to_analog[p].PSM_VDR_SELB),
+            .PSM_VSS_SEL(to_analog[p].PSM_VSS_SEL),
+            .PSM_VSS_SELB(to_analog[p].PSM_VSS_SELB),
+            .PSM_VRST_SEL(to_analog[p].PSM_VRST_SEL),
+            .PSM_VRST_SELB(to_analog[p].PSM_VRST_SELB),
+            .NSM_VDR_SEL(to_analog[p].NSM_VDR_SEL),
+            .NSM_VDR_SELB(to_analog[p].NSM_VDR_SELB),
+            .NSM_VSS_SEL(to_analog[p].NSM_VSS_SEL),
+            .NSM_VSS_SELB(to_analog[p].NSM_VSS_SELB),
+            .NSM_VRST_SEL(to_analog[p].NSM_VRST_SEL),
+            .NSM_VRST_SELB(to_analog[p].NSM_VRST_SELB),
+            .SA_OUT(SA_OUT_p),
+            .WL(to_analog[p].WL),
+            .PCH(to_analog[p].PCH),
+            .WR_DATA(to_analog[p].WR_DATA),
+            .WRITE(to_analog[p].WRITE),
+            .CSEL(to_analog[p].CSEL),
+            .SAEN(to_analog[p].SAEN),
+            .ADC_OUT(ADC_OUT_p),
+            .NF(to_analog[p].NF),
+            .NFB(to_analog[p].NFB),
+            .M2A(to_analog[p].M2A),
+            .M2AB(to_analog[p].M2AB),
+            .R2A(to_analog[p].R2A),
+            .R2AB(to_analog[p].R2AB),
+            .CLK(clk)
+        );
+
+        assign from_analog[p].SA_OUT = SA_OUT_p;
+        assign from_analog[p].ADC_OUT = ADC_OUT_p;
+    end
+endgenerate
 
 // Fake L2 Memory
 

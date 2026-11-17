@@ -43,7 +43,7 @@ sim_args = {'vcs':  [
                 '+define+QRACC_PARAMS_FILE="qracc_params.svh"',
                 '--binary',
                 '--timing',
-                '-j', '4',
+                '-j', '1',
                 '-sv',
                 '+incdir+../rtl',
                 '-Wno-fatal',
@@ -64,6 +64,15 @@ sim_args = {'vcs':  [
                 '-CFLAGS', '-O1',
             ]
 }
+
+if os.environ.get('QRACC_DEBUG') == '1':
+    sim_args['verilator'].append('+define+DEBUG')
+
+# Runtime plusargs forwarded to the verilator simulation binary.
+# Populated by individual tests (diagnostic hooks); empty by default so
+# default runs are unchanged.  Verilator rejects `+cap_file=...` at compile
+# time, so these must be appended to the runtime binary command.
+VERILATOR_RUN_PLUSARGS: list[str] = []
 
 def empty_directory(directory):
     """
@@ -204,7 +213,7 @@ def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_di
         assert not retval, f'Verilator compilation failed:\n{get_log_tail(log_file, 30)}'
 
         # Step 2: Run the compiled binary
-        run_command = [f'./obj_dir_{top_name}/V{top_name}']
+        run_command = [f'./obj_dir_{top_name}/V{top_name}', *VERILATOR_RUN_PLUSARGS]
 
         print('=====VERILATOR RUN COMMAND=====')
         print(' '.join(run_command))

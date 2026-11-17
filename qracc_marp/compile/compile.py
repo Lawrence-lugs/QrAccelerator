@@ -9,7 +9,8 @@ from qracc_marp.compile import compute
 from qracc_marp.compile.stimulus_gen import (
     infer_ofmap_shape,
     infer_optimal_adc_range_shifts,
-    mapped_matrix_to_bank_writes,
+    infer_bitplane_adc_range_shifts,
+
     kernel_to_writes,
     pack_ifmap_to_ints,
     pad_bias_data,
@@ -169,10 +170,11 @@ class QrAccNodeCode(object):
         ofmap_dimy = self.ofmap_shape[3]
 
 
-        adc_ref_range_shifts = infer_optimal_adc_range_shifts(
-            tplitz_act_vector=self.toeplitz[0],
+        adc_ref_range_shifts = infer_bitplane_adc_range_shifts(
+            toeplitz_acts=self.toeplitz[0],
             weights=mapped_node.matrix,
-            ifmap_bits=ifmap_bits
+            ifmap_bits=ifmap_bits,
+            weight_bits=self.weight_bits,
         ) if not mapped_node.depthwise else 0
 
         config_dict = {

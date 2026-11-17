@@ -3,6 +3,7 @@
     "build": {
         "dockerfile": "Dockerfile",
         "context": "..",
+        "image": "qraccelerator-qracc:latest",
         "cacheFrom": "ghcr.io/lawrence-lugs/qraccelerator"
     },
     "customizations": {
