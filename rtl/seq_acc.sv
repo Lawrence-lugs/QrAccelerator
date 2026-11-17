@@ -270,4 +270,15 @@ always_ff @(posedge clk) if (valid_o && dbg_out_cnt < 2) begin
 end
 `endif
 
+`ifdef DEBUG
+int dbg_pre_shift_cnt = 0;
+always_ff @(posedge clk) if (valid_o && dbg_pre_shift_cnt < 2) begin
+    dbg_pre_shift_cnt <= dbg_pre_shift_cnt + 1;
+    for (int i = 0; i < outputElements; i++) begin
+        $display("[DBG seq_acc] pre_shift n=%0d i=%0d accumulator[%0d]=%0d mac_data_o[%0d]=%0h",
+                 dbg_pre_shift_cnt, i, i, $signed(accumulator[i]), i, mac_data_o[i]);
+    end
+end
+`endif
+
 endmodule

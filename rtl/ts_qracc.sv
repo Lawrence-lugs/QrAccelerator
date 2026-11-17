@@ -58,6 +58,7 @@ module ts_qracc #(
 logic [numCols-1:0] mem [numRows];
 `ifdef DEBUG
 integer dbg_sram_wr = 0;
+integer dbg_mbl_shown = 0;
 `endif
 always_ff @( posedge CLK ) begin :  sramModel
     if (PCH) begin
@@ -121,6 +122,15 @@ always_comb begin : toMBL
             end
             // $display("mbl_value[%d] = %d", j, mbl_value[j]);
         end
+
+        // Dump raw mbl_value before ADC reference range shift (+define+DEBUG)
+        `ifdef DEBUG
+        if (dbg_mbl_shown == 0) begin
+            for (int j = 0; j < numCols; j++)
+                $display("[DBG ts_qracc] mbl_value[%0d]=%0d", j, mbl_value[j]);
+            dbg_mbl_shown = 1;
+        end
+        `endif
         
         // ADC reference voltage range is divided by 2**NUM_ADC_REF_RANGE_SHIFTS
         // to follow the "best resolution"
