@@ -20,6 +20,7 @@ except ImportError:
 import pytest
 if sns is not None:
     sns.set_theme()
+from qracc_marp.compile import compute
 from qracc_marp.compile.stimulus_gen import *
 from qracc_marp.compile.compile import *
 
@@ -65,6 +66,10 @@ sim_args = {'vcs':  [
             ]
 }
 
+# QRACC_DEBUG must be set in the environment BEFORE this module is imported.
+# It is checked at import time (below) to decide whether '+define+DEBUG' is
+# appended to sim_args['verilator']. Setting it after import is too late;
+# callers must then append '+define+DEBUG' to sim_args['verilator'] explicitly.
 if os.environ.get('QRACC_DEBUG') == '1':
     sim_args['verilator'].append('+define+DEBUG')
 
@@ -264,6 +269,113 @@ def rmse_snr(expected, actual):
     snr = 10*np.log10(np.var(expected)/np.var(expected - actual))
     print(f'RMSE:{rmse}, SNR:{snr}')
     return rmse, snr
+
+
+def qlinearconv_pre_scale_mac(
+    mapped_node,
+    input_tensor,
+    adc_bits: int = 4,
+    weight_bits: int = 8,
+) -> np.ndarray:
+    """Compute the pre-scaling MAC golden array for a QLinearConv node.
+
+    Returns an ``(H*W, O)`` int64 array of pre-scaling MAC values (one per
+    output pixel / output channel), matching the ONNX QLinearConv
+    pre-output-scale / zero-point result::
+
+        golden = toeplitz @ w_B  -  x_zp * sum(kernel per output channel)
+
+    where ``w_B`` is the B-bit-reduced weight matrix reordered into toeplitz
+    column order and combined via bit-plane shift-add (MSB plane negated,
+    i.e. two's complement).  This mirrors ``rtl/seq_acc.sv``: per-plane MACs
+    are combined by the shift-add tree with the MSB plane sign-corrected by
+    ``twos_to_bipolar``.
+
+    The weight reordering (``kernel.transpose(0, 3, 1, 2).reshape(O, -1).T``)
+    and the ``channel_minor=True`` toeplitz layout are confirmed to make
+    ``toeplitz @ w`` reproduce the convolution exactly.  ``channel_minor``
+    toeplitz columns are ordered ``(kw, C, kh)`` with ``kh`` fastest, so the
+    kernel must be permuted as ``(O, kw, C, kh)`` before flattening.  The
+    toeplitz matrix is padded with ``mapped_node.x_zp``, matching the RTL's
+    padding value, so the subsequent ``- x_zp * sum(kernel)`` zero-point fold
+    yields exactly ONNX QLinearConv pre-output-scale/zp:
+    ``sum_e (X_pad[e] - x_zp) * W[e]`` is zero in the padded positions.
+
+    Parameters
+    ----------
+    mapped_node : qracc_marp.mapping.core.MappedNode
+        Mapped ONNX QLinearConv node (exposes ``kernel``, ``x_zp``,
+        ``pads``, ``strides``).
+    input_tensor : np.ndarray
+        uint8 NCHW array (batch=1), same as the RTL testbench uses.
+    adc_bits : int
+        ADC precision used for optional saturation. 4 = RTL reference target
+        (saturates to [-8, 7]). 32 (or large) disables saturation for an
+        exact integer match.
+    weight_bits : int
+        Weight precision B in {1, 2, 4, 8}.  Planes b >= B are zero.
+
+    Returns
+    -------
+    np.ndarray, shape (H*W, O), dtype int64
+        Pre-scaling MAC values.
+    """
+    kernel = mapped_node.kernel  # (O, I, kh, kw), int8
+    O, I, kh, kw = kernel.shape
+    x_zp = int(mapped_node.x_zp)
+
+    # Reorder weights into toeplitz column order: (kernel_elems, O).
+    # channel_minor toeplitz columns are laid out as (kw, C, kh) with kh
+    # fastest (confirmed against compute.toeplitzize_input).  transpose(0,3,1,2)
+    # -> (O, kw, C, kh); flatten C-order gives (kw, C, kh) with kh inner.
+    weights_toeplitz = (
+        kernel.transpose(0, 3, 1, 2).reshape(O, -1).T
+    ).astype(np.int64)
+
+    # Bit planes: (8, kernel_elems, O). Plane b = (w >> b) & 1 for b < B.
+    planes = q.weight_bit_planes(weights_toeplitz, weight_bits, signed=True)
+
+    # Activation toeplitz matrix: (H*W, kernel_elems), padded with x_zp.
+    toeplitz = compute.toeplitzize_input(
+        in_tensor=input_tensor.squeeze(0),
+        kernel_shape=kernel.shape,
+        strides=mapped_node.strides,
+        pads=mapped_node.pads,
+        zero_point=x_zp,
+        channel_minor=True,
+    )
+    toeplitz_i = toeplitz.astype(np.int64)
+
+    # Per-plane dot products: (H*W, O) each.
+    per_plane_dot = [
+        toeplitz_i @ planes[b].astype(np.int64) for b in range(8)
+    ]
+
+    # Combine via shift-add with MSB plane negated (two's complement).
+    # B == 1 is the raw dot product (no sign bit to negate separately).
+    if weight_bits == 1:
+        golden = toeplitz_i @ planes[0].astype(np.int64)
+    else:
+        golden = sum(
+            per_plane_dot[b] << b for b in range(weight_bits - 1)
+        ) - (per_plane_dot[weight_bits - 1] << (weight_bits - 1))
+
+    # Zero-point folding: match ONNX QLinearConv pre-output-scale / zp.
+    # MUST use the same B-bit-reduced weights as the MAC above (not the raw
+    # int8 kernel), otherwise the padded-position contribution and the MAC
+    # use inconsistent weights for B < 8.
+    w_B = q.quantize_int8_to_bits(kernel, weight_bits, signed=True)
+    kernel_sum = w_B.sum(axis=(1, 2, 3)).astype(np.int64)  # (O,)
+    golden = golden - (x_zp * kernel_sum)[None, :]
+
+    # Optional ADC saturation (RTL 4-bit ADC saturates to [-8, 7]).
+    if adc_bits is not None and adc_bits < 32:
+        lo = -(1 << (adc_bits - 1))
+        hi = (1 << (adc_bits - 1)) - 1
+        golden = np.clip(golden, lo, hi)
+
+    return golden.astype(np.int64)
+
 
 def save_scatter_fig(expected, actual, title, filename, enabled=False):
     """Save an expected-vs-actual scatter plot to ``images/png/<filename>.png``."""
