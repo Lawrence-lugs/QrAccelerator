@@ -45,8 +45,10 @@ def pack_weight_planes(weights, B, signed):
     """Pack per-plane weight bit-words for the B>1 emitter.
 
     ``weight_bit_planes`` yields 8 planes (b < B real, b >= B zero). Each
-    plane is flattened, padded to rows of 32 columns, and each row is packed
-    MSB-first into a 32-bit word with ``array_bin_to_int``. Words are
+    plane is flattened, padded to rows of 32 columns, and each row has its
+    columns reversed and is packed MSB-first, so matrix column j ends at word
+    bit j (same convention as stimulus_gen.mapped_matrix_to_bank_writes).
+    Words are
     returned flat in ``[bank_row, plane]`` order so word index ``i`` maps to
     bank row ``i // 8`` and plane ``i % 8``; planes b >= weight_bits are zero
     words ignored by the shift-add tree (b >= weight_bits_i contributes 0).
@@ -58,7 +60,7 @@ def pack_weight_planes(weights, B, signed):
     if pad:
         flat = np.pad(flat, ((0, 0), (0, pad)), constant_values=0)
     rows = flat.reshape(n_plane, -1, 32)
-    words = quant.array_bin_to_int(rows.reshape(-1, 32))
+    words = quant.array_bin_to_int(rows.reshape(-1, 32)[:, ::-1])
     words = words.reshape(n_plane, -1).transpose().reshape(-1)
     return words
 

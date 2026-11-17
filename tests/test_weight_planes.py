@@ -120,7 +120,7 @@ def test_pack_weight_planes_reconstruct_quantized():
             for c in range(32):
                 f = bank_row * 32 + c
                 if f < n_bits:
-                    planes_out[plane, f] = (int(word) >> (31 - c)) & 1
+                    planes_out[plane, f] = (int(word) >> c) & 1
         planes_out = planes_out.reshape((B,) + w.shape)
         r = np.zeros_like(w, dtype=np.int64)
         for b in range(B):
@@ -157,7 +157,7 @@ def test_pack_weight_planes_reconstruct_onnx_b8():
         for c in range(32):
             f = bank_row * 32 + c
             if f < n_bits:
-                planes_out[plane, f] = (int(word) >> (31 - c)) & 1
+                planes_out[plane, f] = (int(word) >> c) & 1
     planes_out = planes_out.reshape((8,) + w.shape)
     r = np.zeros_like(w, dtype=np.int64)
     for b in range(8):
