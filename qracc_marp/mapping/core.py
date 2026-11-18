@@ -164,9 +164,15 @@ def get_init_of_nx_node(nx_node : onnx.NodeProto, nx_model : onnx.ModelProto, in
     return onnx.numpy_helper.to_array(init)
 
 def _get_matrix_from_kernel(kernel : np.ndarray, nx_node : onnx.NodeProto) -> np.ndarray:
-    '''
-    Obtains a channel-minor matrix from a kernel of an ONNX node
-    If the ONNX node is a QLinearMatMul, it simply returns the weight matrix
+    '''Flatten a kernel into the switch-matrix row order.
+
+    The hardware activation toeplitz is the raw receptive field flattened as
+    ``(kh, kw, C)`` with the channel fastest (``toeplitzize_input`` with
+    ``channel_minor=False``; verified against the RTL activation capture).
+    The weight matrix must use the same order, i.e.
+    ``kernel.transpose(0, 2, 3, 1)`` -> ``(O, kh, kw, C)`` before the reshape.
+    The previous ``channel_minor=True`` golden used ``(kw, C, kh)`` and was the
+    source of the long-standing "matrix is permuted" finding.
     '''
     return kernel.transpose(0, 2, 3, 1).reshape(kernel.shape[0], -1).T
 

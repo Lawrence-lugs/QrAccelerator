@@ -10,8 +10,10 @@ from qracc_marp.compile.stimulus_gen import (
     infer_ofmap_shape,
     infer_optimal_adc_range_shifts,
     infer_bitplane_adc_range_shifts,
+    infer_adc_config,
 
     kernel_to_writes,
+    mapped_matrix_to_bank_writes,
     pack_ifmap_to_ints,
     pad_bias_data,
     pad_scaler_writes,
@@ -124,7 +126,7 @@ class QrAccNodeCode(object):
             strides=mapped_node.strides,
             pads=mapped_node.pads,
             zero_point=mapped_node.x_zp,
-            channel_minor=True
+            channel_minor=False
         )
 
         self.nx_model = nx_model
@@ -170,18 +172,35 @@ class QrAccNodeCode(object):
         ofmap_dimy = self.ofmap_shape[3]
 
 
-        adc_ref_range_shifts = infer_bitplane_adc_range_shifts(
-            toeplitz_acts=self.toeplitz[0],
-            weights=mapped_node.matrix,
-            ifmap_bits=ifmap_bits,
-            weight_bits=self.weight_bits,
-        ) if not mapped_node.depthwise else 0
+        if mapped_node.depthwise:
+            # Depthwise nodes run on the WSAcc path; the IMC ADC settings are
+            # irrelevant, keep the historical defaults.
+            adc_cfg = {"bits": 4, "s": 0, "fs_counts": None,
+                       "lsb_counts": None, "clip_frac": 0.0,
+                       "snr_db": None, "preview": {}}
+            ladder = "binary"
+        else:
+            # Fixed full-scale flash ADC: `s` halves the span toward V_RST, so
+            # the chooser trades range against resolution (see
+            # PLAN_adc_range_model_correction.md).  Multi-bit weights use the
+            # bipolar switch matrix (NSM driven with the inverted activation).
+            ladder = "bipolar" if self.weight_bits > 1 else "binary"
+            adc_cfg = infer_adc_config(
+                toeplitz_acts=self.toeplitz,
+                weights=mapped_node.matrix,
+                ifmap_bits=ifmap_bits,
+                weight_bits=self.weight_bits,
+                adc_bits=getattr(self, "adc_bits", 4),
+                ladder=ladder,
+            )
+        adc_ref_range_shifts = int(adc_cfg["s"])
+        self.adc_config = adc_cfg
 
         config_dict = {
             "n_input_bits_cfg": ifmap_bits,
             "n_output_bits_cfg": ofmap_bits,
             "unsigned_acts": 1,
-            "binary_cfg": 1,
+            "binary_cfg": 1 if ladder == "binary" else 0,
             "adc_ref_range_shifts": int(adc_ref_range_shifts),
             "filter_size_y": kernel_shape[3],
             "filter_size_x": kernel_shape[2],
@@ -508,7 +527,8 @@ def get_config_from_mapped_node(
     mapped_node : core.MappedNode,
     ifmap_shape : tuple,
     ifmap_bits = 8,
-    ofmap_bits = 8
+    ofmap_bits = 8,
+    weight_bits = 8
 ):
     '''
     Generate QRAcc configuration for a QLinearConv node.
@@ -529,8 +549,9 @@ def get_config_from_mapped_node(
 
     adc_ref_range_shifts = infer_optimal_adc_range_shifts(
         tplitz_act_vector=tplitz_act_vector,
-        weights=mapped_node.matrix.T,
-        ifmap_bits=ifmap_bits
+        weights=mapped_node.matrix,
+        ifmap_bits=ifmap_bits,
+        weight_bits=weight_bits
     )
 
     config_dict = {

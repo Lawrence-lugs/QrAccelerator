@@ -203,16 +203,32 @@ def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_di
     print(log_file)
     print('===================================')
 
-    if run:
+    # Build in parallel first (much faster); some verilator/plugin combinations
+    # intermittently fail under -j 0, so fall back to the configured serial
+    # build (-j 1) if the parallel attempt does not succeed.
+    parallel_command = list(compile_command)
+    for idx, arg in enumerate(parallel_command):
+        if arg == '-j' and idx + 1 < len(parallel_command):
+            parallel_command[idx + 1] = '0'
+            break
+
+    def _run_compile(cmd):
         with open(log_file, 'w+') as f:
             proc = subprocess.Popen(
-                compile_command,
+                cmd,
                 shell=False,
                 cwd='./sims',
                 stdout=f,
                 stderr=subprocess.STDOUT,
             )
-        retval = proc.wait()
+        return proc.wait()
+
+    if run:
+        retval = _run_compile(parallel_command)
+        if retval:
+            print('Parallel verilator build failed; retrying with the serial '
+                  '(-j 1) configuration.')
+            retval = _run_compile(compile_command)
         if retval:
             get_log(log_file)
         assert not retval, f'Verilator compilation failed:\n{get_log_tail(log_file, 30)}'
@@ -274,8 +290,13 @@ def rmse_snr(expected, actual):
 def qlinearconv_pre_scale_mac(
     mapped_node,
     input_tensor,
-    adc_bits: int = 4,
+    adc_bits: int = 32,
     weight_bits: int = 8,
+    adc_mode: str = "output",
+    adc_shift: int = 0,
+    unfold: bool = False,
+    fs_counts: float = None,
+    ladder: str = "bipolar",
 ) -> np.ndarray:
     """Compute the pre-scaling MAC golden array for a QLinearConv node.
 
@@ -309,27 +330,59 @@ def qlinearconv_pre_scale_mac(
     input_tensor : np.ndarray
         uint8 NCHW array (batch=1), same as the RTL testbench uses.
     adc_bits : int
-        ADC precision used for optional saturation. 4 = RTL reference target
-        (saturates to [-8, 7]). 32 (or large) disables saturation for an
-        exact integer match.
+        ADC comparator count.  For ``adc_mode="per_plane"`` it is the flash-ADC
+        width used for every partial sum (4 in the RTL).  For
+        ``adc_mode="output"`` it is the width of the legacy final clip (4
+        saturates to [-8, 7]); 32 disables clipping.  Ignored by
+        ``adc_mode="none"``.
     weight_bits : int
         Weight precision B in {1, 2, 4, 8}.  Planes b >= B are zero.
+    adc_mode : {"none", "output", "per_plane", "per_plane_legacy"}
+        ``"none"`` returns the exact integer MAC.  ``"output"`` is the legacy
+        behaviour: the *final* folded MAC is clipped to ``adc_bits`` bits (this
+        is not what the hardware does; see the ablation test).  ``"per_plane"``
+        emulates ``rtl/ts_qracc.sv`` with a *fixed* full-scale flash ADC:
+        every ``(activation bit j, weight plane b)`` partial sum is quantised
+        before the shift-add, and ``adc_shift`` *halves the span toward
+        ``V_RST``* (finer LSB, earlier saturation).  ``"per_plane_legacy"``
+        keeps the pre-2026-11-18 inverted convention where ``adc_shift``
+        widened the window and coarsened the LSB.
+    adc_shift : int
+        ``cfg.adc_ref_range_shifts`` (``s``) used by the ``per_plane`` modes.
+    fs_counts : float, optional
+        Half-span in switch-matrix counts at ``s == 0`` (per-layer analog full
+        scale).  ``None`` derives it from the largest ``|mbl_value|`` of this
+        node, which is what the compiler-side chooser does.
+    ladder : {"bipolar", "binary"}
+        Switch-matrix arrangement.  ``"bipolar"`` gives
+        ``mbl = 2P - A_j`` (``A_j`` = active lanes for activation bit ``j``)
+        and the returned MAC undoes the resulting bias; ``"binary"`` uses the
+        unipolar ``mbl = P``.
+    unfold : bool
+        When True, do not subtract ``x_zp * sum(w_B)``.  The RTL pre-shift
+        accumulator must be compared against the unfolded value because the
+        zero-point fold is folded into ``mapped_node.biases`` and applied by
+        ``output_scaler`` instead.
 
     Returns
     -------
     np.ndarray, shape (H*W, O), dtype int64
         Pre-scaling MAC values.
     """
+    if adc_mode not in ("none", "output", "per_plane", "per_plane_legacy"):
+        raise ValueError(
+            f"adc_mode must be 'none', 'output', 'per_plane' or "
+            f"'per_plane_legacy', got {adc_mode!r}"
+        )
     kernel = mapped_node.kernel  # (O, I, kh, kw), int8
     O, I, kh, kw = kernel.shape
     x_zp = int(mapped_node.x_zp)
 
-    # Reorder weights into toeplitz column order: (kernel_elems, O).
-    # channel_minor toeplitz columns are laid out as (kw, C, kh) with kh
-    # fastest (confirmed against compute.toeplitzize_input).  transpose(0,3,1,2)
-    # -> (O, kw, C, kh); flatten C-order gives (kw, C, kh) with kh inner.
+    # The hardware toeplitz is the raw receptive field flattened as
+    # (kh, kw, C) with C fastest (channel_minor=False).  Verified against the
+    # RTL activation capture: the 27 lane values match this order exactly.
     weights_toeplitz = (
-        kernel.transpose(0, 3, 1, 2).reshape(O, -1).T
+        kernel.transpose(0, 2, 3, 1).reshape(O, -1).T
     ).astype(np.int64)
 
     # Bit planes: (8, kernel_elems, O). Plane b = (w >> b) & 1 for b < B.
@@ -342,7 +395,7 @@ def qlinearconv_pre_scale_mac(
         strides=mapped_node.strides,
         pads=mapped_node.pads,
         zero_point=x_zp,
-        channel_minor=True,
+        channel_minor=False,
     )
     toeplitz_i = toeplitz.astype(np.int64)
 
@@ -351,14 +404,73 @@ def qlinearconv_pre_scale_mac(
         toeplitz_i @ planes[b].astype(np.int64) for b in range(8)
     ]
 
-    # Combine via shift-add with MSB plane negated (two's complement).
+    # Exact integer MAC: shift-add with MSB plane negated (two's complement).
     # B == 1 is the raw dot product (no sign bit to negate separately).
     if weight_bits == 1:
-        golden = toeplitz_i @ planes[0].astype(np.int64)
+        mac = toeplitz_i @ planes[0].astype(np.int64)
     else:
-        golden = sum(
+        mac = sum(
             per_plane_dot[b] << b for b in range(weight_bits - 1)
         ) - (per_plane_dot[weight_bits - 1] << (weight_bits - 1))
+
+    if adc_mode in ("per_plane", "per_plane_legacy"):
+        # Bit-serial, per-plane emulation of seq_acc + ts_qracc.  The flash ADC
+        # quantises *each* (activation bit j, weight plane b) partial sum, so
+        # the range shift trades comparator range against resolution.
+        #
+        # "per_plane"        fixed full scale, `adc_shift` zooms toward V_RST,
+        #                    bipolar or binary ladder (see
+        #                    PLAN_adc_range_model_correction.md).
+        # "per_plane_legacy" inverted shift semantics, kept for old captures.
+        rows = mac.shape[0]
+        mbl = {}
+        act_counts = np.zeros((rows,), dtype=np.int64)
+        for j in range(8):  # PISO bit index, LSB first (input_bits=9 -> 8)
+            xj = (toeplitz_i >> j) & 1
+            a_j = xj.sum(axis=1).astype(np.int64)
+            act_counts += a_j << j
+            for b in range(weight_bits):
+                partial = xj @ planes[b].astype(np.int64)
+                if adc_mode == "per_plane" and ladder == "bipolar":
+                    # Bipolar switch matrix: mbl = 2P - A_j (A_j = active lanes).
+                    mbl[(j, b)] = 2 * partial - a_j[:, None]
+                else:
+                    mbl[(j, b)] = partial
+        if adc_mode == "per_plane":
+            if fs_counts is None:
+                fs_counts = float(max(int(np.abs(m).max()) for m in mbl.values()))
+            codes = {
+                key: q.adc_quantize(m, adc_bits=adc_bits, shift=adc_shift,
+                                    fs_counts=fs_counts, mode=ladder)
+                for key, m in mbl.items()
+            }
+        else:
+            codes = {
+                key: q.adc_quantize_legacy(m, adc_bits=adc_bits, shift=adc_shift)
+                for key, m in mbl.items()
+            }
+        acc = np.zeros_like(mac)
+        for j in range(8):
+            tree = np.zeros_like(mac)
+            for b in range(weight_bits):
+                term = codes[(j, b)] << b
+                # RTL negates the MSB plane.  B == 1 signed is excluded: the
+                # hardware negates its only plane, which does not match the
+                # ONNX signed quantisation used here.
+                if b == weight_bits - 1 and weight_bits > 1:
+                    term = -term
+                tree += term
+            acc += tree << j
+        if adc_mode == "per_plane":
+            lsb = float(fs_counts) / float(1 << (adc_bits - 1 + adc_shift))
+            mac = acc.astype(np.float64) * lsb
+            if ladder == "bipolar":
+                # Sum_b sign_b*2**b == -1, so the mbl bias A_j contributes -A_j
+                # to the tree; undo it and halve (the RTL result is 2*MAC).
+                mac = (mac - act_counts[:, None]) / 2.0
+            mac = np.rint(mac).astype(np.int64)
+        else:
+            mac = acc
 
     # Zero-point folding: match ONNX QLinearConv pre-output-scale / zp.
     # MUST use the same B-bit-reduced weights as the MAC above (not the raw
@@ -366,15 +478,78 @@ def qlinearconv_pre_scale_mac(
     # use inconsistent weights for B < 8.
     w_B = q.quantize_int8_to_bits(kernel, weight_bits, signed=True)
     kernel_sum = w_B.sum(axis=(1, 2, 3)).astype(np.int64)  # (O,)
-    golden = golden - (x_zp * kernel_sum)[None, :]
+    if not unfold:
+        mac = mac - (x_zp * kernel_sum)[None, :]
 
-    # Optional ADC saturation (RTL 4-bit ADC saturates to [-8, 7]).
-    if adc_bits is not None and adc_bits < 32:
+    # Legacy behaviour: quantise the *final* (folded) MAC as a narrow signed
+    # value.  This is NOT what the hardware does and is kept only so the
+    # ablation test can quantify why it is wrong.
+    if adc_mode == "output" and adc_bits is not None and adc_bits < 32:
         lo = -(1 << (adc_bits - 1))
         hi = (1 << (adc_bits - 1)) - 1
-        golden = np.clip(golden, lo, hi)
+        mac = np.clip(mac, lo, hi)
 
-    return golden.astype(np.int64)
+    return mac.astype(np.int64)
+
+
+def qlinearconv_prescale_snr(
+    mapped_node,
+    input_tensor,
+    weight_bits: int = 8,
+    adc_shift: int = 0,
+    adc_bits: int = 4,
+    fs_counts: float = None,
+    ladder: str = "bipolar",
+) -> dict:
+    """Predicted SNR of the RTL per-plane ADC datapath on one conv window set.
+
+    Compares the flash-ADC emulation (``adc_mode="per_plane"``) against the
+    exact integer MAC, both **unfolded** (the RTL accumulator is unfolded; the
+    zero-point fold lives in ``mapped_node.biases``).  This is the reference the
+    RTL measurement must match within the tolerance documented in
+    ``tests/test_marp_multibit_prestack.py``.
+
+    ``adc_shift`` is ``cfg.adc_ref_range_shifts`` under the *fixed-full-scale*
+    convention (each step halves the span toward ``V_RST``); ``fs_counts`` and
+    ``ladder`` are passed through to the emulation.
+
+    Returns a dict with ``exact``, ``model``, ``snr_db``, ``snr_affine_db``,
+    ``max_abs_err`` and ``fs_counts``.
+    """
+    exact = qlinearconv_pre_scale_mac(
+        mapped_node, input_tensor, adc_bits=32, weight_bits=weight_bits,
+        adc_mode="none", unfold=True,
+    )
+    model = qlinearconv_pre_scale_mac(
+        mapped_node, input_tensor, adc_bits=adc_bits, weight_bits=weight_bits,
+        adc_mode="per_plane", adc_shift=adc_shift, unfold=True,
+        fs_counts=fs_counts, ladder=ladder,
+    )
+    err = exact - model
+    var_ref = float(np.var(exact.astype(np.float64)))
+    var_err = float(np.var(err.astype(np.float64)))
+    snr = float("inf") if var_err == 0 else 10.0 * np.log10(var_ref / var_err)
+
+    # SNR after a per-channel gain+offset fit: this is the figure of merit once
+    # the output scaler calibration is applied (a global gain/offset error is
+    # absorbed by calibration, a genuine quantisation error is not).
+    e = exact.astype(np.float64)
+    m = model.astype(np.float64)
+    fitted = np.empty_like(e)
+    for c in range(e.shape[1]):
+        A = np.stack([m[:, c], np.ones(e.shape[0])], axis=1)
+        coef, *_ = np.linalg.lstsq(A, e[:, c], rcond=None)
+        fitted[:, c] = A @ coef
+    var_fit = float(np.var(e - fitted))
+    snr_aff = float("inf") if var_fit == 0 else 10.0 * np.log10(var_ref / var_fit)
+    return {
+        "exact": exact,
+        "model": model,
+        "snr_db": snr,
+        "snr_affine_db": snr_aff,
+        "max_abs_err": int(np.abs(err).max()) if err.size else 0,
+        "fs_counts": fs_counts,
+    }
 
 
 def save_scatter_fig(expected, actual, title, filename, enabled=False):

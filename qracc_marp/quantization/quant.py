@@ -321,6 +321,127 @@ def array_bin_to_int(array,signed=False,outBits=None):
     pows = np.array([2**i for i in range(shape[-1])])[::-1]
     return np.sum(pows*array,axis=1)
 
+def adc_quantize(partials, adc_bits: int = 4, shift: int = 0,
+                 fs_counts: float = None, mode: str = "bipolar") -> np.ndarray:
+    """Emulate the flash ADC in ``rtl/ts_qracc.sv`` (fixed full scale).
+
+    The ladder has a *fixed* full-scale range: ``-VDD..+VDD`` in bipolar mode
+    and ``0..VDD`` in binary mode, with ``V_RST`` at code 0 in both cases.
+    ``numAdcBits`` comparators subdivide that range, so extra comparators buy
+    resolution, never range.
+
+    ``shift`` (``cfg.adc_ref_range_shifts``) halves the span *towards* ``V_RST``:
+    ``s=1`` gives ``V_RST +- VDD/4``, ``s=2`` gives ``V_RST +- VDD/8``, and so
+    on.  In count units the LSB therefore becomes ``2**shift`` times finer and
+    the conversion saturates ``2**shift`` times earlier::
+
+        LSB_counts = fs_counts / 2**(adc_bits - 1 + shift)
+        code       = clamp(round_half_up(mbl / LSB_counts), ...)
+
+    ``fs_counts`` is the half-span in switch-matrix counts (one conducting row
+    = 1) *at* ``shift == 0``.  It is a per-layer parameter: the compiler sets
+    the analog full scale to the layer's populated row count / largest partial.
+    When omitted it defaults to the code range (``2**(adc_bits-1)``), which is
+    the legacy normalisation.
+
+    Parameters
+    ----------
+    partials : array_like
+        Integer partial sums (``mbl_value``) to quantise.
+    adc_bits : int
+        Comparator count of the flash ADC (RTL default 4).
+    shift : int
+        ``adc_ref_range_shifts``: halves the span toward ``V_RST`` per step.
+    fs_counts : float, optional
+        Half-span in counts at ``shift == 0``.
+    mode : {"bipolar", "binary"}
+        ``"bipolar"`` uses codes ``-2**(n-1) .. 2**(n-1)-1``; ``"binary"``
+        clamps to ``0 .. 2**(n-1)-1`` (the ladder half that a unipolar partial
+        can reach).
+
+    Returns
+    -------
+    np.ndarray[int64]
+        Quantised codes, same shape as ``partials``.
+    """
+    p = np.asarray(partials)
+    if adc_bits >= 32 and shift == 0 and fs_counts is None:
+        return p.astype(np.int64)
+    if mode not in ("bipolar", "binary"):
+        raise ValueError(f"mode must be 'bipolar' or 'binary', got {mode!r}")
+    half = 1 << (adc_bits - 1)
+    if fs_counts is None:
+        fs_counts = float(half)
+    lsb = float(fs_counts) / float(1 << (adc_bits - 1 + shift))
+    code = np.floor(p.astype(np.float64) / lsb + 0.5).astype(np.int64)
+    if mode == "binary":
+        return np.clip(code, 0, half - 1)
+    return np.clip(code, -half, half - 1)
+
+
+def adc_quantize_legacy(partials, adc_bits: int = 4, shift: int = 0) -> np.ndarray:
+    """LEGACY ADC transfer function (inverted ``shift`` semantics).
+
+    Kept only so the pre-2026-11-18 captures and ablation numbers stay
+    reproducible.  Here ``shift`` *widens* the saturating window to
+    ``+/-2**(adc_bits+shift-1)`` and *coarsens* the LSB to ``2**shift``, i.e. a
+    digital attenuation rather than the analogue zoom of :func:`adc_quantize`.
+    Do not use it for new work.
+
+    Emulate the flash ADC in ``rtl/ts_qracc.sv``.
+
+    ``mbl_value`` (a per-bit-plane partial sum) is compared against the
+    saturating window ``[-2**(adc_bits+shift-1), 2**(adc_bits+shift-1)-1]``.
+    Inside the window the ADC takes bits ``[shift +: adc_bits]``: round-half-up
+    for ``shift > 1`` (the ``doiroundup = mbl[shift-1]`` term) and truncation for
+    ``shift == 1``.  Outside the window it saturates to the extreme codes
+    ``+/-2**(adc_bits-1)``.  The result is then interpreted as a signed
+    ``adc_bits``-bit two's complement code, so code ``2**(adc_bits-1)`` wraps to
+    ``-2**(adc_bits-1)`` exactly like the thermometer encoder.
+
+    Parameters
+    ----------
+    partials : array_like
+        Integer partial sums (``mbl_value``) to quantise.
+    adc_bits : int
+        Comparator count of the flash ADC (RTL default 4).
+    shift : int
+        ``adc_ref_range_shifts``: the range-shift applied before the ADC.
+
+    Returns
+    -------
+    np.ndarray[int64]
+        Quantised codes, same shape as ``partials``.
+    """
+    p = np.asarray(partials, dtype=np.int64)
+    if adc_bits >= 32 and shift == 0:
+        return p
+    code_hi = (1 << (adc_bits - 1)) - 1
+    code_lo = -(1 << (adc_bits - 1))
+    win_hi = (1 << (adc_bits + shift - 1)) - 1
+    win_lo = -(1 << (adc_bits + shift - 1))
+
+    over = p > win_hi
+    under = p < win_lo
+    mid = ~(over | under)
+
+    q = np.zeros_like(p)
+    q[over] = code_hi
+    q[under] = code_lo
+
+    pm = p[mid]
+    if shift == 0:
+        qm = pm
+    elif shift == 1:
+        qm = pm >> 1
+    else:
+        qm = (pm >> shift) + ((pm >> (shift - 1)) & 1)
+    mod = 1 << adc_bits
+    half = mod >> 1
+    q[mid] = ((qm + half) % mod) - half
+    return q
+
+
 def quantize_int8_to_bits(w_int8: np.ndarray, B: int, signed: bool) -> np.ndarray:
     """Reduce an int8 array to B bits (arithmetic shift), with clamping."""
     if B not in (1, 2, 4, 8):
