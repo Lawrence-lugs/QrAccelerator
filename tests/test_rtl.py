@@ -97,6 +97,7 @@ def test_qr_acc_top_single_load(
         '../rtl/wsacc/wsacc_pe_cluster.sv',
         '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
@@ -325,6 +326,7 @@ def test_seq_acc(
     package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/shift_add_tree.sv',
         '../rtl/ts_qracc.sv',
@@ -403,13 +405,21 @@ def test_seq_acc(
     logdir = os.path.dirname(log_file)
     os.makedirs(logdir,exist_ok=True)
 
-    # Simulation
-    run_simulation(simulator, parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
+    # Simulation.  These parameterisations predate the fixed-full-scale ADC
+    # model and are the datapath regression reference, so compile the
+    # historical transfer function in as a compile-time option (absent from
+    # every normal build and not synthesizable into the datapath).
+    sim_args_legacy = {k: list(v) for k, v in sim_args.items()}
+    for args in sim_args_legacy.values():
+        args.append('+define+ADC_MODEL_LEGACY')
+    run_simulation(simulator, parameter_list, package_list, tb_file,
+                   sim_args_legacy, rtl_file_list, log_file, run=run,
+                   top_module=tb_name)
 
     # Post-simulation
 
     actual = np.loadtxt(f'{stimulus_output_path}/mac_out_rtl_{weight_mode}.txt',dtype=int)
-    expected = wx_outBits.T[::-1].T    
+    expected = wx_outBits.T[::-1].T
     rmse, snr = rmse_snr(expected,actual)
     save_scatter_fig(expected,actual,f'Sequential Accelerator SNR:{snr:.2f}dB',filename=f'seq_acc_{weight_mode}',enabled=figures)
 

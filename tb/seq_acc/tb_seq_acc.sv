@@ -13,10 +13,20 @@ module tb_seq_acc #(
     parameter xBits = 4, // Ternary bits + 1
     parameter xBatches = 10,
     parameter numAdcBits = 4,
+    // ADC half-span in counts at adc_ref_range_shifts == 0 (power of two).
+    parameter int adcFullScale = (1 << numAdcBits),
+    parameter int adcShift = 1,
     parameter int numPlanes = 8,
     parameter int numBeatRows = 4,
     parameter int weightBits = 1,
     parameter int weightSigned = 0,
+    // 0: legacy mode, one w.txt word replicated to every plane.
+    // 1: multibit mode, w.txt holds numPlanes words per SRAM row.
+    parameter int weightPlanes = 0,
+    parameter int accumulatorBits = 16,
+    // 1: hold mac_data_valid high across words (back-to-back streaming, as the
+    // top-level controller does).  0: legacy one-shot requests with gaps.
+    parameter int streamMacs = 0,
     parameter numCfgBits = 8,
     parameter macMode = 0,
     parameter outBits = 8,
@@ -35,8 +45,7 @@ localparam CLK_PERIOD = 20;
 localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comparators
 localparam xTrits = xBits-1;
 // localparam accumulatorBits = (xTrits - 1) + numAdcBits + 1; // +1 from addition bit growth
-// localparam accumulatorBits = 8;
-localparam accumulatorBits = 16;
+
 
 /////////////
 // SIGNALS
@@ -78,105 +87,76 @@ logic [numCols-1:0] wr_data;
 logic [numBeatRows*numPlanes*numCols-1:0] wr_data_planes;
 logic [$clog2(numRows)-1:0] addr;
 
-logic [numRows-1:0] PSM_VDR_SEL;
-logic [numRows-1:0] PSM_VDR_SELB;
-logic [numRows-1:0] PSM_VSS_SEL;
-logic [numRows-1:0] PSM_VSS_SELB;
-logic [numRows-1:0] PSM_VRST_SEL;
-logic [numRows-1:0] PSM_VRST_SELB;
+// One analog test schematic per plane: each bit-plane has its own SRAM
+// contents in the multibit configuration, so a single shared ts_qracc model
+// would only ever see one plane's weights.
+logic [numCols-1:0] SA_OUT [numPlanes-1:0];
+logic [compCount*numCols-1:0] ADC_OUT [numPlanes-1:0];
+logic signed [numCols-1:0][qrAccAdcCodeBits-1:0] ADC_CODE [numPlanes-1:0];
 
-logic [numRows-1:0] NSM_VDR_SEL;
-logic [numRows-1:0] NSM_VDR_SELB;
-logic [numRows-1:0] NSM_VSS_SEL;
-logic [numRows-1:0] NSM_VSS_SELB;
-logic [numRows-1:0] NSM_VRST_SEL;
-logic [numRows-1:0] NSM_VRST_SELB;
-
-logic [numCols-1:0] SA_OUT;
-logic [numRows-1:0] WL;
-logic PCH;
-logic [numCols-1:0] WR_DATA;
-logic WRITE;
-logic [numCols-1:0] CSEL;
-logic SAEN;
-logic [compCount*numCols-1:0] ADC_OUT;
-logic NF;
-logic NFB;
-logic M2A;
-logic M2AB;
-logic R2A;
-logic R2AB;
-logic CLK;
 from_sram_t from_sram;
 to_sram_t to_sram;
 
-// We need to do this because
-// it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_plane_ts
+        ts_qracc #(
+            .numRows(SRAM_ROWS),
+            .numCols(SRAM_COLS),
+            .numAdcBits(numAdcBits),
+            .adcFullScale(adcFullScale)
+        ) u_ts_qracc (
+            .adc_ref_range_shifts(cfg.adc_ref_range_shifts),
+            .binary_cfg(cfg.binary_cfg),
+            .PSM_VDR_SEL(to_analog[p].PSM_VDR_SEL),
+            .PSM_VDR_SELB(to_analog[p].PSM_VDR_SELB),
+            .PSM_VSS_SEL(to_analog[p].PSM_VSS_SEL),
+            .PSM_VSS_SELB(to_analog[p].PSM_VSS_SELB),
+            .PSM_VRST_SEL(to_analog[p].PSM_VRST_SEL),
+            .PSM_VRST_SELB(to_analog[p].PSM_VRST_SELB),
+            .NSM_VDR_SEL(to_analog[p].NSM_VDR_SEL),
+            .NSM_VDR_SELB(to_analog[p].NSM_VDR_SELB),
+            .NSM_VSS_SEL(to_analog[p].NSM_VSS_SEL),
+            .NSM_VSS_SELB(to_analog[p].NSM_VSS_SELB),
+            .NSM_VRST_SEL(to_analog[p].NSM_VRST_SEL),
+            .NSM_VRST_SELB(to_analog[p].NSM_VRST_SELB),
+            .SA_OUT(SA_OUT[p]),
+            .WL(to_analog[p].WL),
+            .PCH(to_analog[p].PCH),
+            .WR_DATA(to_analog[p].WR_DATA),
+            .WRITE(to_analog[p].WRITE),
+            .CSEL(to_analog[p].CSEL),
+            .SAEN(to_analog[p].SAEN),
+            .ADC_OUT(ADC_OUT[p]),
+            .ADC_CODE(ADC_CODE[p]),
+            .NF(to_analog[p].NF),
+            .NFB(to_analog[p].NFB),
+            .M2A(to_analog[p].M2A),
+            .M2AB(to_analog[p].M2AB),
+            .R2A(to_analog[p].R2A),
+            .R2AB(to_analog[p].R2AB),
+            .CLK(clk)
+        );
 
-assign from_analog[0].SA_OUT = SA_OUT;
-assign WL = to_analog[0].WL;
-assign PCH = to_analog[0].PCH;
-assign WR_DATA = to_analog[0].WR_DATA;
-assign WRITE = to_analog[0].WRITE;
-assign CSEL = to_analog[0].CSEL;
-assign SAEN = to_analog[0].SAEN;
-// VERILATOR FIX: Verilator evaluates the combinational chain (including clk-gated
-// switch matrix in qr_acc_wrapper) BEFORE posedge FFs capture. This zeroes the ADC
-// result before the ADC register in the wrapper can sample it. A transparent latch
-// passes ADC_OUT through during clk LOW (when data is valid) and holds the valid
-// value when clk goes HIGH, preventing the switch matrix reset from corrupting it.
-`ifdef VERILATOR
-logic [compCount*numCols-1:0] ADC_OUT_held;
-always_latch begin
-    if (!clk) ADC_OUT_held = ADC_OUT;
-end
-genvar p;
-generate
-    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
-        assign from_analog[p].ADC_OUT = ADC_OUT_held;
+        assign from_analog[p].SA_OUT = SA_OUT[p];
+        assign from_analog[p].ADC_CODE = ADC_CODE[p];
+        // Wide behavioural converters use the digital code tap; the physical
+        // thermometer bus only exists for the synthesised 4-bit ADC.
+        if (numAdcBits == 4) begin : g_therm
+            assign from_analog[p].ADC_OUT = ADC_OUT[p];
+        end
     end
 endgenerate
-`else
-genvar p;
-generate
-    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
-        assign from_analog[p].ADC_OUT = ADC_OUT;
-    end
-endgenerate
-`endif
-assign NF = to_analog[0].NF;
-assign NFB = to_analog[0].NFB;
-assign M2A = to_analog[0].M2A;
-assign M2AB = to_analog[0].M2AB;
-assign R2A = to_analog[0].R2A;
-assign R2AB = to_analog[0].R2AB;
-assign CLK = to_analog[0].CLK;
+
 assign to_sram.rq_wr_i = rq_wr;
 assign to_sram.rq_valid_i = rq_valid;
 assign rq_ready = from_sram.rq_ready_o;
 assign rd_valid = from_sram.rd_valid_o;
 assign rd_data = from_sram.rd_data_o;
 
-// Build full beat from wr_data: legacy path replicates row 0 across all planes,
-// rows 1..numBeatRows-1 are zero.
-always_comb begin
-    wr_data_planes = '0;
-    for (int b = 0; b < numPlanes; b++) begin
-        wr_data_planes[b*numCols +: numCols] = wr_data;
-    end
-end
+// wr_data_planes is assembled per row in the weight-load loop below: the
+// legacy path replicates one word across all planes, the multibit path reads
+// one word per plane.
 
 assign to_sram.addr_i = addr;
 
@@ -189,8 +169,11 @@ seq_acc #(
     .maxInputBits(maxInputBits),
     .inputElements(numRows),
     // .outputBits(outBits),
+    .numCols(numCols),
     .outputElements(numCols),
-    .adcBits(numAdcBits)
+    .adcBits(numAdcBits),
+    .adcFullScale(adcFullScale),
+    .accumulatorBits(accumulatorBits)
 ) u_seq_acc (
     .clk(clk),
     .nrst(nrst),
@@ -216,90 +199,56 @@ seq_acc #(
     .from_sram_rd_data(from_sram.rd_data_o)
 );
 
-// TS = Test Schematic
-// Cadence VAMS doesn't support structs
-ts_qracc #(
-    .numRows(SRAM_ROWS),
-    .numCols(SRAM_COLS),
-    .numAdcBits(numAdcBits)
-) u_ts_qracc (
-    .adc_ref_range_shifts(cfg.adc_ref_range_shifts),
-    .PSM_VDR_SEL(PSM_VDR_SEL),
-    .PSM_VDR_SELB(PSM_VDR_SELB),
-    .PSM_VSS_SEL(PSM_VSS_SEL),
-    .PSM_VSS_SELB(PSM_VSS_SELB),
-    .PSM_VRST_SEL(PSM_VRST_SEL),
-    .PSM_VRST_SELB(PSM_VRST_SELB),
-    .NSM_VDR_SEL(NSM_VDR_SEL),
-    .NSM_VDR_SELB(NSM_VDR_SELB),
-    .NSM_VSS_SEL(NSM_VSS_SEL), 
-    .NSM_VSS_SELB(NSM_VSS_SELB),
-    .NSM_VRST_SEL(NSM_VRST_SEL),
-    .NSM_VRST_SELB(NSM_VRST_SELB),
-    .SA_OUT(SA_OUT),
-    .WL(WL),
-    .PCH(PCH),
-    .WR_DATA(WR_DATA),
-    .WRITE(WRITE),
-    .CSEL(CSEL),
-    .SAEN(SAEN),
-    .ADC_OUT(ADC_OUT),
-    .NF(NF),
-    .NFB(NFB),
-    .M2A(M2A),
-    .M2AB(M2AB),
-    .R2A(R2A),
-    .R2AB(R2AB),
-    .CLK(clk)
-);
-
 task sram_write(
     input logic [$clog2(numRows)-1:0] t_addr,
     input logic [numCols-1:0] t_data
 );
-    // set address
+    // Drive on the falling edge so wr_data_planes is stable when the write
+    // controller captures the beat on the next posedge, then wait for the
+    // controller to finish before the caller changes the data.
+    @(negedge clk);
     addr = t_addr;
     wr_data = t_data;
-    // set write request
     rq_wr = 1;
     rq_valid = 1;
     $write("SRAM WRITE @ %d, DATA: %d... ", t_addr, wr_data);
-    while (!rq_ready) #(CLK_PERIOD);
-    #(CLK_PERIOD);
-    $display("GD");
-    // set valid
+    @(posedge clk);
+    @(negedge clk);
     rq_valid = 0;
+    while (!rq_ready) @(negedge clk);
+    $display("GD");
 endtask
 
 task sram_read(
     input logic [$clog2(numRows)-1:0] t_addr
 );
-    // set address
+    @(negedge clk);
     addr = t_addr;
-    // set write request
     rq_wr = 0;
     rq_valid = 1;
     $write("SRAM READ @ %d,", t_addr);
-    while (!rq_ready) #(CLK_PERIOD);
-    #(CLK_PERIOD);
-    // set valid
+    @(posedge clk);
+    @(negedge clk);
     rq_valid = 0;
     $write("...");
-    while (!rd_valid) #(CLK_PERIOD);
+    while (!rd_valid) @(negedge clk);
     $display("DATA: %d", rd_data);
 endtask
 
 task send_mac_request();
+    // Drive on the falling edge so the posedge sample never races the file
+    // read / partial mac_data update.
+    @(negedge clk);
     mac_data_valid = 1;
     for (i = 0; i < numRows; i++) $fscanf(f_x, "%d", mac_data[i]);
-    while (!ready_o) #(CLK_PERIOD); // Wait for request take
-    #(CLK_PERIOD);
+    while (!ready_o) @(negedge clk); // Wait for request take
+    @(negedge clk);
     mac_data_valid = 0;
 endtask
 
 task set_config();
     // Set config
-    cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
+    cfg.adc_ref_range_shifts = adcShift[3:0];
     cfg.binary_cfg = macMode;
     cfg.unsigned_acts = unsignedActs;
     cfg.n_input_bits_cfg = xBits;
@@ -428,15 +377,28 @@ initial begin
     $display("Reading weights...");
     $display("Writing into SRAM...");
     for (int i = 0; i < numRows; i=i+1) begin
-        if ($fscanf(f_w, "%d", scan_data))
-            sram_write( 
-                .t_addr(i),
-                .t_data(scan_data)
-            );
+        wr_data_planes = '0;
+        if (weightPlanes) begin
+            // One word per weight bit-plane: w.txt row i, plane p.
+            for (int p = 0; p < numPlanes; p++) begin
+                if ($fscanf(f_w, "%d", scan_data) != 1)
+                    $fatal(1, "short w.txt (multibit mode)");
+                wr_data_planes[p*numCols +: numCols] = scan_data;
+            end
+        end else begin
+            if ($fscanf(f_w, "%d", scan_data) != 1)
+                $fatal(1, "short w.txt");
+            for (int p = 0; p < numPlanes; p++)
+                wr_data_planes[p*numCols +: numCols] = scan_data;
+        end
+        sram_write(
+            .t_addr(i),
+            .t_data(scan_data)
+        );
     end
     `endif
 
-    `ifndef SKIPREAD 
+    `ifndef SKIPREAD
     test_phase = P_READ_WEIGHTS;
     $display("Reading from SRAM...");
     for (int i = 0; i < numRows; i++) begin
@@ -458,10 +420,21 @@ initial begin
     `ifndef SKIPMACS
     test_phase = P_PERFORM_MACS;
     $display("Performing MACs...");
-    for (int h = 0; h < xBatches; h++) begin
-        send_mac_request();
-        // We do not need to read result here because it is 
-        // done by the always block somewhere above
+    if (streamMacs) begin
+        @(negedge clk);
+        mac_data_valid = 1;
+        for (int h = 0; h < xBatches; h++) begin
+            for (i = 0; i < numRows; i++) $fscanf(f_x, "%d", mac_data[i]);
+            while (!ready_o) @(negedge clk);
+            @(negedge clk);
+        end
+        mac_data_valid = 0;
+    end else begin
+        for (int h = 0; h < xBatches; h++) begin
+            send_mac_request();
+            // We do not need to read result here because it is
+            // done by the always block somewhere above
+        end
     end
     `endif
 

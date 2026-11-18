@@ -190,6 +190,7 @@ generate
             .numBanks(numBanks)
         ) u_ts_qracc (
             .adc_ref_range_shifts(adc_ref_range_shifts),
+            .binary_cfg(u_qr_acc_top.cfg.binary_cfg),
             .bank_select(bank_select),
             .PSM_VDR_SEL(to_analog[p].PSM_VDR_SEL),
             .PSM_VDR_SELB(to_analog[p].PSM_VDR_SELB),
@@ -211,6 +212,7 @@ generate
             .CSEL(to_analog[p].CSEL),
             .SAEN(to_analog[p].SAEN),
             .ADC_OUT(ADC_OUT_p),
+            .ADC_CODE(),
             .NF(to_analog[p].NF),
             .NFB(to_analog[p].NFB),
             .M2A(to_analog[p].M2A),
@@ -425,6 +427,86 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 `endif // VERILATOR
 int errcnt = 0;
+
+// ---------------------------------------------------------------------------
+// Full-stream MAC capture (test only, enabled with +qr_dbg_mac at run time).
+//
+// Deliberately runtime-gated rather than `` `ifdef DEBUG ``: verilator applies
+// its +define options in command-line order and the tb is listed before
+// sim_args, so a compile-time guard here would silently vanish (see AGENTS.md
+// section 5 for the same trap via QRACC_DEBUG).
+//
+// NOTE: this block must stay OUTSIDE the `` `ifndef VERILATOR `` task region
+// below, otherwise verilator never compiles it.
+//
+// [DBG cfg] adc_ref_range_shifts=.. num_output_channels=.. ...
+//      Once, on the first accepted word (the CSR-programmed values in use).
+// [DBG win] k=<accepted window index> x=<opix_x> y=<opix_y>
+//      One line per accepted MAC word; ``k`` is the acceptance order.
+// [DBG mac] k=<same index> o=<output channel> pre=<accumulator> post=<mac_data_o>
+//      One line per output channel of every completed window.
+//
+// ``pre`` is the pre-shift accumulator in seq_acc (pre-scale MAC) and ``post``
+// is what the SRAM/scaler path sees (accumulator << cfg.adc_ref_range_shifts),
+// so the test can check both and verify post == pre << s.
+// ---------------------------------------------------------------------------
+int dbg_win_k = 0;
+int dbg_mac_k = 0;
+int dbg_probe = 0;
+logic dbg_probe_on = 0;
+logic dbg_cap_en;
+initial dbg_cap_en = $test$plusargs("qr_dbg_mac");
+always @(posedge clk) begin
+    if (dbg_cap_en) begin
+        if (u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
+            dbg_probe_on <= 1;
+            if (dbg_win_k == 0) begin
+                $display("[DBG cfg] adc_ref_range_shifts=%0d num_output_channels=%0d mapped_matrix_offset_x=%0d output_fmap_dimx=%0d output_fmap_dimy=%0d weight_bits=%0d weight_signed=%0d unsigned=%0d n_input_bits=%0d input_trits=%0d",
+                         u_qr_acc_top.cfg.adc_ref_range_shifts,
+                         u_qr_acc_top.cfg.num_output_channels,
+                         u_qr_acc_top.cfg.mapped_matrix_offset_x,
+                         u_qr_acc_top.cfg.output_fmap_dimx,
+                         u_qr_acc_top.cfg.output_fmap_dimy,
+                         u_qr_acc_top.cfg.weight_bits_cfg,
+                         u_qr_acc_top.cfg.weight_signed_cfg,
+                         u_qr_acc_top.cfg.unsigned_acts,
+                         u_qr_acc_top.cfg.n_input_bits_cfg,
+                         u_qr_acc_top.u_seq_acc.input_trits);
+            end
+            $display("[DBG win] k=%0d x=%0d y=%0d", dbg_win_k,
+                     u_qr_acc_top.u_qracc_controller.opix_pos_x,
+                     u_qr_acc_top.u_qracc_controller.opix_pos_y);
+            dbg_win_k++;
+        end
+        if (u_qr_acc_top.qracc_output_valid) begin
+            for (int d = 0; d < u_qr_acc_top.cfg.num_output_channels; d++) begin
+                $display("[DBG mac] k=%0d o=%0d pre=%0d post=%0d", dbg_mac_k, d,
+                         $signed(u_qr_acc_top.u_seq_acc.accumulator[u_qr_acc_top.cfg.mapped_matrix_offset_x + d]),
+                         $signed(u_qr_acc_top.qracc_mac_output[u_qr_acc_top.cfg.mapped_matrix_offset_x + d]));
+            end
+            dbg_mac_k++;
+        end
+
+        // One-shot timing probe for the first window: shows how the
+        // accumulator evolves relative to valid_o.
+        if (dbg_probe_on && dbg_probe < 24) begin
+            $display("[DBG probe] t=%0d trk=%b acc=%0d tree=%0d mac=%0d valid=%0d macen=%0d mvalid=%0d ready=%0d pop=%0d bias=%0d",
+                     dbg_probe,
+                     u_qr_acc_top.u_seq_acc.pipeline_tracker,
+                     $signed(u_qr_acc_top.u_seq_acc.accumulator[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     $signed(u_qr_acc_top.u_seq_acc.tree_sum[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     $signed(u_qr_acc_top.qracc_mac_output[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     u_qr_acc_top.qracc_output_valid,
+                     u_qr_acc_top.u_seq_acc.mac_en,
+                     u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid,
+                     u_qr_acc_top.u_seq_acc.ready_o,
+                     $signed(u_qr_acc_top.u_seq_acc.act_popcount_q),
+                     $signed(u_qr_acc_top.u_seq_acc.bias_out));
+
+            dbg_probe++;
+        end
+    end
+end
 
 `ifndef POST_SYNTH
 `ifndef VERILATOR

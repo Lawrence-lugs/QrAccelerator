@@ -220,6 +220,7 @@ ts_qracc #(
     .numAdcBits(numAdcBits)
 ) u_ts_qracc (
     .adc_ref_range_shifts(qracc_cfg.adc_ref_range_shifts),
+    .binary_cfg(qracc_cfg.binary_cfg),
     .PSM_VDR_SEL(PSM_VDR_SEL),
     .PSM_VDR_SELB(PSM_VDR_SELB),
     .PSM_VSS_SEL(PSM_VSS_SEL),
@@ -240,6 +241,7 @@ ts_qracc #(
     .CSEL(CSEL),
     .SAEN(SAEN),
     .ADC_OUT(ADC_OUT),
+    .ADC_CODE(),
     .NF(NF),
     .NFB(NFB),
     .M2A(M2A),
@@ -260,6 +262,7 @@ twos_to_bipolar #(
 ) u_twos_to_bipolar (
     .twos(x_data),
     .input_bits(4'(xBits)),
+    .unsigned_acts(1'b0),
     .bipolar_p(bipolar_p_full),
     .bipolar_n(bipolar_n_full)
 );

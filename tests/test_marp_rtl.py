@@ -72,6 +72,7 @@ def test_qracc_with_onnx_single_node(
         '../rtl/wsacc/wsacc_pe_cluster.sv',
         '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
@@ -103,6 +104,7 @@ def test_qracc_with_onnx_single_node(
     parameter_list = {
         "SRAM_ROWS": imc_core_size[0],
         "SRAM_COLS": imc_core_size[1],
+        # uint8 activations are magnitudes: all 8 bits are data.
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
@@ -211,6 +213,7 @@ def test_marp_multibit_node_int8(
         '../rtl/wsacc/wsacc_pe_cluster.sv',
         '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
@@ -242,6 +245,7 @@ def test_marp_multibit_node_int8(
     parameter_list = {
         "SRAM_ROWS": imc_core_size[0],
         "SRAM_COLS": imc_core_size[1],
+        # uint8 activations are magnitudes: all 8 bits are data.
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32 * 8,  # enough for a single bank
@@ -298,6 +302,7 @@ def test_qracc_with_all_onnx_single_node(
         '../rtl/wsacc/wsacc_pe_cluster.sv',
         '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
@@ -329,6 +334,7 @@ def test_qracc_with_all_onnx_single_node(
     parameter_list = {
         "SRAM_ROWS": imc_core_size[0],
         "SRAM_COLS": imc_core_size[1],
+        # uint8 activations are magnitudes: all 8 bits are data.
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
@@ -474,6 +480,7 @@ def test_qracc_run_nx_model(
         '../rtl/wsacc/wsacc_pe_cluster.sv',
         '../rtl/wsacc/wsacc_pe.sv',
         '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
         '../rtl/seq_acc.sv',
         '../rtl/ts_qracc.sv',
         '../rtl/wr_controller.sv',
@@ -506,6 +513,7 @@ def test_qracc_run_nx_model(
     parameter_list = {
         "SRAM_ROWS": imc_core_size[0],
         "SRAM_COLS": imc_core_size[1],
+        # uint8 activations are magnitudes: all 8 bits are data.
         "QRACC_INPUT_BITS": 8,
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32*8, # enough for a single bank
