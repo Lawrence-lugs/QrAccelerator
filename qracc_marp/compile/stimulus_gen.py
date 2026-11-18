@@ -316,8 +316,11 @@ def _bitplane_partials(toeplitz_acts, weights, ifmap_bits, weight_bits,
     x = _sample_rows(toeplitz_acts, max_sample_rows)
     # Same weight reduction as the golden MAC (and the SRAM contents): a signed
     # B-bit arithmetic shift with clamping, *not* a mask of the low bits.
+    # B=1 is the legacy binary path: its weights are already 0/1, so treating
+    # them as signed int8 shifts every 1 to 0 and makes the ADC search score an
+    # all-zero MAC as perfect.
     w = quant.quantize_int8_to_bits(np.asarray(weights), weight_bits,
-                                    signed=True)
+                                    signed=(weight_bits > 1))
     planes = [((w >> b) & 1) for b in range(weight_bits)]
     partials = []
     for j in range(ifmap_bits):

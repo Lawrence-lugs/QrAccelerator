@@ -164,8 +164,10 @@ def test_marp_multibit_node_int8(
     dwc_core_size=32,
 ):
     import os, time
+    from pathlib import Path
     NODE_NAME = '/features/features.0/features.0.0/Conv_quant'
-    REF_DIR = '/workspaces/QrAccelerator/tests/multibit_ref'
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    REF_DIR = REPO_ROOT / 'tests' / 'multibit_ref'
 
     nx_model = onnx.load(modelpath)
 
@@ -263,8 +265,10 @@ def test_marp_multibit_node_int8(
     print(u_code)
 
     # Simulation
+    capdir = REPO_ROOT / 'capdir'
+    capdir.mkdir(exist_ok=True)
     diag_utils.VERILATOR_RUN_PLUSARGS = [
-        f'+cap_file=/workspaces/QrAccelerator/capdir/cap_B{weight_bits}.txt',
+        f'+cap_file={capdir / f"cap_B{weight_bits}.txt"}',
     ]
     run_simulation(simulator, {}, package_list, tb_file, sim_args, rtl_file_list, log_file, run=True)
 
