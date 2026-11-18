@@ -9,6 +9,10 @@ module twos_to_bipolar #(
 ) (
     input signed [numLanes-1:0][inBits-1:0] twos,
     input [3:0] input_bits,
+    // Unsigned activations are magnitudes already: the top bit is data, not a
+    // sign bit.  (The top bit is only a sign for ternary inputs; multibit
+    // unsigned ONNX activations must not be sign-interpreted.)
+    input logic unsigned_acts,
     output logic [numLanes-1:0][inBits-1:0] bipolar_p,
     output logic [numLanes-1:0][inBits-1:0] bipolar_n
 );
@@ -17,7 +21,11 @@ logic signed [numLanes-1:0][inBits-1:0] ntwos;
 always_comb begin : dataPath
     for (int i = 0; i < numLanes; i++) begin    
         ntwos[i] = -twos[i];
-        if (twos[i] == 0) begin
+        if (unsigned_acts) begin
+            bipolar_p[i] = twos[i];
+            bipolar_n[i] = '0;
+        end
+        else if (twos[i] == 0) begin
             bipolar_p[i] = 0;
             bipolar_n[i] = 0;
         end

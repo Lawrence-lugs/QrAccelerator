@@ -1,6 +1,12 @@
 
-// Wraps the analog QR accelerator
-// Performs a 1-bit bipolar MAC operation with parametrizable output precision
+// Wraps the analog QR accelerator.
+// Performs a 1-bit bipolar MAC operation with parametrizable output precision.
+//
+// TIMING / ANALOG CO-SIMULATION NOTE (2026-11-18): the switch-matrix selects are
+// driven from data_p/data_n for the whole MAC word and are blanked only when
+// !mac_en_i.  The previous `clk && mac_en_i` blanking only drove data during
+// the low phase; any analog/VAMS testbench that sampled the column on a
+// particular clock phase must be re-timed and re-verified against this model.
 
 import qracc_pkg::*;
 
@@ -44,14 +50,24 @@ logic wc_done;
 logic [outputElements-1:0][numAdcBits-1:0] adc_out_encoded;
 logic [outputElements-1:0][compCount-1:0] adc_out;
 
-// ADC OUT -- realign flattened ADC output
-assign adc_out = from_analog_i.ADC_OUT;
+// ADC OUT -- realign flattened ADC output.  The synthesised interface is the
+// 4-bit thermometer bus; wider behavioural converters (the bit-exact seq_acc
+// tests use 12 bits) use the digital ADC_CODE tap instead.
+generate
+    if (numAdcBits == 4) begin : g_adc_thermometer
+        assign adc_out = from_analog_i.ADC_OUT;
+    end
+endgenerate
 
 // SWITCH MATRIX SELECTS
 always_comb begin : SwitchMatrixSelects
     if (cfg.binary_cfg) begin
         // Binary configuration
-        if (clk && mac_en_i) begin
+        // Drive the column for the whole MAC word and blank only BETWEEN words.
+        // Gating on clk as well used to force every select to VRST on the
+        // posedge, i.e. exactly when the ADC register samples: the digital
+        // datapath always saw mbl_value == 0 (FINDINGS §1).
+        if (!mac_en_i) begin
             to_analog_o.PSM_VDR_SEL = 0;
             to_analog_o.PSM_VSS_SEL = 0;
             to_analog_o.PSM_VRST_SEL = '1; // '1 = all ones
@@ -74,7 +90,7 @@ always_comb begin : SwitchMatrixSelects
         
     end else begin
         // Bipolar configuration
-        if (clk && mac_en_i) begin
+        if (!mac_en_i) begin
             to_analog_o.PSM_VDR_SEL = 0;
             to_analog_o.PSM_VSS_SEL = 0;
             to_analog_o.PSM_VRST_SEL = '1; // '1 = all ones
@@ -87,7 +103,7 @@ always_comb begin : SwitchMatrixSelects
         to_analog_o.PSM_VSS_SELB = ~to_analog_o.PSM_VSS_SEL;
         to_analog_o.PSM_VRST_SELB = ~to_analog_o.PSM_VRST_SEL;
 
-        if (clk && mac_en_i) begin
+        if (!mac_en_i) begin
             to_analog_o.NSM_VDR_SEL = 0;
             to_analog_o.NSM_VSS_SEL = 0;
             to_analog_o.NSM_VRST_SEL = '1; // '1 = all ones
@@ -179,28 +195,40 @@ always_ff @( posedge clk or negedge nrst ) begin : AdcOutRegistered
         adc_out_o <= adc_out_encoded;
     end
 end
-always_comb begin : AdcEncoderLogic
-    for (int i = 0; i < outputElements; i++) begin
-        casez (adc_out[i])
-            15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8 // 0000
-            15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9 // 0001
-            15'b000_0000_0000_001?: adc_out_encoded[i] = -6; // A // 0003
-            15'b000_0000_0000_01??: adc_out_encoded[i] = -5; // B // 0007
-            15'b000_0000_0000_1???: adc_out_encoded[i] = -4; // C // 000F
-            15'b000_0000_0001_????: adc_out_encoded[i] = -3; // D // 001F
-            15'b000_0000_001?_????: adc_out_encoded[i] = -2; // E // 003F
-            15'b000_0000_01??_????: adc_out_encoded[i] = -1; // F // 007F
-            15'b000_0000_1???_????: adc_out_encoded[i] = 0;  // 0 // 00FF
-            15'b000_0001_????_????: adc_out_encoded[i] = 1;  // 1 // 01FF
-            15'b000_001?_????_????: adc_out_encoded[i] = 2;  // 2 // 03FF
-            15'b000_01??_????_????: adc_out_encoded[i] = 3;  // 3 // 07FF
-            15'b000_1???_????_????: adc_out_encoded[i] = 4;  // 4 // 0FFF
-            15'b001_????_????_????: adc_out_encoded[i] = 5;  // 5 // 1FFF
-            15'b01?_????_????_????: adc_out_encoded[i] = 6;  // 6 // 3FFF
-            15'b1??_????_????_????: adc_out_encoded[i] = 7;  // 7 // 7FFF
-            default: adc_out_encoded[i] = 0;
-        endcase
+generate
+    if (numAdcBits == 4) begin : g_adc_decode_therm
+        // Legacy 4-bit thermometer decode (the synthesised comparator count).
+        always_comb begin : AdcEncoderLogic
+            for (int i = 0; i < outputElements; i++) begin
+                casez (adc_out[i])
+                    15'b000_0000_0000_0000: adc_out_encoded[i] = -8; // 8 // 0000
+                    15'b000_0000_0000_0001: adc_out_encoded[i] = -7; // 9 // 0001
+                    15'b000_0000_0000_001?: adc_out_encoded[i] = -6; // A // 0003
+                    15'b000_0000_0000_01??: adc_out_encoded[i] = -5; // B // 0007
+                    15'b000_0000_0000_1???: adc_out_encoded[i] = -4; // C // 000F
+                    15'b000_0000_0001_????: adc_out_encoded[i] = -3; // D // 001F
+                    15'b000_0000_001?_????: adc_out_encoded[i] = -2; // E // 003F
+                    15'b000_0000_01??_????: adc_out_encoded[i] = -1; // F // 007F
+                    15'b000_0000_1???_????: adc_out_encoded[i] = 0;  // 0 // 00FF
+                    15'b000_0001_????_????: adc_out_encoded[i] = 1;  // 1 // 01FF
+                    15'b000_001?_????_????: adc_out_encoded[i] = 2;  // 2 // 03FF
+                    15'b000_01??_????_????: adc_out_encoded[i] = 3;  // 3 // 07FF
+                    15'b000_1???_????_????: adc_out_encoded[i] = 4;  // 4 // 0FFF
+                    15'b001_????_????_????: adc_out_encoded[i] = 5;  // 5 // 1FFF
+                    15'b01?_????_????_????: adc_out_encoded[i] = 6;  // 6 // 3FFF
+                    15'b1??_????_????_????: adc_out_encoded[i] = 7;  // 7 // 7FFF
+                    default: adc_out_encoded[i] = 0;
+                endcase
+            end
+        end
+    end else begin : g_adc_decode_code
+        // Wider behavioural converter: the code is already the answer.
+        always_comb begin : AdcCodeLogic
+            for (int i = 0; i < outputElements; i++) begin
+                adc_out_encoded[i] = from_analog_i.ADC_CODE[i][numAdcBits-1:0];
+            end
+        end
     end
-end
+endgenerate
 
 endmodule

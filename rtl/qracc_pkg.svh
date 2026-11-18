@@ -30,6 +30,12 @@ package qracc_pkg;
     parameter outputElements = 256;
     localparam int numPlanes = 8;
     localparam int qrAccMaxInputBits = 9;
+    // Wide digital tap for the ADC code.  The physical analog interface is the
+    // thermometer bus (ADC_OUT), which is fixed at the synthesised 4-bit
+    // comparator count.  Modelling a wider converter (the bit-exact seq_acc
+    // tests use 12 bits to take the ADC out of the loop) needs the code itself,
+    // so every ts_qracc instance also publishes its code on this bus.
+    localparam int qrAccAdcCodeBits = 16;
     
       // Output Scaler Parameters
     parameter accumulatorBits = 16;
@@ -198,6 +204,10 @@ package qracc_pkg;
     typedef struct packed {
         logic [numCols-1:0] SA_OUT;
         logic [compCount*outputElements-1:0] ADC_OUT;
+        // Digital (non-analog) ADC code, sign-extended to qrAccAdcCodeBits.
+        // Used by the parametrised ADC model; the analog schematic leaves it
+        // undriven.  See qrAccAdcCodeBits above.
+        logic signed [outputElements-1:0][qrAccAdcCodeBits-1:0] ADC_CODE;
     } from_analog_t;
 
     typedef struct packed {
