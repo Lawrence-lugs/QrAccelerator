@@ -3,6 +3,7 @@ xcelium
 *xcelium*
 .vscode
 synth
+.hier
 .env
 sims/*
 !sims/.gitkeep
