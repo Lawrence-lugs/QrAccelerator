@@ -218,7 +218,7 @@ always_comb begin : toMBL
 
         // Dump raw mbl and the ADC decision (+define+DEBUG)
         `ifdef DEBUG
-        if (dbg_mbl_shown == 0) begin
+        if (dbg_mbl_shown == 0 && mbl_value[j] != 0) begin
             $display("[DBG ts_qracc] s=%0d binary=%0d fs=%0d lsb_exp=%0d mbl=%0d code=%0d",
                      adc_ref_range_shifts, binary_cfg, adcFullScale, lsb_exp,
                      mbl_value[j], $signed(adc_code[j]));

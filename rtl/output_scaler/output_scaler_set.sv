@@ -45,7 +45,10 @@ module output_scaler_set #(
 localparam addrWidth = $clog2(numElements);
 
 // Registers
-logic signed [scaleBits-1:0] output_scale [numElements];
+// Q0.16 unsigned multiplier: values in [0, 1) use the full 16-bit range.
+// Declaring this signed makes every scale >= 0.5 look negative and flips the
+// output sign (FINDINGS_scaler).
+logic [scaleBits-1:0] output_scale [numElements];
 logic signed [shiftBits-1:0] output_shift [numElements];
 logic signed [offsetBits-1:0] output_offset [numElements];
 logic signed [31:0] output_bias [numElements];
