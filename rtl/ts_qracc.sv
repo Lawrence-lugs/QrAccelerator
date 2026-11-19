@@ -26,13 +26,17 @@ module ts_qracc #(
     parameter numRows = 128,
     parameter numCols = 8,
     parameter numAdcBits = 4,
-    // Half-span in column-current counts at adc_ref_range_shifts == 0.
-    // MUST be a power of two: the ADC model is implemented with shifts only.
+    // Nominal half-span in column-current counts at
+    // adc_ref_range_shifts == 0.  It is set by the ADC reference voltages,
+    // not by a digital gain; MUST be a power of two because the model divides
+    // by shifting.
     parameter int adcFullScale = (1 << numAdcBits),
     parameter int numPlanes = 8,
     localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (
     // DIGITAL SETTING
+    // 0 = nominal reference span; each increment halves the analog span by
+    // moving the ADC reference voltages inward (range down, resolution up).
     input [3:0] adc_ref_range_shifts,
     // 0 - bipolar ladder ([-VDD,+VDD]), 1 - binary ladder ([0,VDD]).
     // Selects which half of the ladder the clamp allows; see the ADC model
@@ -119,18 +123,35 @@ logic signed [numAdcBits-1:0] adc_code [numCols];
 logic signed [numCols-1:0][compCount-1:0] comp_out;
 
 // ---------------------------------------------------------------------------
-// ADC reference model (fixed full scale, `s` zooms toward V_RST)
+// ADC reference model (programmable reference span)
 //
-// Hardware behaviour (specified 2026-11-18):
-//   * The flash ADC has a FIXED full-scale range.  In bipolar mode it spans
-//     [-VDD, +VDD] with V_RST = 0; in binary mode it spans [0, VDD] with
-//     V_RST = VDD/2.  Either way V_RST is the zero of the column current
-//     (mbl_value == 0 with every switch at VRST).
-//   * numAdcBits comparators subdivide that fixed span into 2**numAdcBits
-//     levels, so extra comparators buy RESOLUTION, never extra range.
-//   * adc_ref_range_shifts (s) scales the reference span TOWARDS V_RST: each
-//     increment halves the span, so the LSB becomes 2**s finer and the
-//     conversion saturates 2**s earlier.
+// Hardware behaviour:
+//   * The ADC's analog span is set by its reference voltages, not by a
+//     digital gain.  At adc_ref_range_shifts == 0 the references define the
+//     nominal half-span adcFullScale (column-current counts).  In bipolar
+//     mode the span is [-adcFullScale, +adcFullScale] around V_RST; in binary
+//     mode only the upper half [V_RST, V_RST+adcFullScale] is used, with
+//     V_RST = VDD/2.  V_RST is the zero of the column current (mbl_value == 0
+//     with every switch at VRST).
+//   * numAdcBits comparators subdivide the span into 2**numAdcBits levels.
+//     The comparator count and the code range are fixed; extra comparators
+//     buy RESOLUTION, not extra range.
+//   * adc_ref_range_shifts (s) programs the reference generator to move the
+//     top and bottom reference voltages inward, reducing the analog span
+//     (it is not a digital shift of the code):
+//
+//         FS(s)  = adcFullScale / 2**s
+//         LSB(s) = FS(s) / 2**(numAdcBits-1)
+//
+//     Each increment therefore makes the LSB 2**s finer and the conversion
+//     saturates 2**s earlier.  s cannot extend the range; it only trades
+//     range for resolution.
+//
+//   * Noise floor: the comparator/reference chain has roughly 16 mVrms
+//     input-referred noise.  Once LSB(s) is below that floor, the extra codes
+//     no longer represent real analog resolution -- the digital model still
+//     emits codes, but the LSB is not trustworthy.  In hardware, s must stop
+//     before that point (or the model must add the noise explicitly).
 //
 // In count units, with adcFullScale = counts for the half-span at s = 0:
 //
