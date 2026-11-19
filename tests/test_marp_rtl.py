@@ -167,7 +167,6 @@ def test_marp_multibit_node_int8(
     from pathlib import Path
     NODE_NAME = '/features/features.0/features.0.0/Conv_quant'
     REPO_ROOT = Path(__file__).resolve().parents[1]
-    REF_DIR = REPO_ROOT / 'tests' / 'multibit_ref'
 
     nx_model = onnx.load(modelpath)
 
@@ -276,9 +275,10 @@ def test_marp_multibit_node_int8(
     result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
 
-    safe = NODE_NAME.lstrip('/').replace('/', '_')
-    ref_path = os.path.join(REF_DIR, f'{safe}_B{weight_bits}.npy')
-    ref = np.load(ref_path).transpose((0, 2, 3, 1))
+    # Use ONNX Runtime on the same input.  The old .npy references were
+    # generated from a fixed CIFAR image and cannot match this random input.
+    ref = qlinearconv_onnx_reference(
+        node, input_tensor, nx_model, weight_bits=weight_bits)
 
     rmse, snr = rmse_snr(ref, acc_result)
     print(f'SNR B={weight_bits}: {snr:.3f} dB, RMSE: {rmse:.3f}')

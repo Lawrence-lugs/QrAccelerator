@@ -287,6 +287,61 @@ def rmse_snr(expected, actual):
     return rmse, snr
 
 
+def qlinearconv_onnx_reference(
+    mapped_node,
+    input_tensor,
+    nx_model,
+    weight_bits: int = 8,
+) -> np.ndarray:
+    """Real ONNX Runtime output for one QLinearConv node on one input.
+
+    This is the only reference in the test-suite that actually executes ONNX.
+    It runs the target node with ``input_tensor`` as the node input, so it can
+    be compared with the RTL for the exact same activation data.
+
+    For ``weight_bits < 8`` the weight initializer is replaced by the B-bit
+    signed values ``q = w >> (8-B)`` and the node's ``w_scale`` initializer is
+    multiplied by ``2**(8-B)``.  That represents the same real weights the
+    hardware uses: the hardware MAC consumes ``q`` directly and the compiler
+    restores the factor in the output scale.
+
+    Returns the node output in NHWC order ``(H, W, O)`` to match the RTL
+    ``hw_ofmap`` layout.
+    """
+    import copy
+
+    import onnx
+    from qracc_marp.onnx_tools import onnx_utils
+
+    model = copy.deepcopy(nx_model)
+    wname = mapped_node.nx_node.input[3]
+    init = next(i for i in model.graph.initializer if i.name == wname)
+    w = onnx.numpy_helper.to_array(init)
+    q_w = q.quantize_int8_to_bits(w, weight_bits, signed=True).astype(np.int8)
+    for idx, old in enumerate(model.graph.initializer):
+        if old.name == wname:
+            model.graph.initializer[idx].CopyFrom(
+                onnx.numpy_helper.from_array(q_w, name=wname))
+            break
+
+    if weight_bits < 8:
+        wscale_name = mapped_node.nx_node.input[4]
+        for idx, old in enumerate(model.graph.initializer):
+            if old.name == wscale_name:
+                ws = onnx.numpy_helper.to_array(old).astype(np.float32)
+                model.graph.initializer[idx].CopyFrom(
+                    onnx.numpy_helper.from_array(
+                        ws * (2 ** (8 - weight_bits)), name=wscale_name))
+                break
+
+    out = onnx_utils.get_intermediate_tensor_value(
+        model,
+        mapped_node.nx_node.output[0],
+        input_dict={mapped_node.nx_node.input[0]: input_tensor},
+    )
+    return np.transpose(out, (0, 2, 3, 1))
+
+
 def qlinearconv_pre_scale_mac(
     mapped_node,
     input_tensor,
@@ -312,11 +367,14 @@ def qlinearconv_pre_scale_mac(
     are combined by the shift-add tree with the MSB plane sign-corrected by
     ``twos_to_bipolar``.
 
-    The weight reordering (``kernel.transpose(0, 3, 1, 2).reshape(O, -1).T``)
-    and the ``channel_minor=True`` toeplitz layout are confirmed to make
-    ``toeplitz @ w`` reproduce the convolution exactly.  ``channel_minor``
-    toeplitz columns are ordered ``(kw, C, kh)`` with ``kh`` fastest, so the
-    kernel must be permuted as ``(O, kw, C, kh)`` before flattening.  The
+    This function is a numpy reconstruction, **not** an ONNX Runtime call.
+    Use :func:`qlinearconv_onnx_reference` for the actual ONNX output.
+
+    The weight reordering (``kernel.transpose(0, 2, 3, 1).reshape(O, -1).T``)
+    and the ``channel_minor=False`` toeplitz layout are confirmed to make
+    ``toeplitz @ w`` reproduce the convolution exactly.  ``channel_minor=False``
+    toeplitz columns are ordered ``(kh, kw, C)`` with the channel fastest, so
+    the kernel is permuted as ``(O, kh, kw, C)`` before flattening.  The
     toeplitz matrix is padded with ``mapped_node.x_zp``, matching the RTL's
     padding value, so the subsequent ``- x_zp * sum(kernel)`` zero-point fold
     yields exactly ONNX QLinearConv pre-output-scale/zp:
@@ -490,6 +548,64 @@ def qlinearconv_pre_scale_mac(
         mac = np.clip(mac, lo, hi)
 
     return mac.astype(np.int64)
+
+
+def qlinearconv_post_scale_mac(
+    mapped_node,
+    input_tensor,
+    weight_bits: int = 8,
+    adc_mode: str = "none",
+    adc_shift: int = 0,
+    fs_counts: float = None,
+    ladder: str = "bipolar",
+) -> np.ndarray:
+    """Full Python golden for the post-scaler int8 output.
+
+    Models the actual datapath contract:
+
+    * the hardware consumes ``q = w >> (8-B)`` (signed B-bit weights);
+    * ``seq_acc`` publishes ``2*MAC``;
+    * the compiler sets ``output_scale = mapped_node.scale * 2**(8-B) / 2``
+      and ``output_bias = 2 * (bias_raw - x_zp*sum(q))``;
+    * the scaler applies ``(2*MAC + output_bias) * output_scale + y_zp``.
+
+    This is the Python counterpart of ``output_scaler``.  With
+    ``adc_mode="none"`` it should agree with :func:`qlinearconv_onnx_reference`
+    to within fixed-point rounding; with ``"per_plane"`` it includes the flash
+    ADC approximation.
+
+    Returns NHWC ``(H, W, O)``, clipped to int8 range.
+    """
+    mac = qlinearconv_pre_scale_mac(
+        mapped_node,
+        input_tensor,
+        adc_bits=4 if adc_mode == "per_plane" else 32,
+        weight_bits=weight_bits,
+        adc_mode=adc_mode,
+        adc_shift=adc_shift,
+        unfold=True,
+        fs_counts=fs_counts,
+        ladder=ladder,
+    )
+
+    w_B = q.quantize_int8_to_bits(
+        mapped_node.kernel, weight_bits, signed=True).astype(np.int64)
+    raw_bias = (np.asarray(mapped_node.biases, dtype=np.int64)
+                + int(mapped_node.x_zp)
+                * mapped_node.kernel.sum(axis=(1, 2, 3), dtype=np.int64))
+    bias_B = raw_bias - int(mapped_node.x_zp) * w_B.sum(
+        axis=(1, 2, 3), dtype=np.int64)
+
+    scale = np.asarray(mapped_node.scale, dtype=np.float64)
+    scale = scale * 0.5 * (2 ** (8 - weight_bits))
+    y = (2 * mac + 2 * bias_B[None, :]) * scale[None, :] + int(mapped_node.y_zp)
+    y = np.clip(np.rint(y), 0, 255)
+
+    O = mapped_node.kernel.shape[0]
+    H = W = int(round(np.sqrt(mac.shape[0])))
+    assert H * W == mac.shape[0], (
+        f'cannot reshape {mac.shape[0]} windows to HxW; expected square')
+    return y.reshape(H, W, O).astype(np.uint8)
 
 
 def qlinearconv_prescale_snr(

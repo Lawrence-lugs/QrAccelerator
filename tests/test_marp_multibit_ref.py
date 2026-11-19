@@ -18,7 +18,6 @@ from .conftest import _normalize_cifar
 MODEL_PATH = os.path.join(REPO_ROOT, 'onnx_models', 'mbv2_cifar10_int8.onnx')
 IMAGE_PATH = os.path.join(REPO_ROOT, 'onnx_models', 'cifar10_test_bird4.jpg')
 NODE_NAME = '/features/features.0/features.0.0/Conv_quant'
-REF_DIR = r'C:\Users\lafqu\AppData\Local\Temp\opencode\multibit_ref'
 
 
 def _find_node(model, node_name):
@@ -110,11 +109,4 @@ def test_b2_b4_differ():
         assert not np.array_equal(out, out8), f'B={B} output equals B=8 output'
 
 
-def test_saves_refs():
-    os.makedirs(REF_DIR, exist_ok=True)
-    safe = NODE_NAME.lstrip('/').replace('/', '_')
-    for B in (2, 4, 8):
-        out = same_b_reference(MODEL_PATH, NODE_NAME, B)
-        path = os.path.join(REF_DIR, f'{safe}_B{B}.npy')
-        np.save(path, out)
-        assert os.path.exists(path)
+
