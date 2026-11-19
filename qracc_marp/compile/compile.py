@@ -185,6 +185,12 @@ class QrAccNodeCode(object):
             # PLAN_adc_range_model_correction.md).  Multi-bit weights use the
             # bipolar switch matrix (NSM driven with the inverted activation).
             ladder = "bipolar" if self.weight_bits > 1 else "binary"
+            # The ADC full scale is fixed by the analog reference to the
+            # maximum possible |mbl| of a fully loaded bank (numRows counts).
+            # Only s is a runtime range selection.  s is a natural number, not
+            # a 2-bit field: s<=8 is the realistic limit for an ADC that still
+            # fits beside the memory banks (below that the LSB approaches the
+            # ~16 mVrms comparator noise floor).
             adc_cfg = infer_adc_config(
                 toeplitz_acts=self.toeplitz,
                 weights=mapped_node.matrix,
@@ -192,6 +198,8 @@ class QrAccNodeCode(object):
                 weight_bits=self.weight_bits,
                 adc_bits=getattr(self, "adc_bits", 4),
                 ladder=ladder,
+                fs_counts=float(self.imc_core_size[0]),
+                s_max=8,
             )
         adc_ref_range_shifts = int(adc_cfg["s"])
         self.adc_config = adc_cfg
@@ -293,10 +301,14 @@ class QrAccNodeCode(object):
 
     def _get_scaler_data(self):
         scale = np.asarray(self.mapped_node.scale, dtype=np.float64)
+        s = int(getattr(self, 'adc_config', {}).get('s', 0))
         if self.rtl_publishes_2x:
-            # seq_acc publishes 2*MAC and the B-bit weight planes use q,
-            # not q*2**(8-B): restore both factors in the output scale.
-            scale = scale * 0.5 * (2 ** (8 - self.weight_bits))
+            # seq_acc publishes (2*MAC) << s and the B-bit weight planes use
+            # q, not q*2**(8-B): restore all three factors in the scale.
+            scale = scale * 0.5 * (2 ** (8 - self.weight_bits)) / (2 ** s)
+        elif not self.mapped_node.depthwise:
+            # Binary analog seq_acc publishes acc << s (no 2x, no B shift).
+            scale = scale / (2 ** s)
         return pad_scaler_writes(
             scale_to_map = scale,
             core_shape= self.imc_core_size,
@@ -306,6 +318,7 @@ class QrAccNodeCode(object):
     
     def _get_bias_data(self):
         biases = np.asarray(self.mapped_node.biases).astype(np.int64)
+        s = int(getattr(self, 'adc_config', {}).get('s', 0))
         if self.rtl_publishes_2x:
             # mapped_node.biases already folds -x_zp*sum(raw kernel).  The
             # hardware uses the B-bit weights q, so re-fold with sum(q):
@@ -316,9 +329,12 @@ class QrAccNodeCode(object):
                 self.mapped_node.kernel, self.weight_bits, signed=True)
             bias_B = raw_bias - int(self.mapped_node.x_zp) * w_B.sum(
                 axis=(1, 2, 3), dtype=np.int64)
-            # post = 2*conv_q and output_scale = scale*2**(8-B)/2, so the
-            # accumulator bias must be 2*bias_B.
-            biases = bias_B * 2
+            # seq_acc publishes (2*MAC) << s.  The scaler adds this bias after
+            # that shift, so it must be pre-shifted by s as well.
+            biases = bias_B * 2 * (2 ** s)
+        elif not self.mapped_node.depthwise:
+            # Binary analog path: acc << s.
+            biases = biases * (2 ** s)
         return pad_bias_data(biases,
             core_shape=self.imc_core_size, 
             mm_offset_x=self.mapped_node.offset_x,

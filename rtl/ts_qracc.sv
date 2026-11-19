@@ -29,8 +29,11 @@ module ts_qracc #(
     // Nominal half-span in column-current counts at
     // adc_ref_range_shifts == 0.  It is set by the ADC reference voltages,
     // not by a digital gain; MUST be a power of two because the model divides
-    // by shifting.
-    parameter int adcFullScale = (1 << numAdcBits),
+    // by shifting.  The realistic setting is the maximum possible |mbl| for a
+    // fully loaded bank: numRows (256 for the current core).  Runtime range
+    // selection is s=0..8 (s is a natural number; the 4-bit field allows
+    // more, but s>~8 puts the LSB below the comparator noise floor).
+    parameter int adcFullScale = numRows,
     parameter int numPlanes = 8,
     localparam compCount = (2**numAdcBits)-1 // An ADC only has 2^numAdcBits-1 comparators
 ) (

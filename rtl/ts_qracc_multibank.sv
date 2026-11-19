@@ -12,7 +12,7 @@ module ts_qracc_multibank #(
     parameter numRows = 128,
     parameter numCols = 8,
     parameter numAdcBits = 4,
-    parameter int adcFullScale = (1 << numAdcBits),
+    parameter int adcFullScale = numRows,
     localparam compCount = (2**numAdcBits)-1, // An ADC only has 2^numAdcBits-1 comparators
     parameter numBanks = 8,
     parameter int numPlanes = 8

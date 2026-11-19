@@ -19,7 +19,9 @@ module seq_acc #(
 
     parameter adcBits = 4,
     // ADC half-span in counts at adc_ref_range_shifts == 0 (power of two).
-    parameter int adcFullScale = (1 << adcBits),
+    // Realistic setting: the maximum possible |mbl| for a fully loaded bank,
+    // i.e. inputElements (256 rows in the current core).
+    parameter int adcFullScale = inputElements,
     parameter accumulatorBits = 16
     // localparam accumulatorBits = maxInputTrits  + adcBits + 1 // +1 from addition bit growth
 ) (
