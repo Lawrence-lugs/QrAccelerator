@@ -292,6 +292,7 @@ def qlinearconv_onnx_reference(
     input_tensor,
     nx_model,
     weight_bits: int = 8,
+    weight_signed: bool = None,
 ) -> np.ndarray:
     """Real ONNX Runtime output for one QLinearConv node on one input.
 
@@ -305,6 +306,10 @@ def qlinearconv_onnx_reference(
     hardware uses: the hardware MAC consumes ``q`` directly and the compiler
     restores the factor in the output scale.
 
+    ``weight_bits=1, weight_signed=False`` is the legacy binary model: its
+    weights are already 0/1 and its ``w_scale`` already corresponds to them,
+    so the model is used unchanged.
+
     Returns the node output in NHWC order ``(H, W, O)`` to match the RTL
     ``hw_ofmap`` layout.
     """
@@ -313,33 +318,48 @@ def qlinearconv_onnx_reference(
     import onnx
     from qracc_marp.onnx_tools import onnx_utils
 
-    model = copy.deepcopy(nx_model)
-    wname = mapped_node.nx_node.input[3]
-    init = next(i for i in model.graph.initializer if i.name == wname)
-    w = onnx.numpy_helper.to_array(init)
-    q_w = q.quantize_int8_to_bits(w, weight_bits, signed=True).astype(np.int8)
-    for idx, old in enumerate(model.graph.initializer):
-        if old.name == wname:
-            model.graph.initializer[idx].CopyFrom(
-                onnx.numpy_helper.from_array(q_w, name=wname))
-            break
+    if weight_signed is None:
+        weight_signed = weight_bits > 1
 
-    if weight_bits < 8:
-        wscale_name = mapped_node.nx_node.input[4]
+    model = copy.deepcopy(nx_model)
+    # A B=1 unsigned model (the legacy binary model) already carries 0/1
+    # weights and its own w_scale; leave both untouched.
+    binary_model = weight_bits == 1 and not weight_signed
+    if not binary_model:
+        wname = mapped_node.nx_node.input[3]
+        init = next(i for i in model.graph.initializer if i.name == wname)
+        w = onnx.numpy_helper.to_array(init)
+        q_w = q.quantize_int8_to_bits(
+            w, weight_bits, signed=weight_signed).astype(np.int8)
         for idx, old in enumerate(model.graph.initializer):
-            if old.name == wscale_name:
-                ws = onnx.numpy_helper.to_array(old).astype(np.float32)
+            if old.name == wname:
                 model.graph.initializer[idx].CopyFrom(
-                    onnx.numpy_helper.from_array(
-                        ws * (2 ** (8 - weight_bits)), name=wscale_name))
+                    onnx.numpy_helper.from_array(q_w, name=wname))
                 break
+
+        if weight_bits < 8:
+            wscale_name = mapped_node.nx_node.input[4]
+            for idx, old in enumerate(model.graph.initializer):
+                if old.name == wscale_name:
+                    ws = onnx.numpy_helper.to_array(old).astype(np.float32)
+                    model.graph.initializer[idx].CopyFrom(
+                        onnx.numpy_helper.from_array(
+                            ws * (2 ** (8 - weight_bits)), name=wscale_name))
+                    break
 
     out = onnx_utils.get_intermediate_tensor_value(
         model,
         mapped_node.nx_node.output[0],
         input_dict={mapped_node.nx_node.input[0]: input_tensor},
     )
-    return np.transpose(out, (0, 2, 3, 1))
+    if out.ndim == 4:
+        return np.transpose(out, (0, 2, 3, 1))
+    if out.ndim == 1:
+        # QLinearMatMul on a pooled vector: NHWC with H=W=1.
+        return out.reshape(1, 1, 1, -1)
+    if out.ndim == 2:
+        return out.reshape(1, 1, *out.shape)
+    return out
 
 
 def qlinearconv_pre_scale_mac(
@@ -352,6 +372,7 @@ def qlinearconv_pre_scale_mac(
     unfold: bool = False,
     fs_counts: float = None,
     ladder: str = "bipolar",
+    weight_signed: bool = None,
 ) -> np.ndarray:
     """Compute the pre-scaling MAC golden array for a QLinearConv node.
 
@@ -421,6 +442,9 @@ def qlinearconv_pre_scale_mac(
         accumulator must be compared against the unfolded value because the
         zero-point fold is folded into ``mapped_node.biases`` and applied by
         ``output_scaler`` instead.
+    weight_signed : bool, optional
+        Signed B-bit weight planes.  Defaults to ``weight_bits > 1``: the
+        B=1 binary path uses 0/1 weights, while B>1 uses two's complement.
 
     Returns
     -------
@@ -432,9 +456,18 @@ def qlinearconv_pre_scale_mac(
             f"adc_mode must be 'none', 'output', 'per_plane' or "
             f"'per_plane_legacy', got {adc_mode!r}"
         )
+    if weight_signed is None:
+        # B=1 binary weights are 0/1 in the hardware and in the binary ONNX
+        # model; B>1 uses signed two's-complement planes.
+        weight_signed = weight_bits > 1
     kernel = mapped_node.kernel  # (O, I, kh, kw), int8
     O, I, kh, kw = kernel.shape
     x_zp = int(mapped_node.x_zp)
+
+    # QLinearMatMul is mapped as a 1x1 conv; its intermediate input arrives as
+    # a bare vector, not NCHW.  Treat it as C x 1 x 1.
+    if input_tensor.ndim == 1:
+        input_tensor = input_tensor.reshape(1, -1, 1, 1)
 
     # The hardware toeplitz is the raw receptive field flattened as
     # (kh, kw, C) with C fastest (channel_minor=False).  Verified against the
@@ -444,7 +477,8 @@ def qlinearconv_pre_scale_mac(
     ).astype(np.int64)
 
     # Bit planes: (8, kernel_elems, O). Plane b = (w >> b) & 1 for b < B.
-    planes = q.weight_bit_planes(weights_toeplitz, weight_bits, signed=True)
+    planes = q.weight_bit_planes(weights_toeplitz, weight_bits,
+                                 signed=weight_signed)
 
     # Activation toeplitz matrix: (H*W, kernel_elems), padded with x_zp.
     toeplitz = compute.toeplitzize_input(
@@ -534,7 +568,7 @@ def qlinearconv_pre_scale_mac(
     # MUST use the same B-bit-reduced weights as the MAC above (not the raw
     # int8 kernel), otherwise the padded-position contribution and the MAC
     # use inconsistent weights for B < 8.
-    w_B = q.quantize_int8_to_bits(kernel, weight_bits, signed=True)
+    w_B = q.quantize_int8_to_bits(kernel, weight_bits, signed=weight_signed)
     kernel_sum = w_B.sum(axis=(1, 2, 3)).astype(np.int64)  # (O,)
     if not unfold:
         mac = mac - (x_zp * kernel_sum)[None, :]
@@ -558,16 +592,20 @@ def qlinearconv_post_scale_mac(
     adc_shift: int = 0,
     fs_counts: float = None,
     ladder: str = "bipolar",
+    weight_signed: bool = None,
 ) -> np.ndarray:
     """Full Python golden for the post-scaler int8 output.
 
     Models the actual datapath contract:
 
-    * the hardware consumes ``q = w >> (8-B)`` (signed B-bit weights);
-    * ``seq_acc`` publishes ``2*MAC``;
-    * the compiler sets ``output_scale = mapped_node.scale * 2**(8-B) / 2``
-      and ``output_bias = 2 * (bias_raw - x_zp*sum(q))``;
-    * the scaler applies ``(2*MAC + output_bias) * output_scale + y_zp``.
+    * B>1: the hardware consumes ``q = w >> (8-B)`` (signed B-bit weights),
+      ``seq_acc`` publishes ``2*MAC``, and the compiler sets
+      ``output_scale = mapped_node.scale * 2**(8-B) / 2`` and
+      ``output_bias = 2 * (bias_raw - x_zp*sum(q))``;
+    * B=1: the binary path uses 0/1 weights, publishes MAC (no 2x), and uses
+      ``output_scale = mapped_node.scale`` and
+      ``output_bias = bias_raw - x_zp*sum(q)``;
+    * the scaler applies ``(post + output_bias) * output_scale + y_zp``.
 
     This is the Python counterpart of ``output_scaler``.  With
     ``adc_mode="none"`` it should agree with :func:`qlinearconv_onnx_reference`
@@ -576,6 +614,40 @@ def qlinearconv_post_scale_mac(
 
     Returns NHWC ``(H, W, O)``, clipped to int8 range.
     """
+    if weight_signed is None:
+        weight_signed = weight_bits > 1
+
+    if mapped_node.depthwise:
+        # WSAcc uses the raw int8 depthwise kernel, not B-bit planes, and
+        # publishes MAC (no 2x).  Build the per-channel MAC directly.
+        kernel = mapped_node.kernel  # (O, 1, kh, kw)
+        O, _, kh, kw = kernel.shape
+        x = input_tensor.squeeze(0)
+        # Output size comes from the same toeplitz helper, not the input size.
+        mac = None
+        rows = None
+        for o in range(O):
+            toe = compute.toeplitzize_input(
+                x[o:o + 1],
+                kernel_shape=(1, 1, kh, kw),
+                strides=mapped_node.strides,
+                pads=mapped_node.pads,
+                zero_point=int(mapped_node.x_zp),
+                channel_minor=False,
+            )
+            if rows is None:
+                rows = toe.shape[0]
+                mac = np.zeros((rows, O), dtype=np.int64)
+            mac[:, o] = toe.astype(np.int64) @ kernel[o].reshape(-1).astype(np.int64)
+        bias_out = np.asarray(mapped_node.biases, dtype=np.int64)
+        scale = np.asarray(mapped_node.scale, dtype=np.float64)
+        y = (mac + bias_out[None, :]) * scale[None, :] + int(mapped_node.y_zp)
+        y = np.clip(np.rint(y), 0, 255)
+        H = W = int(round(np.sqrt(rows)))
+        assert H * W == rows, (
+            f'cannot reshape {rows} windows to HxW; expected square')
+        return y.reshape(H, W, O).astype(np.uint8)
+
     mac = qlinearconv_pre_scale_mac(
         mapped_node,
         input_tensor,
@@ -586,10 +658,12 @@ def qlinearconv_post_scale_mac(
         unfold=True,
         fs_counts=fs_counts,
         ladder=ladder,
+        weight_signed=weight_signed,
     )
 
     w_B = q.quantize_int8_to_bits(
-        mapped_node.kernel, weight_bits, signed=True).astype(np.int64)
+        mapped_node.kernel, weight_bits,
+        signed=weight_signed).astype(np.int64)
     raw_bias = (np.asarray(mapped_node.biases, dtype=np.int64)
                 + int(mapped_node.x_zp)
                 * mapped_node.kernel.sum(axis=(1, 2, 3), dtype=np.int64))
@@ -597,8 +671,15 @@ def qlinearconv_post_scale_mac(
         axis=(1, 2, 3), dtype=np.int64)
 
     scale = np.asarray(mapped_node.scale, dtype=np.float64)
-    scale = scale * 0.5 * (2 ** (8 - weight_bits))
-    y = (2 * mac + 2 * bias_B[None, :]) * scale[None, :] + int(mapped_node.y_zp)
+    if weight_bits == 1:
+        post = mac
+        bias_out = bias_B
+        scale = scale
+    else:
+        post = 2 * mac
+        bias_out = 2 * bias_B
+        scale = scale * 0.5 * (2 ** (8 - weight_bits))
+    y = (post + bias_out[None, :]) * scale[None, :] + int(mapped_node.y_zp)
     y = np.clip(np.rint(y), 0, 255)
 
     O = mapped_node.kernel.shape[0]
