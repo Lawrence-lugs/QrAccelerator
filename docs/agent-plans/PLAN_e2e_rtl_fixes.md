@@ -28,7 +28,7 @@ Current truth table:
 | Final matmul post-scale golden | **exact, max diff <= 1** |
 | Binary chain conv -> depthwise | **stage0 21.3 dB, stage1 34.9 dB** |
 | Full multi-node multibit | **not yet certified** |
-| ADC full-scale propagation per layer | **deferred until the ADC programmability model is settled** |
+| ADC full scale = `numRows`, `s<=8` | **implemented**; s=4 chosen for the target conv (LSB 2) |
 
 ## 1. Phase E1 — complete the golden matrix — DONE
 
@@ -64,16 +64,20 @@ ONNX reference. This is where the remaining RTL fixes become visible.
 
 Expected fixes, in order of likelihood:
 
-1. **ADC full-scale is not propagated — DEFERRED.** `QrAccNodeCode.config()` sends
-   `adc_ref_range_shifts` but not the chooser's `fs_counts`; `ts_qracc` uses
-   the `adcFullScale` parameter (default 16).  Measured on the target node:
-   B=2/4/8 choose `fs=16`, but **B=1 chooses `fs=23`** while the RTL still uses
-   16.  The binary path is therefore being simulated with a different LSB
-   (2.875 vs 2.0) than the config assumes.
-   Fix: emit `adc_full_scale` with the config, or constrain the chooser to the
-   RTL's fixed `2**numAdcBits` and assert equality per layer.
-   **Deferred** until the per-ADC programmability schema is settled (it will
-   likely become loaded scaler-like data rather than a compile-time parameter).
+1. **ADC full scale is now fixed at the bank maximum — IMPLEMENTED.**
+   `adcFullScale = numRows` (256 for the current core), the realistic
+   "fully loaded bank" half-span.  The chooser no longer searches
+   `fs_counts`; `QrAccNodeCode.config()` passes
+   `fs_counts=imc_core_size[0]` and `s_max=8`.  `seq_acc` defaults to
+   `inputElements`; `ts_qracc` / `ts_qracc_multibank` default to `numRows`.
+   The old B=1 `fs=23` mismatch is gone.
+   `s` is a natural number; `s<=8` is the practical limit because the LSB
+   approaches the ~16 mVrms comparator noise floor (the 4-bit field allows
+   more).  Per-ADC data will later become loaded scaler-like data.
+   Because `seq_acc` publishes `(2*MAC) << s`, the compiler scaler now divides
+   the scale by `2**s` and pre-shifts the bias by `2**s`.
+   Regression: `test_adc_config_uses_bank_full_scale` asserts
+   `fs_counts == 256`, `0 <= s <= 8`, and the corresponding LSB for B=1/2/4/8.
 2. **B=1 compiler branch.** `rtl_publishes_2x` is false and `binary_cfg=1`;
    verify the scaler path does not apply the multibit 2×/`2**(8-B)`.
 3. **Depthwise.** No 2×; verify the WSAcc bias/zero-point and output packing
@@ -156,4 +160,5 @@ E1 and the first E3 chain are complete.
    exercise output packing and shape changes.
 2. Add B=2/4 multibit chain stages once the per-layer B and ADC config are
    carried through `traverse_and_compile_nx_graph`.
-3. Revisit E2.1 ADC full-scale when the loaded per-ADC schema exists.
+3. Keep `adcFullScale=numRows`, `s<=8` until the loaded per-ADC schema
+   replaces the compile-time reference setting.

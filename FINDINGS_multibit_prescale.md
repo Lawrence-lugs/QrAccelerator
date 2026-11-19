@@ -302,3 +302,20 @@ Verification:
 * `test_qracc_with_onnx_single_node`: 8/8 passed after the scaler fix.
 * `test_marp_multibit_node_int8[2]`: 62.690 dB with the same-input ONNX
   reference.
+
+### 13. Realistic ADC range (2026-11-19)
+
+The fixed full scale is now the maximum possible bank partial:
+`adcFullScale = numRows` (256 counts, a fully loaded bank).  The compiler no
+longer searches `fs_counts`; it fixes `fs=256` and searches only the reference
+shift `s`.  `s` is a natural number, with `s<=8` the practical limit before
+the LSB reaches the ~16 mVrms comparator noise floor.
+
+For the target conv layer the chooser picks `s=4`, giving `lsb=2` counts,
+which is the same LSB the old non-physical `fs=16, s=0` setting used.  The
+resulting post-scaler and prestack numbers are unchanged (B=8 36.086 dB /
+58.116 dB), but the configuration is now physically meaningful.
+
+Because `seq_acc` publishes `(2*MAC) << s`, the compiler scaler divides the
+scale by `2**s` and pre-shifts the bias by `2**s`.  `test_adc_config_uses_bank_full_scale`
+locks `fs=256`, `s<=8`, and the LSB relation for B=1/2/4/8.

@@ -29,7 +29,9 @@ with the caveats in §8.
 
 * **ADC is a fixed-full-scale zoom**: `lsb = adcFullScale / 2**(bits-1+s)`,
   round-half-up, bipolar/binary clamp. `s` buys resolution and costs range;
-  `bits` buys range. `adcFullScale` is a power of two.
+  `bits` buys range. The realistic build sets `adcFullScale = numRows` (the
+  fully loaded bank, 256 counts), with `s` a natural number up to ~8 before
+  the LSB reaches the ~16 mVrms comparator noise floor.
 * **Reference configuration is the bipolar switch matrix** with the bias
   correction: `mbl = 2P - A_j`, `MAC = (lsb*acc - sum_j 2**j A_j)/2`.
 * **The RTL publishes `2*MAC`** before the output scaler; the residual factor 2
@@ -101,6 +103,8 @@ mount at `/workspace`).
 | `tests/test_marp_multibit_postscale.py::test_python_postscale_model_matches_onnx` | **3 passed** - Python golden vs ONNX exact (RMSE 0) for B=2/4/8 |
 | `tests/test_marp_multibit_postscale.py::test_marp_multibit_postscale` | **3 passed** - B=2 62.690 dB, B=4 38.491 dB, B=8 36.086 dB |
 | `tests/test_marp_rtl.py::test_marp_multibit_node_int8[2]` | **passed** - B=2 62.690 dB with same-input ONNX reference |
+| `test_adc_config_uses_bank_full_scale` | **4 passed** - `adcFullScale=numRows`, `s<=8`, LSB matches |
+| `test_qracc_with_onnx_single_node[0]` | **passed** - 21.310 dB with `adcFullScale=256`, `s=4` |
 
 The legacy ADC transfer function is now selected by the **compile-time**
 `ADC_MODEL_LEGACY` define, not a parameter. Normal builds (and synthesis) do
