@@ -277,16 +277,49 @@ class QrAccNodeCode(object):
                 return pack_weight_planes(self.mapped_bin.weights, B=self.weight_bits, signed=self.weight_signed)
             return mapped_matrix_to_bank_writes(self.mapped_bin.weights, 32)
         
+    @property
+    def rtl_publishes_2x(self):
+        """True when seq_acc publishes 2*MAC instead of MAC.
+
+        The analog multibit path uses the bipolar ladder and signed weights:
+        seq_acc removes the activation bias and leaves the factor 2 from
+        ``mbl = 2P - A_j``.  The output scaler must therefore be calibrated for
+        ``2*MAC``: scale is halved and the bias is doubled, so
+        ``(2*MAC + 2*bias) * (scale/2) == (MAC + bias) * scale``.
+        """
+        return (not self.mapped_node.depthwise
+                and self.weight_bits > 1
+                and bool(self.weight_signed))
+
     def _get_scaler_data(self):
+        scale = np.asarray(self.mapped_node.scale, dtype=np.float64)
+        if self.rtl_publishes_2x:
+            # seq_acc publishes 2*MAC and the B-bit weight planes use q,
+            # not q*2**(8-B): restore both factors in the output scale.
+            scale = scale * 0.5 * (2 ** (8 - self.weight_bits))
         return pad_scaler_writes(
-            scale_to_map = self.mapped_node.scale,
+            scale_to_map = scale,
             core_shape= self.imc_core_size,
             output_zero_point = self.mapped_node.y_zp,
             mm_offset_x= self.mapped_node.offset_x,
         )
     
     def _get_bias_data(self):
-        return pad_bias_data(self.mapped_node.biases, 
+        biases = np.asarray(self.mapped_node.biases).astype(np.int64)
+        if self.rtl_publishes_2x:
+            # mapped_node.biases already folds -x_zp*sum(raw kernel).  The
+            # hardware uses the B-bit weights q, so re-fold with sum(q):
+            # bias_B = bias_raw - x_zp*sum(q).
+            raw_bias = biases + int(self.mapped_node.x_zp) * self.mapped_node.kernel.sum(
+                axis=(1, 2, 3), dtype=np.int64)
+            w_B = quant.quantize_int8_to_bits(
+                self.mapped_node.kernel, self.weight_bits, signed=True)
+            bias_B = raw_bias - int(self.mapped_node.x_zp) * w_B.sum(
+                axis=(1, 2, 3), dtype=np.int64)
+            # post = 2*conv_q and output_scale = scale*2**(8-B)/2, so the
+            # accumulator bias must be 2*bias_B.
+            biases = bias_B * 2
+        return pad_bias_data(biases,
             core_shape=self.imc_core_size, 
             mm_offset_x=self.mapped_node.offset_x,
         )
