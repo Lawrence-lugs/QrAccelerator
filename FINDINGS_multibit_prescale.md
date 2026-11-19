@@ -269,3 +269,36 @@ All items below are implemented and verified.
   the datapath: the same SNR was measured at `HEAD` in the first pass.  It is
   left as a documented out-of-scope failure (see D7 in
   `PLAN_rtl_multibit_verification.md`).
+
+### 12. Post-scaler and ONNX reference (2026-11-19)
+
+The earlier "one-to-one with ONNX" claim applied only to the pre-output-scale
+integer MAC.  `qlinearconv_pre_scale_mac` is a numpy reconstruction from
+`mapped_node.kernel`, not an ONNX Runtime call.  The `.npy` references used by
+`test_marp_multibit_node_int8` were generated from a fixed CIFAR image while
+the test drives a random input, so that test was never a valid ONNX
+comparison.
+
+Findings:
+
+1. **Q0.16 scaler sign.** `output_scale` was declared signed; multipliers
+   >= 0.5 became negative.  Fixed in `output_scaler_set.sv` /
+   `output_scaler.sv`.
+2. **2x ownership.** `seq_acc` publishes `2*MAC`.  The compiler now writes
+   `scale * 2**(8-B) / 2`, not the raw scale.
+3. **B-bit bias.** For B<8 the hardware uses `q = w >> (8-B)`, so the folded
+   bias must use `sum(q)`, not `sum(raw kernel)`.  The compiler re-folds it:
+   `bias_B = bias_raw - x_zp*sum(q)`, then stores `2*bias_B`.
+4. **Real ONNX reference.** `tests/utils.py::qlinearconv_onnx_reference` runs
+   ONNX Runtime on the node with the same intermediate input, replaces weights
+   with `q`, and multiplies `w_scale` by `2**(8-B)`.
+   `qlinearconv_post_scale_mac` models the full scaler contract and matches
+   that reference exactly (RMSE 0) for B=2/4/8.
+
+Verification:
+
+* Python golden vs ONNX: exact for B=2/4/8.
+* RTL post-scaler: B=2 62.690 dB, B=4 38.491 dB, B=8 36.086 dB.
+* `test_qracc_with_onnx_single_node`: 8/8 passed after the scaler fix.
+* `test_marp_multibit_node_int8[2]`: 62.690 dB with the same-input ONNX
+  reference.

@@ -1,9 +1,13 @@
 # FINDINGS — WSAcc depthwise path
 
 Date: 2026-11-18
-Status: **PE arithmetic verified; full-node depthwise integration still fails.**
+Status: **RESOLVED.** PE arithmetic is bit-exact; the full-node depthwise
+failures were caused by the shared output scaler treating Q0.16 scale as
+signed. After that fix, nodes 1 and 4 pass at 47.4 dB.
+
 This is a separate datapath from the analog multibit bank. Do not use the
-multibit MAC results to claim WSAcc is end-to-end correct.
+multibit MAC results to claim WSAcc is end-to-end correct; use the node tests
+and the unit tests below.
 
 ## 1. What WSAcc is
 
@@ -38,14 +42,21 @@ Result: **3 passed** (exact `data_o == golden`, including a real 32-channel
 In `tests/test_marp_rtl.py::test_qracc_with_onnx_single_node`, the depthwise
 nodes are indices **1** and **4** (`kernel=(32,1,3,3)`). Both fail:
 
-| node | depthwise | SNR |
-|---|---|---|
-| 1 | yes | -2.383 dB |
-| 4 | yes | -3.068 dB |
+| node | depthwise | SNR before | SNR after scaler fix |
+|---|---|---|---|
+| 1 | yes | -2.383 dB | **47.409 dB** |
+| 4 | yes | -3.068 dB | **47.409 dB** |
 
-The non-depthwise nodes fail too (0, 2, 3, 308, 309), so the failure is not
-unique to WSAcc. However, WSAcc cannot be declared correct until its own
-end-to-end path is isolated.
+The non-depthwise nodes failed too (0, 2, 3, 308, 309), so the failure was not
+unique to WSAcc. It was the shared post-scaler, not the WSAcc PE.
+
+### Root cause
+
+`rtl/output_scaler/output_scaler_set.sv` declared `output_scale` as signed
+Q0.16.  Every multiplier >= 0.5 therefore appeared negative (bit 15 set), and
+the scaler flipped the sign of the output.  The analog and WSAcc paths share
+this scaler, so both failed with a bias-only-looking output.  Fixed by
+declaring the scale unsigned and zero-extending it in the multiplier.
 
 The single-node test currently uses `weight_bits=1`; the depthwise branch of
 `QrAccNodeCode` writes the physical kernel and issues

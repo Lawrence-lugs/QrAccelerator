@@ -98,6 +98,9 @@ mount at `/workspace`).
 | `tests/test_marp_multibit_adc_ablation.py` | passed |
 | `tests/test_marp_multibit_ref.py` | passed |
 | `tests/test_weight_planes.py` | passed |
+| `tests/test_marp_multibit_postscale.py::test_python_postscale_model_matches_onnx` | **3 passed** - Python golden vs ONNX exact (RMSE 0) for B=2/4/8 |
+| `tests/test_marp_multibit_postscale.py::test_marp_multibit_postscale` | **3 passed** - B=2 62.690 dB, B=4 38.491 dB, B=8 36.086 dB |
+| `tests/test_marp_rtl.py::test_marp_multibit_node_int8[2]` | **passed** - B=2 62.690 dB with same-input ONNX reference |
 
 The legacy ADC transfer function is now selected by the **compile-time**
 `ADC_MODEL_LEGACY` define, not a parameter. Normal builds (and synthesis) do
@@ -142,32 +145,29 @@ The table distinguishes it from the datapath.
 
 ## 7. Open / out of scope
 
-* **The certification stops before the output scaler.** The 58 dB prestack
-  result compares `qracc_mac_output` (`2*MAC`) with `2*exact`; it does not
-  exercise `output_scaler`, `output_bias`, the output zero point, or the final
-  int8 saturation. The compiler's `pad_scaler_writes` uses
-  `mapped_node.scale` unchanged, so the planned "residual factor 2 is absorbed
-  by the output scaler" still needs an explicit `/2` (or an equivalent scale
-  adjustment) and a post-scaler test. **Full end-to-end multibit is not done.**
-* `tests/test_marp_rtl.py::test_qracc_with_onnx_single_node` is the post-scaler
-  path and currently fails **7 of 8 nodes**: indices 0–4, 308, 309 fail with
-  SNR between roughly -1.2 and -9.8 dB; index 310 passes only because its
-  assertion is intentionally skipped. These use `weight_bits=1` (binary), so
-  they do not exercise the new multibit datapath. The depthwise nodes are 1
-  and 4; their WSAcc arithmetic is bit-exact in `test_wsacc_dw.py` and
-  `test_wsacc_dw32.py` (3 passed), so the full-node failure is in the
-  WSAcc/output-scaler/readout integration, not the WSAcc PE.
-* The binary ADC chooser has a separate latent bug: for `weight_bits==1`,
-  `_bitplane_partials` calls `quantize_int8_to_bits(..., signed=True)`; a
-  0/1 binary matrix becomes all zeros (`1 >> 7 == 0`), so every candidate
-  scores infinite SNR and the search picks `fs_counts=2048` (lsb 256). The
-  RTL still uses its fixed `adcFullScale=16`, so this affects the Python
-  configuration decision rather than the current RTL run; it must be fixed
-  before the binary path is re-certified.
-* `tests/test_marp_rtl.py::test_marp_multibit_node_int8` hard-codes
-  `/workspaces/QrAccelerator` twice (`REF_DIR` and `+cap_file`) and cannot run
-  with the `/workspace` mount; use a repo-relative path or
-  `Path(__file__).resolve().parents[1]`.
+* **The MAC is certified; the post-scaler phase is now active.** The 58 dB
+  prestack result compares `qracc_mac_output` (`2*MAC`) with `2*exact`; it does
+  not exercise `output_scaler`, `output_bias`, the output zero point, or the
+  final int8 saturation. See
+  `docs/agent-plans/PLAN_multibit_postscale_certification.md`.
+* **The initial golden was not ONNX.** `qlinearconv_pre_scale_mac` builds a
+  numpy MAC from `mapped_node.kernel` and the same input; the prestack test
+  compares two modes of that model against RTL. The ONNX Runtime references
+  lived in `test_marp_multibit_ref.py`, and its `.npy` files were generated
+  from a **fixed CIFAR image**, while `test_marp_multibit_node_int8` drives a
+  random input. That test was therefore never a valid ONNX comparison.
+* `test_qracc_with_onnx_single_node` now passes **8/8** after the output-scaler
+  sign fix. Nodes 1 and 4 (depthwise/WSAcc) pass at 47.4 dB; node 0 at 21.3 dB.
+* The binary ADC chooser bug was fixed: B=1 weights are scored unsigned.
+* The absolute `/workspaces/QrAccelerator` paths in
+  `test_marp_multibit_node_int8` were replaced with repo-relative paths.
+* Post-scaler with a same-input ONNX reference now passes:
+  **B=2 62.690 dB**, **B=4 38.491 dB**, **B=8 36.086 dB**.
+  The compiler owns the 2x and B-bit-weight calibration:
+  `scale * 2**(8-B) / 2`, `bias = 2*(bias_raw - x_zp*sum(q))`.
+* The Python golden `qlinearconv_post_scale_mac` matches the same-input ONNX
+  reference **exactly** (RMSE 0) for B=2/4/8 with `adc_mode="none"`; the RTL
+  numbers above include the per-plane ADC approximation.
 * **Analog co-simulation re-fire**: the wrapper no longer blanks selects on
   `clk && mac_en_i`. Any VAMS/analog testbench that assumed a particular clock
   phase for the column sample must be re-timed and re-verified. This is also
