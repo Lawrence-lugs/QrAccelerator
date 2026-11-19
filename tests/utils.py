@@ -671,14 +671,17 @@ def qlinearconv_post_scale_mac(
         axis=(1, 2, 3), dtype=np.int64)
 
     scale = np.asarray(mapped_node.scale, dtype=np.float64)
+    # seq_acc shifts the published MAC by adc_ref_range_shifts (s).  The
+    # scaler must divide by 2**s and the post-shift bias must be pre-shifted.
+    s = int(adc_shift)
     if weight_bits == 1:
         post = mac
-        bias_out = bias_B
-        scale = scale
+        bias_out = bias_B * (2 ** s)
+        scale = scale / (2 ** s)
     else:
         post = 2 * mac
-        bias_out = 2 * bias_B
-        scale = scale * 0.5 * (2 ** (8 - weight_bits))
+        bias_out = 2 * bias_B * (2 ** s)
+        scale = scale * 0.5 * (2 ** (8 - weight_bits)) / (2 ** s)
     y = (post + bias_out[None, :]) * scale[None, :] + int(mapped_node.y_zp)
     y = np.clip(np.rint(y), 0, 255)
 

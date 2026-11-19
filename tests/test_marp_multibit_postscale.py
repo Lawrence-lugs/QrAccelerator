@@ -110,6 +110,41 @@ def test_python_postscale_matmul_binary_matches_onnx():
     assert max_abs <= 1, f'matmul binary max|diff| {max_abs}'
 
 
+@pytest.mark.parametrize(
+    "model_path,weight_bits,weight_signed",
+    [
+        (MODEL_PATH_BINARY, 1, False),
+        (MODEL_PATH, 2, True),
+        (MODEL_PATH, 4, True),
+        (MODEL_PATH, 8, True),
+    ],
+)
+def test_adc_config_uses_bank_full_scale(model_path, weight_bits, weight_signed):
+    """The ADC full scale is numRows; s is the only range selection."""
+    nx_model = onnx.load(model_path)
+    u_nx_mapping = core.NxModelMapping(
+        nx_model, imc_core_size=(256, 256), dwc_core_size=32)
+    node = next(mn for mn in u_nx_mapping.mapped_nodes if mn.name == NODE_NAME)
+    np.random.seed(0)
+    input_dict = {
+        'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
+    }
+    input_shape = onnx_utils.get_intermediate_tensor_value(
+        nx_model, nx_model.graph.node[node.node_id].input[0],
+        input_dict=input_dict).shape
+    input_tensor = np.random.randint(0, 256, input_shape).astype(np.uint8)
+    u_code = QrAccNodeCode(
+        node, u_nx_mapping.mapped_bins[node.bin_id], input_tensor,
+        imc_core_size=(256, 256), ws_core_size=32,
+        weight_bits=weight_bits, weight_signed=weight_signed,
+        nx_model=nx_model)
+    cfg = u_code.config()
+    assert u_code.adc_config['fs_counts'] == 256.0
+    assert 0 <= cfg['adc_ref_range_shifts'] <= 8
+    assert u_code.adc_config['lsb_counts'] == 256.0 / (
+        2 ** (cfg['adc_ref_range_shifts'] + 3))
+
+
 @pytest.mark.parametrize("weight_bits", [2, 4, 8])
 def test_python_postscale_model_matches_onnx(weight_bits):
     """The Python golden must agree with ONNX before it judges RTL."""
