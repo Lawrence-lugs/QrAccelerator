@@ -342,3 +342,23 @@ node3 -> split0 chain is the clean evidence that the read-set fix is correct.
 Next: run the 5-node test with ACTMEM debug after this fix and compare its
 split read addresses (expected base + 0, 96, 192 ... for pixel 0) and split
 output base against the manual chain.
+
+## 12. Preserving readout and depthwise weights (2026-11-20)
+
+Two more fixes were required for the direct node3 -> split0 chain:
+
+* `result_start_addr`: a preserving node keeps the parent in
+  `ifmap_start_addr`; `S_READACTS` must read the saved output base. With this,
+  the preserving manual chain goes from **-2.327 dB to 25.707 dB**.
+* depthwise weights must be loaded even when the analog bin id is reused;
+  `write_weights` is now true for every depthwise node.
+
+The direct node3 -> split0 chain now passes **25.707 dB** in both
+`preserve_ifmap=False` and `preserve_ifmap=True` modes.
+
+The full 5-node test still reports **-2.291 dB**, exactly unchanged. Its actual
+output has correlation 0.014 with the expected split output and is not close to
+the parent or depthwise slice either. That is not explained by the direct
+chain fixes. Next: dump the full-prefix node3 output at base 23632 and compare
+it with the manual node3 output at base 4096, then check whether the split
+writes/readout in the full path use base 48304.

@@ -340,6 +340,11 @@ def test_marp_e2e_multibit_slice(simulator, n_nodes):
             f.write(write + '\n')
 
     diag_utils.VERILATOR_RUN_PLUSARGS = []
+    # Do not let a previous run's readout mask a node that never wrote.
+    try:
+        os.remove('tb/qracc_top/outputs/hw_ofmap.txt')
+    except FileNotFoundError:
+        pass
     log_file = f'tests/logs/tb_qracc_top_{simulator}_e2e3.log'
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     run_simulation(

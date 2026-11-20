@@ -845,7 +845,10 @@ def traverse_and_compile_nx_graph(
             commands += ['ENDINFO']
             commands += u_code.compile(
                 include_ifmap_writes = not input_loaded,
-                write_weights        = u_code.mapped_node.bin_id                       != prev_bin_id,
+                # Depthwise/WSAcc weights are not part of the analog bin; load
+                # them for every depthwise node even when the bin id is reused.
+                write_weights        = (u_code.mapped_node.depthwise
+                                        or u_code.mapped_node.bin_id != prev_bin_id),
                 add_read             = readout,
                 end                  = False ,
                 preserve_ifmap       = preserve_ifmap ,

@@ -87,6 +87,9 @@ assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 // Ping pong tracking signals
 logic [31:0] ofmap_start_addr;
 logic [31:0] ifmap_start_addr;
+// Output base of the most recently completed node.  A preserving node keeps
+// its parent in ifmap_start_addr, so readout must use this saved base.
+logic [31:0] result_start_addr;
 logic [31:0] act_wr_ptr;
 logic [31:0] act_rd_ptr;
 
@@ -294,7 +297,7 @@ always_comb begin : ctrlDecode
             bus_resp_o.ready = 1;
             ctrl_o.activation_buffer_ext_rd_en = 1;
             // Due to the ifmap->ofmap swapping, the ofmap is now in the ifmap_start_addr
-            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ifmap_start_addr;
+            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + result_start_addr;
             bus_resp_o.rd_data_valid = read_acts_out_valid;
         end
         default: begin
@@ -595,6 +598,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
     if (!nrst) begin
         ofmap_start_addr <= 0;
         ifmap_start_addr <= 0;
+        result_start_addr <= 0;
         act_wr_ptr <= 0;
         act_rd_ptr <= 0;
         read_acts_out_valid <= 0;
@@ -602,6 +606,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (csr_main_clear) begin
             ofmap_start_addr <= 0;
             ifmap_start_addr <= 0;
+            result_start_addr <= 0;
             act_wr_ptr <= 0;
             act_rd_ptr <= 0;
         end else
@@ -640,6 +645,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             if (state_d != S_COMPUTE_ANALOG) begin
                 if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
+                result_start_addr <= ofmap_start_addr;
                 // Always reserve a new output slot.  A preserving node keeps
                 // its input base live while writing its output elsewhere;
                 // otherwise a slice consumer would overwrite its parent.
@@ -652,6 +658,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             if (state_d != S_COMPUTE_DIGITAL) begin
                 if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
+                result_start_addr <= ofmap_start_addr;
                 ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
                                     + { 16'b0 , cfg.num_output_channels};
             end
