@@ -203,3 +203,49 @@ E1 and the first E3 chain are complete.
    carried through `traverse_and_compile_nx_graph`.
 3. Keep `adcFullScale=numRows`, `s<=8` until the loaded per-ADC schema
    replaces the compile-time reference setting.
+
+## 8. Internal channel-slice status (2026-11-20)
+
+Decision: a Slice consumer reads the parent activation in ACTMEM with a
+channel stride/offset; do not materialize the slice in external memory.
+
+Implemented and committed in `9220792`:
+
+* `ifmap_channel_stride` / `ifmap_channel_offset` in `qracc_config_t`,
+  CSR weight word, compiler, and controller `rel_addr`.
+* `traverse` resolves a channel Slice to its parent, sets stride to the
+  parent output-channel count, offset to the slice start, and keeps the
+  parent live for the remaining slices.
+* 5-node compile trace (`conv32 -> dw32 -> 1x1/16 -> 1x1/96 -> dw-slice0`)
+  is correct: split0 gets `in=32 out=32 stride=96 off=0`, parent base 23632.
+
+Validation is **not complete**:
+
+* no-debug 5-node result was **-2.291 dB** before the latest controller
+  experiments;
+* ACTMEM debug shows node0-3 run and the split0 config is loaded with the
+  correct base/stride, but the split never advances past `S_COMPUTE_DIGITAL`
+  (`0 -> 4`, no `4 -> 0`, no ACTMEM reads from the split);
+* experiments adding `result_start_addr`, a level `~int_write_queue_valid`
+  exit condition, and a separate `wsacc_ready` did not change the 5-node
+  result; the latest debug run stalls in the digital state with no reads.
+
+Suspects, in order:
+
+1. `feature_loader_valid_out_qq` / `window_data_valid_q` is stale after the
+   preceding analog node, so the split enters digital but never accepts a
+   window (no ACTMEM read).
+2. `last_window` / `read_set` never advance because the feature loader never
+   produces a window (same stall).
+3. The split's `output_fmap`/padding state is correct (16x16, pad1) but the
+   controller is stuck before the first read, so padding is not the cause.
+
+Next isolation step: preload node3's 96-channel output into ACTMEM and run a
+single split node, so the split can be debugged in seconds instead of
+replaying 20+ minutes of prefix nodes. The expected split output is the
+original ONNX depthwise output channels 0:32 (depthwise channels commute with
+the Slice). Once that passes, re-run the 5-node chain and then all three
+slices.
+
+Until this is fixed, `test_marp_e2e_multibit_slice` stays parametrized
+`[3, 4]`; do not claim internal-split certification.
