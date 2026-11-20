@@ -397,3 +397,25 @@ Next: determine whether the full-path split enters `S_COMPUTE_DIGITAL` at all,
 and whether `result_start_addr` changes to the split output base before
 `TRIGGER_READ_ACTIVATION`. The exact parent-file equality means the readout
 base is still node3's.
+
+## 14. 5-node slice passes (2026-11-20)
+
+Root cause of the last failure: `traverse` marked node3 as `readout=True`
+because its immediate consumer was a Slice (non-compilable), even though the
+next compilable consumer (split_4_qconv_0) resolves to node3 itself through
+that Slice.  The extra external readout left the readout pipeline on node3's
+output; the split then ran but its output was not read.
+
+Fix: suppress `readout` when the next compilable consumer's resolved parent is
+the current node's output.
+
+Result: `test_marp_e2e_multibit_slice[verilator-5]` **passes at 19.910 dB**
+(RMSE 2.326).
+
+Direct checks remain:
+
+* cold compact split: 34.083 dB
+* node3 single: 29.464 dB
+* node3 -> split0 manual, both preserve modes: 25.707 dB
+* 4-node chain: 19.559 dB
+* 5-node chain: 19.910 dB

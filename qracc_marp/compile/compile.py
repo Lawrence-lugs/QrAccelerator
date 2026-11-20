@@ -782,6 +782,13 @@ def traverse_and_compile_nx_graph(
             input_loaded = input_parent == current_loaded_ifmap_name
             next_compilable_id, next_parent = _next_compilable_input(
                 nx_model, graph_node_id, until)
+            # A non-compilable Slice between two compilable nodes is an
+            # internal ACTMEM view, not an external readout point.  Do not
+            # trigger a spurious external read just because the immediate
+            # consumer is a Slice.
+            if (readout and next_compilable_id is not None
+                    and next_parent == nx_node.output[0]):
+                readout = False
 
             bits = bits_for(graph_node_id)
             u_code = QrAccNodeCode(
