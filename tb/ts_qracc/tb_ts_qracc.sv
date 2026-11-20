@@ -125,7 +125,7 @@ module tb_ts_qracc #(
 
         for (int mode = 0; mode < 2; mode++) begin
             binary_cfg = mode[0];
-            for (int s = 0; s <= 6; s++) begin
+            for (int s = 0; s <= 8; s++) begin
                 adc_ref_range_shifts = s[3:0];
                 for (int m = -numRows; m <= numRows; m++) begin
                     int a, b;

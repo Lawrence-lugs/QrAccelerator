@@ -66,8 +66,8 @@ def test_ts_qracc_adc(simulator, numAdcBits, adcFullScale):
 
     rows = _parse_adc_log(log_file)
     assert rows, 'no [ADC] lines found in the simulation log'
-    assert len(rows) == 2 * 7 * (2 * 64 + 1), (
-        f'expected {2 * 7 * (2 * 64 + 1)} ADC samples, got {len(rows)}')
+    assert len(rows) == 2 * 9 * (2 * 64 + 1), (
+        f'expected {2 * 9 * (2 * 64 + 1)} ADC samples, got {len(rows)}')
 
     for n, fs, mode, s, mbl, code, therm in rows:
         ladder = 'binary' if mode else 'bipolar'
