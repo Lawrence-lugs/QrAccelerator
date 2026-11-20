@@ -454,14 +454,29 @@ class QrAccNodeCode(object):
         attr_list = ',\n\t'.join(attr_strs)
         return f"QrAccNodeCode(\n\t{attr_list})"
 
-def generate_random_intermediate_tensor(
+def generate_intermediate_tensor(
     nx_model : onnx.ModelProto,
     node_id : int,
-    input_dict : dict
+    input_dict : dict,
+    real : bool = False,
 ):
-    input_tensor_shape = onnx_utils.get_intermediate_tensor_value(
-        nx_model, nx_model.graph.node[node_id].input[0], input_dict=input_dict).shape
-    return np.random.randint(0, 256, input_tensor_shape).astype(np.uint8)
+    """Return the node input tensor.
+
+    ``real=False`` preserves the historical random-ifmap behaviour.  For an
+    end-to-end run use ``real=True``: ONNX Runtime computes the actual
+    intermediate tensor from the supplied model input.
+    """
+    input_name = nx_model.graph.node[node_id].input[0]
+    value = onnx_utils.get_intermediate_tensor_value(
+        nx_model, input_name, input_dict=input_dict)
+    if real:
+        return value
+    return np.random.randint(0, 256, value.shape).astype(np.uint8)
+
+
+def generate_random_intermediate_tensor(*args, **kwargs):
+    """Backward-compatible alias for :func:`generate_intermediate_tensor`."""
+    return generate_intermediate_tensor(*args, **kwargs)
 
 def is_nx_node_compilable(
     nx_node : onnx.NodeProto
@@ -648,9 +663,18 @@ def traverse_and_compile_nx_graph(
     dwc_core_size: int = 32,
     until        : int = None,
     starting     : int = 0,
-    packer = None
+    packer = None,
+    weight_bits : int | dict = 1,
+    real_activations: bool = False,
 ):
-    
+    """Compile a subgraph or the full graph to QRAcc commands.
+
+    ``weight_bits`` may be a scalar applied to every non-depthwise node or a
+    ``{graph_node_id: bits}`` dict.  Depthwise/WSAcc nodes keep their raw int8
+    kernel.  ``real_activations=True`` feeds ONNX-computed intermediate
+    tensors instead of random ones; the first compilable node writes its
+    ifmap, and subsequent nodes consume the previous node's ACTMEM output.
+    """
     u_nx_mapping = core.NxModelMapping(
         nx_model,
         imc_core_size=imc_core_size,
@@ -662,28 +686,47 @@ def traverse_and_compile_nx_graph(
         until = len(nx_model.graph.node)
     commands = []
 
+    def bits_for(graph_node_id):
+        if isinstance(weight_bits, dict):
+            return int(weight_bits.get(graph_node_id, 1))
+        return int(weight_bits)
+
     prev_bin_id = None
     current_loaded_ifmap_name = None
-    for node_id,nx_node in enumerate(nx_model.graph.node[starting:until]):
-        
+    for offset, nx_node in enumerate(nx_model.graph.node[starting:until]):
+        graph_node_id = starting + offset
         readout = check_if_any_consumers_are_noncompilable(nx_model, nx_node)
-        next_node = nx_model.graph.node[node_id + 1] if node_id + 1 < len(nx_model.graph.node) else None
+        # The last node in the requested range must be read out even if its
+        # ONNX consumers are compilable, otherwise the e2e test has no output.
+        if graph_node_id == until - 1:
+            readout = True
+        next_node = (nx_model.graph.node[graph_node_id + 1]
+                     if graph_node_id + 1 < len(nx_model.graph.node) else None)
 
         if is_nx_node_compilable(nx_node):
-            input_tensor = generate_random_intermediate_tensor(
-                nx_model, node_id, input_dict
+            input_tensor = generate_intermediate_tensor(
+                nx_model, graph_node_id, input_dict,
+                real=real_activations,
             )
+            bits = bits_for(graph_node_id)
             u_code = QrAccNodeCode(
-                mapped_node   = u_nx_mapping.get_mapped_node_by_id(node_id),
-                mapped_bin    = u_nx_mapping.get_bin_of_node_id(node_id),
+                mapped_node   = u_nx_mapping.get_mapped_node_by_id(graph_node_id),
+                mapped_bin    = u_nx_mapping.get_bin_of_node_id(graph_node_id),
                 ifmap         = input_tensor,
                 imc_core_size = imc_core_size,
                 ws_core_size  = dwc_core_size,
+                weight_bits   = bits,
+                weight_signed = bits > 1,
                 nx_model      = nx_model
             )
 
+            # preserve_ifmap means "the next node consumes the SAME input",
+            # i.e. fan-out.  It must not be set for normal chaining, where the
+            # next node consumes this node's output: that would keep the old
+            # input instead of publishing the new output to ACTMEM.
             preserve_ifmap = False
-            if is_nx_node_compilable(next_node) and next_node.input[0] == u_code.inputs[0]:
+            if (is_nx_node_compilable(next_node)
+                    and next_node.input[0] == u_code.inputs[0]):
                 preserve_ifmap = True
 
             commands += ['INFO']
@@ -731,6 +774,8 @@ def traverse_and_compile_nx_graph(
 
             prev_bin_id = u_code.mapped_node.bin_id if not u_code.mapped_node.depthwise else prev_bin_id  # If the node is depthwise, we don't change the bin id, as it will be the same as the previous node
         
+            # In fan-out mode the input remains live; otherwise the node's
+            # freshly written output is the activation in ACTMEM.
             if not preserve_ifmap:
                 current_loaded_ifmap_name = u_code.outputs[0]
 

@@ -170,8 +170,8 @@ def test_python_postscale_model_matches_onnx(weight_bits):
     assert snr > 30, f'B={weight_bits} python golden SNR {snr:.3f} dB'
 
 
-def _run_binary_node(simulator, nx_model, node, ifmap, tag):
-    """Run one binary node through the RTL and return (u_code, hw_output)."""
+def _run_binary_node(simulator, nx_model, node, ifmap, tag, weight_bits=1):
+    """Run one node through the RTL and return (u_code, hw_output)."""
     bin = None if node.depthwise else None
     # The binary model's mapped bin is only needed for non-depthwise nodes.
     if not node.depthwise:
@@ -185,8 +185,8 @@ def _run_binary_node(simulator, nx_model, node, ifmap, tag):
         ifmap=ifmap,
         imc_core_size=(256, 256),
         ws_core_size=32,
-        weight_bits=1,
-        weight_signed=False,
+        weight_bits=weight_bits,
+        weight_signed=weight_bits > 1,
         nx_model=nx_model,
     )
 
@@ -279,6 +279,81 @@ def test_marp_binary_chain_conv_depthwise(simulator):
     _, snr1 = rmse_snr(exp1, out1)
     print(f'chain stage 1 depthwise SNR={snr1:.3f} dB')
     assert snr1 > 8, f'stage1 SNR {snr1:.3f}'
+
+
+@pytest.mark.needs_verilator
+def test_marp_e2e_three_node_multibit(simulator):
+    """True e2e: conv -> depthwise -> conv, real ONNX activations, B=8."""
+    nx_model = onnx.load(MODEL_PATH)
+    mapping = core.NxModelMapping(
+        nx_model, imc_core_size=(256, 256), dwc_core_size=32)
+    node0, node1, node2 = mapping.mapped_nodes[:3]
+    assert node1.depthwise, node1.name
+
+    np.random.seed(0)
+    input_dict = {
+        'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)
+    }
+    commands = traverse_and_compile_nx_graph(
+        nx_model, input_dict, imc_core_size=(256, 256),
+        dwc_core_size=32, until=4, weight_bits=8,
+        real_activations=True,
+    )
+
+    package_list = ['../rtl/qracc_params.svh', '../rtl/qracc_pkg.svh']
+    rtl_file_list = [
+        '../rtl/activation_buffer/piso_write_queue.sv',
+        '../rtl/activation_buffer/mm_output_aligner.sv',
+        '../rtl/wsacc/wsacc_pe_cluster.sv',
+        '../rtl/wsacc/wsacc_pe.sv',
+        '../rtl/qr_acc_wrapper.sv',
+        '../rtl/bipolar_bias_sub.sv',
+        '../rtl/seq_acc.sv',
+        '../rtl/ts_qracc.sv',
+        '../rtl/wr_controller.sv',
+        '../rtl/twos_to_bipolar.sv',
+        '../rtl/ts_qracc_multibank.sv',
+        '../rtl/qr_acc_top.sv',
+        '../rtl/output_scaler/output_scaler_set.sv',
+        '../rtl/output_scaler/output_scaler.sv',
+        '../rtl/memory/ram_2w2r.sv',
+        '../rtl/feature_loader/feature_loader.sv',
+        '../rtl/feature_loader/padder.sv',
+        '../rtl/control/qracc_csr.sv',
+        '../rtl/control/qracc_controller.sv',
+    ]
+    stimulus_output_path = 'tb/qracc_top/inputs'
+    empty_directory(stimulus_output_path)
+    os.makedirs('tb/qracc_top/outputs', exist_ok=True)
+    write_parameter_definition_file({
+        "SRAM_ROWS": 256,
+        "SRAM_COLS": 256,
+        "QRACC_INPUT_BITS": 8,
+        "QRACC_OUTPUT_BITS": 8,
+        "GB_INT_IF_WIDTH": 32 * 8,
+        "MODEL_MEM": 1,
+        "NOIOFILES": 1,
+    }, 'rtl/qracc_params.svh')
+    with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
+        for write in commands:
+            f.write(write + '\n')
+
+    diag_utils.VERILATOR_RUN_PLUSARGS = []
+    log_file = f'tests/logs/tb_qracc_top_{simulator}_e2e3.log'
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    run_simulation(
+        simulator, {}, package_list, '../tb/qracc_top/tb_qracc_top.sv',
+        diag_utils.sim_args, rtl_file_list, log_file, run=True)
+
+    expected_nchw = onnx_utils.get_intermediate_tensor_value(
+        nx_model, node2.nx_node.output[0], input_dict=input_dict)
+    expected = expected_nchw.transpose(0, 2, 3, 1)
+    flat = np.loadtxt('tb/qracc_top/outputs/hw_ofmap.txt', dtype=int)
+    assert flat.size == expected.size, (flat.size, expected.size)
+    actual = flat.reshape(expected.shape)
+    rmse, snr = rmse_snr(expected, actual)
+    print(f'e2e 3-node B=8 SNR={snr:.3f} dB RMSE={rmse:.3f}')
+    assert snr > 8, f'e2e 3-node SNR {snr:.3f} dB'
 
 
 @pytest.mark.needs_verilator
