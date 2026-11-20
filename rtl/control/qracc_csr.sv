@@ -142,6 +142,8 @@ always_comb begin : csrDecode
 
     cfg_o.weight_bits_cfg   = csr_set[CSR_REG_WEIGHT][3:0];
     cfg_o.weight_signed_cfg = csr_set[CSR_REG_WEIGHT][4];
+    cfg_o.ifmap_channel_stride = csr_set[CSR_REG_WEIGHT][20:5];
+    cfg_o.ifmap_channel_offset = csr_set[CSR_REG_WEIGHT][28:21];
 end
 
 endmodule

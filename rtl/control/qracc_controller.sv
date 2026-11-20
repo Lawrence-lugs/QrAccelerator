@@ -223,12 +223,16 @@ always_comb begin : ctrlDecode
             // holds this node's ifmap.  Without the base, a chained node reads
             // address 0 (the previous external load) instead of the previous
             // node's output in ACTMEM.
+            // The pixel stride is the parent tensor's channel count, which is
+            // cfg.num_input_channels for a normal node and the parent's
+            // channel count for an internal channel-slice consumer.
             rel_addr =
-                    int'(cfg.num_input_channels) * int'(cfg.input_fmap_dimx) *
+                    int'(cfg.ifmap_channel_stride) * int'(cfg.input_fmap_dimx) *
                     ( int'(opix_pos_y)*int'(cfg.stride_y) - int'(cfg.padding)
                       + int'(fy_ctr) )
-                +   int'(cfg.num_input_channels) *
+                +   int'(cfg.ifmap_channel_stride) *
                     ( int'(opix_pos_x)*int'(cfg.stride_x) - int'(cfg.padding) )
+                +   int'(cfg.ifmap_channel_offset)
                 +   int'(read_set) * internalInterfaceElements;
             if (rel_addr < 0) begin
                 // A negative offset is a top/left padding sample.  Keep the
@@ -604,19 +608,22 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
         if (state_q == S_COMPUTE_ANALOG) begin
             if (state_d != S_COMPUTE_ANALOG) begin
-                if (!cfg.preserve_ifmap) begin
+                if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
-                end
+                // Always reserve a new output slot.  A preserving node keeps
+                // its input base live while writing its output elsewhere;
+                // otherwise a slice consumer would overwrite its parent.
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
+                                    + { 16'b0 , cfg.num_output_channels};
             end
         end
 
         if (state_q == S_COMPUTE_DIGITAL) begin
             if (state_d != S_COMPUTE_DIGITAL) begin
-                if (!cfg.preserve_ifmap) begin
+                if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
-                end            
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
+                                    + { 16'b0 , cfg.num_output_channels};
             end
         end
     end

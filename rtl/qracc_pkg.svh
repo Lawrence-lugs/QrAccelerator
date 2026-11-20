@@ -134,6 +134,13 @@ package qracc_pkg;
         // CSR 6: Padding Information
         logic [3:0] padding;                    // 3:0 - 1 if zeropad enabled
         logic [7:0] padding_value;              // 11:4
+
+        // Internal channel-slice view of the ACTMEM ifmap.
+        // Normal nodes: stride = num_input_channels, offset = 0.
+        // A channel Slice consumer: stride = parent channel count, offset =
+        // first channel of the slice.
+        logic [15:0] ifmap_channel_stride;      // CSR 7:20:5
+        logic [7:0]  ifmap_channel_offset;      // CSR 7:28:21
     } qracc_config_t;
 
     typedef struct packed {

@@ -86,9 +86,16 @@ class QrAccNodeCode(object):
         weight_bits: int = 1,
         weight_signed: bool = False,
         nx_model: onnx.ModelProto | None = None,
+        ifmap_channel_stride: int | None = None,
+        ifmap_channel_offset: int = 0,
     ) -> None:
 
         self.ifmap = ifmap if ifmap.ndim == 4 else ifmap.reshape((1, -1, 1, 1))
+        self.ifmap_channel_stride = (
+            int(ifmap_channel_stride) if ifmap_channel_stride is not None
+            else int(self.ifmap.shape[1])
+        )
+        self.ifmap_channel_offset = int(ifmap_channel_offset)
 
         self.ofmap_shape = infer_ofmap_shape(
             ifmap_shape=self.ifmap.shape,
@@ -220,6 +227,8 @@ class QrAccNodeCode(object):
             "stride_y": mapped_node.strides[1],
             "num_input_channels": ifmap_shape[1],
             "num_output_channels": kernel_shape[0],
+            "ifmap_channel_stride": self.ifmap_channel_stride,
+            "ifmap_channel_offset": self.ifmap_channel_offset,
             "mapped_matrix_offset_x": mapped_node.offset_x,
             "mapped_matrix_offset_y": mapped_node.offset_y,
             "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
@@ -565,7 +574,9 @@ def bundle_config_into_write(
     )
     weight_word = (
         ((config_dict.get('weight_bits', 1) & 0xF) << 0) |
-        ((config_dict.get('weight_signed', 0) & 0x1) << 4)
+        ((config_dict.get('weight_signed', 0) & 0x1) << 4) |
+        ((config_dict.get('ifmap_channel_stride', 0) & 0xFFFF) << 5) |
+        ((config_dict.get('ifmap_channel_offset', 0) & 0xFF) << 21)
     )
 
     config_writes = [
@@ -634,6 +645,8 @@ def get_config_from_mapped_node(
         "stride_y": mapped_node.strides[1],
         "num_input_channels": ifmap_shape[1],
         "num_output_channels": kernel_shape[0],
+        "ifmap_channel_stride": ifmap_shape[1],
+        "ifmap_channel_offset": 0,
         "mapped_matrix_offset_x": mapped_node.offset_x,
         "mapped_matrix_offset_y": mapped_node.offset_y,
         "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
@@ -655,6 +668,53 @@ def check_if_any_consumers_are_noncompilable(
             if output in node.input and not is_nx_node_compilable(node):
                 return True
     return False
+
+def _producer_index(nx_model, tensor_name):
+    for idx, node in enumerate(nx_model.graph.node):
+        if tensor_name in node.output:
+            return idx
+    return None
+
+
+def _resolve_channel_slice(nx_model, input_name):
+    """Return (parent_tensor, channel_offset, slice_channels) for a Slice.
+
+    Only channel-axis slices (axis 1) are treated as an internal ACTMEM view.
+    Other Slice layouts fall back to the original input tensor.
+    """
+    for node in nx_model.graph.node:
+        if node.op_type != 'Slice' or input_name not in node.output:
+            continue
+        try:
+            starts = np.asarray(
+                onnx.numpy_helper.to_array(
+                    next(i for i in nx_model.graph.initializer
+                         if i.name == node.input[1])).flatten())
+            ends = np.asarray(
+                onnx.numpy_helper.to_array(
+                    next(i for i in nx_model.graph.initializer
+                         if i.name == node.input[2])).flatten())
+            axes = np.asarray(
+                onnx.numpy_helper.to_array(
+                    next(i for i in nx_model.graph.initializer
+                         if i.name == node.input[3])).flatten())
+        except StopIteration:
+            return input_name, 0, None
+        if axes.size == 1 and int(axes[0]) == 1:
+            offset = int(starts[0])
+            channels = int(ends[0] - starts[0])
+            return node.input[0], offset, channels
+    return input_name, 0, None
+
+
+def _next_compilable_input(nx_model, start_index, until):
+    for idx in range(start_index + 1, until):
+        node = nx_model.graph.node[idx]
+        if is_nx_node_compilable(node):
+            parent, _, _ = _resolve_channel_slice(nx_model, node.input[0])
+            return idx, parent
+    return None, None
+
 
 def traverse_and_compile_nx_graph(
     nx_model     : onnx.ModelProto,
@@ -708,6 +768,21 @@ def traverse_and_compile_nx_graph(
                 nx_model, graph_node_id, input_dict,
                 real=real_activations,
             )
+            input_parent, slice_offset, slice_channels = _resolve_channel_slice(
+                nx_model, nx_node.input[0])
+            stride = None
+            if slice_channels is not None:
+                parent_id = _producer_index(nx_model, input_parent)
+                if parent_id is not None:
+                    stride = int(
+                        u_nx_mapping.get_mapped_node_by_id(
+                            parent_id).kernel.shape[0])
+            # A slice consumer reads the parent slot in ACTMEM; a normal node
+            # reads its own input name.
+            input_loaded = input_parent == current_loaded_ifmap_name
+            next_compilable_id, next_parent = _next_compilable_input(
+                nx_model, graph_node_id, until)
+
             bits = bits_for(graph_node_id)
             u_code = QrAccNodeCode(
                 mapped_node   = u_nx_mapping.get_mapped_node_by_id(graph_node_id),
@@ -717,15 +792,19 @@ def traverse_and_compile_nx_graph(
                 ws_core_size  = dwc_core_size,
                 weight_bits   = bits,
                 weight_signed = bits > 1,
-                nx_model      = nx_model
+                nx_model      = nx_model,
+                ifmap_channel_stride = stride,
+                ifmap_channel_offset = slice_offset if slice_channels else 0,
             )
 
             # preserve_ifmap means "the next node consumes the SAME input",
-            # i.e. fan-out.  It must not be set for normal chaining, where the
-            # next node consumes this node's output: that would keep the old
-            # input instead of publishing the new output to ACTMEM.
+            # i.e. fan-out.  For a slice consumer, that means the next slice
+            # still points at the same parent tensor.  For a normal chain it
+            # is never set: the next node must consume this node's output.
             preserve_ifmap = False
-            if (is_nx_node_compilable(next_node)
+            if slice_channels is not None:
+                preserve_ifmap = (next_parent == input_parent)
+            elif (is_nx_node_compilable(next_node)
                     and next_node.input[0] == u_code.inputs[0]):
                 preserve_ifmap = True
 
@@ -738,12 +817,12 @@ def traverse_and_compile_nx_graph(
             if u_code.mapped_node.depthwise:
                 print(f"Compiling {nx_node.name} as depthwise node...")
             
-            if (u_code.inputs[0] != current_loaded_ifmap_name):
+            if not input_loaded:
                 print(f"Compiling {nx_node.name} as first node of set...")
-                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({u_code.inputs[0]}) from external memory']
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) reading ifmap ({nx_node.input[0]}) from external memory']
             else:
                 print(f"Compiling {nx_node.name} as middle node of set...")
-                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap ({u_code.inputs[0]}) from ACTMEM']
+                commands += [f'NODE {nx_node.name} (id={u_code.mapped_node.node_id}) will read ifmap ({nx_node.input[0]}) from ACTMEM']
 
             if readout:
                 print(f"{nx_node.name} is followed by a non-compilable node, so it will write the ofmap to external memory.")
@@ -765,7 +844,7 @@ def traverse_and_compile_nx_graph(
             # commands += [u_code.__repr__()]
             commands += ['ENDINFO']
             commands += u_code.compile(
-                include_ifmap_writes = (u_code.inputs[0] != current_loaded_ifmap_name) ,
+                include_ifmap_writes = not input_loaded,
                 write_weights        = u_code.mapped_node.bin_id                       != prev_bin_id,
                 add_read             = readout,
                 end                  = False ,

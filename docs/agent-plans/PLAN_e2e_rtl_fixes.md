@@ -91,6 +91,33 @@ Expected fixes, in order of likelihood:
 Acceptance: node-level RTL SNR meets a per-type threshold (conv ≥ 30 dB for
 B=8, ≥ 20 dB for B=2/4; depthwise/matmul thresholds set from their golden).
 
+### Split / fan-out decision
+
+Depthwise blocks in MobileNetV2 are fed by channel `Slice` nodes.  The chosen
+implementation is **internal split**, not an external-memory materialization:
+
+* keep the parent activation resident in ACTMEM;
+* give each slice consumer a per-node `ifmap_channel_stride` (the parent
+  channel count) and `ifmap_channel_offset` (the slice base channel);
+* use `preserve_ifmap` to keep the parent base live while consecutive slice
+  consumers run, while still advancing the output base for each consumer;
+* do not write a split result through an external buffer.
+
+This requires the controller to separate “keep input base” from “allocate a new
+output base”; the current code only advances `ofmap_start_addr` when not
+preserving, which would make slice consumers overwrite the parent.
+
+Status: implemented in the compiler and controller:
+
+* `ifmap_channel_stride` / `ifmap_channel_offset` in the CSR config;
+* Slice-parent resolution in `traverse_and_compile_nx_graph`;
+* parent-base preservation with independent output-slot advancement.
+
+The first 5-node validation run did not complete cleanly: one attempt was
+contaminated by an old container, and the clean attempt was interrupted by a
+Docker daemon failure. The 3- and 4-node regressions remain the active gates
+until the 5-node split test is re-run.
+
 ## 3. Phase E3 — chained two-node test
 
 Feed the RTL output of node A into node B, both compiled through MARP, and
