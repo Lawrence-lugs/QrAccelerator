@@ -305,3 +305,40 @@ Next: add a state/trigger trace around the split entry and capture
 `state_q == S_COMPUTE_DIGITAL (7)`, `cfg.ifmap_channel_stride=96`,
 `ifmap_start_addr=23632`, and the first four `activation_buffer_int_rd_addr`
 values. Compare those against the cold split's `state_q == 7` sequence.
+
+## 11. Read-set stride bug (2026-11-20)
+
+Found and fixed a real internal-slice addressing bug:
+
+```
+rel_addr += read_set * internalInterfaceElements
+```
+
+assumed a compact ifmap. For a channel-slice consumer the parent pixel stride
+is larger, so each 32-element read-set chunk spans
+`32 / num_input_channels` parent pixels:
+
+```
+rel_addr += read_set * internalInterfaceElements
+            * ifmap_channel_stride / num_input_channels
+```
+
+For the 96-channel parent and a 32-channel slice this changes the read-set
+offset from 32 to 96.
+
+Evidence:
+
+* manual node3 -> split0 chain: **-3.951 dB before, 25.707 dB after**
+  (RMSE 35.8 -> 1.23);
+* cold compact split remains 34.083 dB;
+* node3 single-node output remains 29.464 dB and its ACTMEM dump is
+  contiguous channel-major.
+
+The full 5-node test still reports **-2.291 dB** after the fix, unchanged from
+before, so there is a second issue in the full-prefix path or in the 5-node
+test's expected/readout mapping. Do not claim the 5-node chain yet. The manual
+node3 -> split0 chain is the clean evidence that the read-set fix is correct.
+
+Next: run the 5-node test with ACTMEM debug after this fix and compare its
+split read addresses (expected base + 0, 96, 192 ... for pixel 0) and split
+output base against the manual chain.

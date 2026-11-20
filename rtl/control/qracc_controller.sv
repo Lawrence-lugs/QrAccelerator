@@ -148,7 +148,32 @@ always_ff @(posedge clk) if (state_q == S_LOADWEIGHTS && state_d != S_LOADWEIGHT
     $display("[DBG ctrl] weight load exit weight_ptr=%0d total=%0d mb=%0d", weight_ptr, weight_load_total, cfg.weight_bits_cfg);
 `endif
 
+`ifdef ACTMEM_DEBUG
+integer dbg_compute_cyc = 0;
+always_ff @(posedge clk or negedge nrst) begin
+    if (!nrst) dbg_compute_cyc <= 0;
+    else if (state_q == S_COMPUTE_DIGITAL) begin
+        if (dbg_compute_cyc < 12 || dbg_compute_cyc % 50000 == 0)
+            $display("[DBG digital] cyc=%0d opix=(%0d,%0d) fy=%0d rs=%0d nrs=%0d dims=(%0d,%0d) fyN=%0d flv=%0d wq=%0d last=%0d rd_en=%0d addr=%0d stride=%0d",
+                     dbg_compute_cyc, opix_pos_x, opix_pos_y, fy_ctr, read_set,
+                     num_read_sets, cfg.output_fmap_dimx, cfg.output_fmap_dimy,
+                     cfg.filter_size_y, feature_loader_valid_out_qq,
+                     int_write_queue_valid, last_window,
+                     ctrl_o.activation_buffer_int_rd_en,
+                     ctrl_o.activation_buffer_int_rd_addr,
+                     cfg.ifmap_channel_stride);
+        dbg_compute_cyc <= dbg_compute_cyc + 1;
+    end else dbg_compute_cyc <= 0;
+end
+`endif
+
 always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
+`ifdef ACTMEM_DEBUG
+    if (nrst && state_d != state_q)
+        $display("[DBG state] %0d -> %0d trig=%0d flv=%0d wq=%0d last=%0d",
+                 state_q, state_d, state_trigger, feature_loader_valid_out_qq,
+                 int_write_queue_valid, last_window);
+`endif
     if (!nrst) begin
         state_q <= S_IDLE;
     end else begin
@@ -233,7 +258,12 @@ always_comb begin : ctrlDecode
                 +   int'(cfg.ifmap_channel_stride) *
                     ( int'(opix_pos_x)*int'(cfg.stride_x) - int'(cfg.padding) )
                 +   int'(cfg.ifmap_channel_offset)
-                +   int'(read_set) * internalInterfaceElements;
+                // Read-set chunks are 32 elements in the compact layout; in
+                // a strided parent they span
+                // (32 / num_input_channels) parent pixels.
+                +   int'(read_set) * internalInterfaceElements
+                    * int'(cfg.ifmap_channel_stride)
+                    / int'(cfg.num_input_channels);
             if (rel_addr < 0) begin
                 // A negative offset is a top/left padding sample.  Keep the
                 // wrapped address so the activation buffer returns zero,
