@@ -566,4 +566,54 @@ always_ff @(posedge clk) if (qracc_output_valid && dbg_top_cnt < 2) begin
 end
 `endif
 
+`ifdef ACTMEM_DEBUG
+// Explicit ACTMEM handoff probe: node config, first internal writes, first
+// feature-loader reads (post-padder) and their addresses.  Enable with
+// +define+ACTMEM_DEBUG.
+int dbg_act_wr = 0;
+int dbg_act_rd = 0;
+int dbg_fl = 0;
+logic [15:0] dbg_prev_in = 16'hffff;
+logic [15:0] dbg_prev_out = 16'hffff;
+logic [3:0] dbg_prev_fx = 4'hf;
+logic [3:0] dbg_prev_fy = 4'hf;
+always_ff @(posedge clk) begin
+    if (cfg.num_input_channels != dbg_prev_in
+            || cfg.num_output_channels != dbg_prev_out
+            || cfg.filter_size_x != dbg_prev_fx
+            || cfg.filter_size_y != dbg_prev_fy) begin
+        $display("[DBG actmem node] in=%0d out=%0d fx=%0d fy=%0d ifmap_start=%0d ofmap_start=%0d",
+                 cfg.num_input_channels, cfg.num_output_channels,
+                 cfg.filter_size_x, cfg.filter_size_y,
+                 u_qracc_controller.ifmap_start_addr,
+                 u_qracc_controller.ofmap_start_addr);
+        dbg_prev_in <= cfg.num_input_channels;
+        dbg_prev_out <= cfg.num_output_channels;
+        dbg_prev_fx <= cfg.filter_size_x;
+        dbg_prev_fy <= cfg.filter_size_y;
+        dbg_act_wr <= 0;
+        dbg_act_rd <= 0;
+        dbg_fl <= 0;
+    end
+    if (int_write_queue_valid_out && dbg_act_wr < 4) begin
+        $display("[DBG actwr] n=%0d addr=%0d data=%h",
+                 dbg_act_wr, activation_buffer_int_wr_addr,
+                 activation_buffer_int_wr_data);
+        dbg_act_wr <= dbg_act_wr + 1;
+    end
+    if (qracc_ctrl.activation_buffer_int_rd_en && dbg_act_rd < 4) begin
+        $display("[DBG actrd] n=%0d addr=%0d fl_addr=%0d data=%h",
+                 dbg_act_rd, qracc_ctrl.activation_buffer_int_rd_addr,
+                 qracc_ctrl.feature_loader_addr, activation_buffer_rd_data);
+        dbg_act_rd <= dbg_act_rd + 1;
+    end
+    if (qracc_ctrl.feature_loader_wr_en && dbg_fl < 4) begin
+        $display("[DBG flwr] n=%0d addr=%0d data=%h",
+                 dbg_fl, qracc_ctrl.feature_loader_addr,
+                 activation_buffer_rd_data_padded);
+        dbg_fl <= dbg_fl + 1;
+    end
+end
+`endif
+
 endmodule

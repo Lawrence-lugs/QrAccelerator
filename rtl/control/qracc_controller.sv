@@ -168,6 +168,7 @@ always_ff @( posedge clk or negedge nrst ) begin
 end
 
 always_comb begin : ctrlDecode
+    int rel_addr;
     ctrl_o = 0; // must be that ctrl_o is a NOP
     to_sram_rq_wr = 0;
     to_sram_rq_valid = 0;
@@ -218,14 +219,27 @@ always_comb begin : ctrlDecode
 
             bus_resp_o.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
-            ctrl_o.activation_buffer_int_rd_addr = 
-                    cfg.num_input_channels * 
-                    cfg.input_fmap_dimx * 
-                    ( (opix_pos_y*cfg.stride_y - {28'b0,cfg.padding}) + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * 
-                    (opix_pos_x*cfg.stride_x - {28'b0,cfg.padding}) 
-                +   read_set*internalInterfaceElements
-                ; // h*W*C + w*C + c
+            // The compute-read address is relative to the activation slot that
+            // holds this node's ifmap.  Without the base, a chained node reads
+            // address 0 (the previous external load) instead of the previous
+            // node's output in ACTMEM.
+            rel_addr =
+                    int'(cfg.num_input_channels) * int'(cfg.input_fmap_dimx) *
+                    ( int'(opix_pos_y)*int'(cfg.stride_y) - int'(cfg.padding)
+                      + int'(fy_ctr) )
+                +   int'(cfg.num_input_channels) *
+                    ( int'(opix_pos_x)*int'(cfg.stride_x) - int'(cfg.padding) )
+                +   int'(read_set) * internalInterfaceElements;
+            if (rel_addr < 0) begin
+                // A negative offset is a top/left padding sample.  Keep the
+                // wrapped address so the activation buffer returns zero,
+                // exactly as it did when ifmap_start_addr was zero.
+                ctrl_o.activation_buffer_int_rd_addr = rel_addr;
+            end else begin
+                ctrl_o.activation_buffer_int_rd_addr =
+                    ifmap_start_addr + rel_addr;
+            end
+            // rel_addr = h*W*C + w*C + c relative to the ifmap slot.
             
             ctrl_o.feature_loader_addr = feature_loader_addr_qq;
             // Do not write to feature loader seq_acc isn't ready yet
@@ -407,6 +421,12 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                     padding_start_q <= 0;
                     padding_end_q <= 0;
                 end
+            end else begin
+                // A 1x1 / unpadded node must not inherit the previous node's
+                // padding window (otherwise the padder zeroes valid ACTMEM
+                // data when chaining from a padded conv).
+                padding_start_q <= 0;
+                padding_end_q <= 0;
             end
         end
     end
