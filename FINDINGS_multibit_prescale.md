@@ -338,7 +338,8 @@ separate bugs:
    node's `padding_start_q`/`padding_end_q`, so the padder zeroed valid ACTMEM
    data. `cfg.padding == 0` now clears the padding window.
 
-The chain then passed at **21.825 dB**. The compiler path was extended with
-per-node `weight_bits`, real intermediate activations, global graph-node
-indexing and forced final readout; `preserve_ifmap` is still the 0.1.0
-fan-out-only rule.
+The 3-node chain then passed at **21.825 dB**, and the 4-node contiguous
+slice (`conv -> depthwise -> 1x1 conv -> 1x1 conv`) passed at **19.559 dB**.
+The compiler path was extended with per-node `weight_bits`, real intermediate
+activations, global graph-node indexing and forced final readout;
+`preserve_ifmap` is still the 0.1.0 fan-out-only rule.

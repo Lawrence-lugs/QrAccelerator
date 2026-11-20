@@ -112,8 +112,10 @@ Implemented:
 * `test_marp_binary_chain_conv_depthwise` — node 0 conv feeds its NHWC RTL
   output back as NCHW into node 1 depthwise: stage 0 **21.278 dB**, stage 1
   **34.890 dB**.
-* `test_marp_e2e_three_node_multibit` — conv -> depthwise -> conv, B=8, real
-  ONNX activations: **21.825 dB**.
+* `test_marp_e2e_multibit_slice` — contiguous slices, B=8, real ONNX
+  activations:
+  * 3 nodes (conv -> depthwise -> conv): **21.825 dB**
+  * 4 nodes (conv -> depthwise -> 1x1 -> 1x1): **19.559 dB**.
 
 The 3-node test exposed two ACTMEM bugs: the internal read address lacked
 `ifmap_start_addr`, and an unpadded 1x1 node inherited the previous 3x3
@@ -124,8 +126,8 @@ padding window and zeroed valid data. Both are fixed in
 
 Started. `traverse_and_compile_nx_graph` now accepts a scalar or per-node
 `weight_bits`, `real_activations=True`, global graph-node indexing and forced
-final readout. The 3-node conv/depthwise/conv chain uses this path and passes
-at 21.825 dB (B=8).
+final readout. The 3-node conv/depthwise/conv chain passes at 21.825 dB and
+the 4-node slice at 19.559 dB (B=8).
 
 Still to do:
 
