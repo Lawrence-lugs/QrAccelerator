@@ -362,3 +362,38 @@ the parent or depthwise slice either. That is not explained by the direct
 chain fixes. Next: dump the full-prefix node3 output at base 23632 and compare
 it with the manual node3 output at base 4096, then check whether the split
 writes/readout in the full path use base 48304.
+
+## 13. Python input proof: 5-node reads node3 output (2026-11-20)
+
+Definitive check of the e2e output file:
+
+```python
+a4 = 4-node hw_ofmap (1,16,16,96)
+a5 = 5-node hw_ofmap (1,16,16,32)
+a5 == a4.reshape(-1)[:16*16*32].reshape(1,16,16,32)   # exact, maxdiff 0
+```
+
+So the failing 5-node file is **exactly the first 32768 bytes of node3's
+96-channel output**, re-read as 32 channels. It is not a wrong depthwise result;
+the split's output is never read (or `result_start_addr` is still node3's base
+when `S_READACTS` starts).
+
+Additionally:
+
+* full `traverse` split command list and manual passing split command list are
+  **both 2646 lines and diff-empty**;
+* so config, weights, scaler, bias, triggers and addresses are identical;
+* direct node3 -> split0 passes at 25.707 dB in both preserve modes;
+* the failing file is exactly the parent, so the remaining difference is
+  runtime readout/trigger state, not compilation.
+
+Current fixes retained:
+
+* `2164003` read-set stride scaling;
+* `ec3ab3f` preserving readout + chained depthwise weights + stale-output
+  removal.
+
+Next: determine whether the full-path split enters `S_COMPUTE_DIGITAL` at all,
+and whether `result_start_addr` changes to the split output base before
+`TRIGGER_READ_ACTIVATION`. The exact parent-file equality means the readout
+base is still node3's.
