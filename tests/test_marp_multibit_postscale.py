@@ -282,13 +282,14 @@ def test_marp_binary_chain_conv_depthwise(simulator):
 
 
 @pytest.mark.needs_verilator
-def test_marp_e2e_three_node_multibit(simulator):
-    """True e2e: conv -> depthwise -> conv, real ONNX activations, B=8."""
+@pytest.mark.parametrize("n_nodes", [3, 4])
+def test_marp_e2e_multibit_slice(simulator, n_nodes):
+    """True e2e: real ONNX activations, per-node B, contiguous slice."""
     nx_model = onnx.load(MODEL_PATH)
     mapping = core.NxModelMapping(
         nx_model, imc_core_size=(256, 256), dwc_core_size=32)
-    node0, node1, node2 = mapping.mapped_nodes[:3]
-    assert node1.depthwise, node1.name
+    last_node = mapping.mapped_nodes[n_nodes - 1]
+    assert mapping.mapped_nodes[1].depthwise
 
     np.random.seed(0)
     input_dict = {
@@ -296,7 +297,7 @@ def test_marp_e2e_three_node_multibit(simulator):
     }
     commands = traverse_and_compile_nx_graph(
         nx_model, input_dict, imc_core_size=(256, 256),
-        dwc_core_size=32, until=4, weight_bits=8,
+        dwc_core_size=32, until=last_node.node_id + 1, weight_bits=8,
         real_activations=True,
     )
 
@@ -346,14 +347,14 @@ def test_marp_e2e_three_node_multibit(simulator):
         diag_utils.sim_args, rtl_file_list, log_file, run=True)
 
     expected_nchw = onnx_utils.get_intermediate_tensor_value(
-        nx_model, node2.nx_node.output[0], input_dict=input_dict)
+        nx_model, last_node.nx_node.output[0], input_dict=input_dict)
     expected = expected_nchw.transpose(0, 2, 3, 1)
     flat = np.loadtxt('tb/qracc_top/outputs/hw_ofmap.txt', dtype=int)
     assert flat.size == expected.size, (flat.size, expected.size)
     actual = flat.reshape(expected.shape)
     rmse, snr = rmse_snr(expected, actual)
-    print(f'e2e 3-node B=8 SNR={snr:.3f} dB RMSE={rmse:.3f}')
-    assert snr > 8, f'e2e 3-node SNR {snr:.3f} dB'
+    print(f'e2e {n_nodes}-node B=8 SNR={snr:.3f} dB RMSE={rmse:.3f}')
+    assert snr > 8, f'e2e {n_nodes}-node SNR {snr:.3f} dB'
 
 
 @pytest.mark.needs_verilator
