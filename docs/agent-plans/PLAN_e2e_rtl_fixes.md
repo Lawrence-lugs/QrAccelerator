@@ -280,3 +280,28 @@ Next: dump node3's ACTMEM output words for pixel 0 and compare against
 `parent_out[0, :, 0, 0]` (all 96 channels), then check whether the
 `piso_write_queue`/`mm_output_aligner` output is bank-major or channel-major.
 Do not change the split read until that dump is understood.
+
+## 10. Node3 layout check (2026-11-20)
+
+Single-node node3 (96-channel pointwise conv) cold run:
+
+* SNR **29.464 dB**, RMSE 0.878;
+* `[DBG out]` first 96 ACTMEM bytes at `ofmap_start_addr` match
+  `parent_out[0, :, 0, 0]` almost exactly (0-1 LSB differences);
+* therefore the 96-channel parent output **is** contiguous channel-major and
+  stride 96 is the correct view.
+
+This rules out the parent layout as the cause. The cold split also passes
+(34.083 dB), so both the split and the parent are individually correct.
+
+Remaining difference is the **control/trigger sequence**, not data layout:
+
+* command trace includes the split config, weight load, digital trigger
+  (`LOAD ... 4`) and read trigger (`LOAD ... 5`) after node3;
+* the chained run still produces -2.291 dB and debug did not show a clean
+  split read sequence.
+
+Next: add a state/trigger trace around the split entry and capture
+`state_q == S_COMPUTE_DIGITAL (7)`, `cfg.ifmap_channel_stride=96`,
+`ifmap_start_addr=23632`, and the first four `activation_buffer_int_rd_addr`
+values. Compare those against the cold split's `state_q == 7` sequence.
