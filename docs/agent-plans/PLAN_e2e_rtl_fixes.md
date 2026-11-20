@@ -249,3 +249,34 @@ slices.
 
 Until this is fixed, `test_marp_e2e_multibit_slice` stays parametrized
 `[3, 4]`; do not claim internal-split certification.
+
+## 9. Cold-start vs chained depthwise (2026-11-20)
+
+A preloaded cold-start split test was built to separate split data correctness
+from controller state:
+
+* input: node3's 96-channel ONNX output, channel slice 0:32;
+* expected: original ONNX depthwise output channels 0:32;
+* compile: single `QrAccNodeCode` for `split_4_qconv_0` with
+  `include_ifmap_writes=True`, weights, scaler, bias, compute, read.
+
+Result: **34.083 dB** (RMSE 0.52). The split depthwise datapath, weight slice,
+output layout and standalone control sequence are therefore correct.
+
+A second test preloaded the full 96-channel parent with a temporary
+`num_input_channels=96` config and then ran the same split with stride 96. It
+gave **-3.507 dB**, i.e. the same class of failure as the chained run. This
+points at the **parent 96-channel ACTMEM layout / stride-96 read**, not at the
+depthwise PE.
+
+Cold vs chained differences to isolate next:
+
+1. cold uses `LOADACTS` for the split and compact stride 32;
+2. chained uses no load for the split and stride 96 with parent base 23632;
+3. warm preload with stride 96 also fails, so the split itself is fine but the
+   parent layout at stride 96 is not what the split expects.
+
+Next: dump node3's ACTMEM output words for pixel 0 and compare against
+`parent_out[0, :, 0, 0]` (all 96 channels), then check whether the
+`piso_write_queue`/`mm_output_aligner` output is bank-major or channel-major.
+Do not change the split read until that dump is understood.
