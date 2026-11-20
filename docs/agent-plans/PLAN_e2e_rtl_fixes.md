@@ -1,7 +1,7 @@
 # PLAN — end-to-end RTL fixes against the ONNX golden
 
-Status: **proposed.** The node-level post-scaler is certified; this plan closes
-the remaining e2e gaps without moving the golden to fit the RTL.
+Status: **active.** E1, E2.1, and the first E3 chain are complete; E4 full-model
+multibit and E5 CI wiring remain. The node-level post-scaler is certified.
 
 ## 0. Ground rules
 
@@ -21,7 +21,8 @@ Current truth table:
 | RTL conv node, B=2 | **62.690 dB** |
 | RTL conv node, B=4 | **38.491 dB** |
 | RTL conv node, B=8 | **36.086 dB** |
-| Binary single-node matrix, 8 nodes | **8/8 passed** (scaler sign fix) |
+| Binary single-node matrix, 8 nodes | **8/8 before ADC change**; node 0 rerun at 21.310 dB, others need rerun |
+| ADC unit sweep | **s=0..8** after extending `tb_ts_qracc` |
 | Depthwise PE unit tests | **3/3 exact** |
 | B=1 binary post-scale golden | **exact, RMSE 0** |
 | Depthwise post-scale golden | **exact, RMSE 0** |
@@ -106,20 +107,31 @@ order, signedness, zero point, activation packing, and scaler state.
 Acceptance: `RTL_A ≈ ONNX_A`, `RTL_B ≈ ONNX_B`, and the error does not grow
 beyond the per-stage budget. This is the first true e2e gate.
 
-Implemented: `tests/test_marp_multibit_postscale.py::test_marp_binary_chain_conv_depthwise`
-runs node 0 (conv) and feeds its NHWC RTL output back as NCHW into node 1
-(depthwise):
+Implemented:
 
-* stage 0 conv: **21.278 dB**
-* stage 1 depthwise: **34.890 dB**
+* `test_marp_binary_chain_conv_depthwise` — node 0 conv feeds its NHWC RTL
+  output back as NCHW into node 1 depthwise: stage 0 **21.278 dB**, stage 1
+  **34.890 dB**.
+* `test_marp_e2e_three_node_multibit` — conv -> depthwise -> conv, B=8, real
+  ONNX activations: **21.825 dB**.
 
-This passes; no RTL fix was required for the chain itself.
+The 3-node test exposed two ACTMEM bugs: the internal read address lacked
+`ifmap_start_addr`, and an unpadded 1x1 node inherited the previous 3x3
+padding window and zeroed valid data. Both are fixed in
+`rtl/control/qracc_controller.sv`; see FINDINGS §14.
 
 ## 4. Phase E4 — full model
 
-* Compile every node with a per-node `weight_bits` (do not silently use B=8
-  for all layers or randomize to binary).
-* Carry `adc_config`, `scale`, and `bias_B` per node.
+Started. `traverse_and_compile_nx_graph` now accepts a scalar or per-node
+`weight_bits`, `real_activations=True`, global graph-node indexing and forced
+final readout. The 3-node conv/depthwise/conv chain uses this path and passes
+at 21.825 dB (B=8).
+
+Still to do:
+
+* Run the whole graph (or a larger subgraph) through that path.
+* Carry `adc_config`, `scale`, and `bias_B` per node (already per-node in
+  `QrAccNodeCode`, but not yet exercised over many layers).
 * Compare final logits / top-1 against ONNX on the same input.
 * Only then run the full MBV2 accuracy check.
 

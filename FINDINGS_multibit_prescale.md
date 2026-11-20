@@ -319,3 +319,26 @@ resulting post-scaler and prestack numbers are unchanged (B=8 36.086 dB /
 Because `seq_acc` publishes `(2*MAC) << s`, the compiler scaler divides the
 scale by `2**s` and pre-shifts the bias by `2**s`.  `test_adc_config_uses_bank_full_scale`
 locks `fs=256`, `s<=8`, and the LSB relation for B=1/2/4/8.
+
+### 14. ACTMEM handoff (2026-11-20)
+
+The first true 3-node chain (`conv -> depthwise -> conv`, B=8, real ONNX
+activations) initially failed at **-4.43 dB**. The ACTMEM probe showed two
+separate bugs:
+
+1. **Missing slot base.** `activation_buffer_int_rd_addr` was only the
+   relative `h*W*C + w*C + c` offset. Node1 had `ifmap_start=3072` but read
+   address 0. The controller now adds `ifmap_start_addr` for non-negative
+   offsets.
+2. **Negative padding offsets.** Adding the base alone made top/left padding
+   read inside the previous activation region. The relative address is now
+   computed as a signed value: negative offsets keep the wrapped address (the
+   old out-of-range-reads-zero behaviour), non-negative offsets add the base.
+3. **Stale padding window.** A 1x1/unpadded node inherited the previous 3x3
+   node's `padding_start_q`/`padding_end_q`, so the padder zeroed valid ACTMEM
+   data. `cfg.padding == 0` now clears the padding window.
+
+The chain then passed at **21.825 dB**. The compiler path was extended with
+per-node `weight_bits`, real intermediate activations, global graph-node
+indexing and forced final readout; `preserve_ifmap` is still the 0.1.0
+fan-out-only rule.
