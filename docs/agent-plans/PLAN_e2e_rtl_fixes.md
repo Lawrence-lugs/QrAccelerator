@@ -519,3 +519,20 @@ that as `reading ifmap ... from external memory`, i.e. it materializes the
 Concat, which violates the internal-view split decision.  A true internal
 Concat view (three 32-channel slots -> one 96-channel consumer) is the next
 design step; do not claim all-slice internal execution until then.
+
+## 21. Internal Concat design + external-split handling
+
+Added `docs/DESIGN_internal_concat_actmem.md`, covering:
+
+* MBV2 sizes vs the 256 kB physical ACTMEM (MBV2 block fits comfortably);
+* channel-Concat group addressing;
+* capacity/liveness fallback for theoretical orders (e.g. 256×32×32 alone is
+  exactly 256 kB);
+* fallback cases (axis, mixed producers, non-uniform shapes, overflow);
+* split-after-unsupported/overflow: post-split data is external, so the
+  consumer must use compact `stride=slice_channels`, offset 0, and no
+  `preserve_ifmap`.
+
+That last case was a live compiler bug: `stride` was set to the parent channel
+count even when the parent was not resident.  Fixed in `traverse`: slice
+strides/offsets and `preserve_ifmap` now depend on `input_loaded`.

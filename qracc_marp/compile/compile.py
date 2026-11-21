@@ -770,16 +770,23 @@ def traverse_and_compile_nx_graph(
             )
             input_parent, slice_offset, slice_channels = _resolve_channel_slice(
                 nx_model, nx_node.input[0])
-            stride = None
-            if slice_channels is not None:
-                parent_id = _producer_index(nx_model, input_parent)
-                if parent_id is not None:
-                    stride = int(
-                        u_nx_mapping.get_mapped_node_by_id(
-                            parent_id).kernel.shape[0])
-            # A slice consumer reads the parent slot in ACTMEM; a normal node
-            # reads its own input name.
+            # A slice consumer reads the parent slot in ACTMEM only when that
+            # parent is actually resident.  If the producer was unsupported or
+            # evicted, the Slice input is already post-split in external
+            # memory and must be loaded compactly.
             input_loaded = input_parent == current_loaded_ifmap_name
+            stride = None
+            slice_offset_eff = 0
+            if slice_channels is not None:
+                if input_loaded:
+                    parent_id = _producer_index(nx_model, input_parent)
+                    if parent_id is not None:
+                        stride = int(
+                            u_nx_mapping.get_mapped_node_by_id(
+                                parent_id).kernel.shape[0])
+                    slice_offset_eff = slice_offset
+                else:
+                    stride = int(slice_channels)
             next_compilable_id, next_parent = _next_compilable_input(
                 nx_model, graph_node_id, until)
             # A non-compilable Slice between two compilable nodes is an
@@ -801,7 +808,7 @@ def traverse_and_compile_nx_graph(
                 weight_signed = bits > 1,
                 nx_model      = nx_model,
                 ifmap_channel_stride = stride,
-                ifmap_channel_offset = slice_offset if slice_channels else 0,
+                ifmap_channel_offset = slice_offset_eff,
             )
 
             # preserve_ifmap means "the next node consumes the SAME input",
@@ -809,7 +816,7 @@ def traverse_and_compile_nx_graph(
             # still points at the same parent tensor.  For a normal chain it
             # is never set: the next node must consume this node's output.
             preserve_ifmap = False
-            if slice_channels is not None:
+            if slice_channels is not None and input_loaded:
                 preserve_ifmap = (next_parent == input_parent)
             elif (is_nx_node_compilable(next_node)
                     and next_node.input[0] == u_code.inputs[0]):
