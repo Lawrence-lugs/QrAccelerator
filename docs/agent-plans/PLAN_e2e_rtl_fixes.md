@@ -419,3 +419,12 @@ Direct checks remain:
 * node3 -> split0 manual, both preserve modes: 25.707 dB
 * 4-node chain: 19.559 dB
 * 5-node chain: 19.910 dB
+
+## 15. Regression status (2026-11-21)
+
+* `test_marp_e2e_multibit_slice[verilator-3]`: **19.559 dB** (3-node)
+* `test_marp_e2e_multibit_slice[verilator-4]`: **19.559 dB** (4-node)
+* `test_marp_e2e_multibit_slice[verilator-5]`: **19.910 dB** (node3 -> split0)
+
+All three pass after the spurious-readout fix (`6adc6df`).  The next gate is
+`n_nodes=7`, which exercises all three 32-channel depthwise slices.
