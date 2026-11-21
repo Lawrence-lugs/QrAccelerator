@@ -1399,11 +1399,15 @@ def traverse_and_compile_nx_graph(
             slice_offset_eff = 0
             if slice_channels is not None:
                 if input_loaded:
-                    parent_id = _producer_index(nx_model, input_parent)
-                    if parent_id is not None:
-                        stride = int(
-                            u_nx_mapping.get_mapped_node_by_id(
-                                parent_id).kernel.shape[0])
+                    parent_view = concat_views.get(input_parent)
+                    if parent_view is not None and parent_view.supported:
+                        stride = parent_view.total_channels
+                    else:
+                        parent_id = _producer_index(nx_model, input_parent)
+                        if parent_id is not None:
+                            stride = int(
+                                u_nx_mapping.get_mapped_node_by_id(
+                                    parent_id).kernel.shape[0])
                     slice_offset_eff = slice_offset
                 else:
                     stride = int(slice_channels)

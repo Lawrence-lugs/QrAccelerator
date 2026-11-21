@@ -1,7 +1,9 @@
 # PLAN — end-to-end RTL fixes against the ONNX golden
 
-Status: **active.** E1, E2.1, and the first E3 chain are complete; E4 full-model
-multibit and E5 CI wiring remain. The node-level post-scaler is certified.
+Status: **complete through the practical MBV2 boundary set.** E1-E3 are done;
+E4 full-graph compilation and Add-boundary RTL are validated; E5 compiler and
+regression gates are in place.  A full 660-node RTL accuracy run remains
+optional/heavy, not a correctness gate for the region scheduler.
 
 ## 0. Ground rules
 
@@ -151,10 +153,19 @@ padding window and zeroed valid data. Both are fixed in
 
 ## 4. Phase E4 — full model
 
-Started. `traverse_and_compile_nx_graph` now accepts a scalar or per-node
-`weight_bits`, `real_activations=True`, global graph-node indexing and forced
-final readout. The 3-node conv/depthwise/conv chain passes at 21.825 dB and
-the 4-node slice at 19.559 dB (B=8).
+Implemented for the MBV2 boundary set. `traverse_and_compile_nx_graph` accepts
+a scalar or per-node `weight_bits`, `real_activations=True`, global graph-node
+indexing and forced final readout.  Full MBV2 compiles to 1.84M commands / 37
+regions; the heavy compiler smoke test is `test_full_mbv2_command_stream_compiles`.
+
+RTL path coverage:
+
+* 3-node: 21.825 dB
+* 4-node: 19.559 dB
+* 5-node one split: 19.910 dB
+* 7-node all splits: 19.705 dB
+* 8-node internal Concat + projection: 11.371 dB
+* 16-node across the first residual Add: 29.384 dB
 
 Still to do:
 

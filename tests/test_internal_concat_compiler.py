@@ -180,6 +180,19 @@ def test_region_plan_rejects_over_budget():
     assert 'exceeds' in plan.regions[0].reason
 
 
+@pytest.mark.heavy
+def test_full_mbv2_command_stream_compiles():
+    """Full-graph compiler smoke test (not an RTL run)."""
+    nx, mapping = _mapping()
+    np.random.seed(0)
+    d = {'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)}
+    last = mapping.mapped_nodes[-1]
+    commands = traverse_and_compile_nx_graph(
+        nx, d, until=last.node_id + 1, weight_bits=8,
+        real_activations=True)
+    assert len(commands) > 1_000_000
+
+
 def test_traverse_uses_internal_concat_and_suppresses_split_readout():
     nx, mapping = _mapping()
     np.random.seed(0)
