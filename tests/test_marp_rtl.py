@@ -89,16 +89,14 @@ def test_qracc_with_onnx_single_node(
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {
@@ -132,8 +130,10 @@ def test_qracc_with_onnx_single_node(
     run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
     # Post-simulation
-    acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
-    result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+    acc_result_flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+    result_shape = np.loadtxt(
+        os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
@@ -231,16 +231,14 @@ def test_marp_multibit_node_int8(
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir, exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {
@@ -264,15 +262,19 @@ def test_marp_multibit_node_int8(
     print(u_code)
 
     # Simulation
-    capdir = REPO_ROOT / 'capdir'
-    capdir.mkdir(exist_ok=True)
-    diag_utils.VERILATOR_RUN_PLUSARGS = [
+    capdir = Path(sim_sims_dir()) / 'capdir'
+    capdir.mkdir(parents=True, exist_ok=True)
+    run_plusargs = [
         f'+cap_file={capdir / f"cap_B{weight_bits}.txt"}',
     ]
-    run_simulation(simulator, {}, package_list, tb_file, sim_args, rtl_file_list, log_file, run=True)
+    run_simulation(simulator, {}, package_list, tb_file, sim_args,
+                   rtl_file_list, log_file, run=True,
+                   run_plusargs=run_plusargs)
 
-    acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
-    result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+    acc_result_flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+    result_shape = np.loadtxt(
+        os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
 
     # Use ONNX Runtime on the same input.  The old .npy references were
@@ -323,16 +325,14 @@ def test_qracc_with_all_onnx_single_node(
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {
@@ -381,8 +381,10 @@ def test_qracc_with_all_onnx_single_node(
         run_simulation(simulator,{},package_list,tb_file,sim_args,rtl_file_list,log_file,run=True)
 
         # Post-simulation
-        acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
-        result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+        acc_result_flat = np.loadtxt(
+            os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+        result_shape = np.loadtxt(
+            os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
         acc_result = acc_result_flat.reshape(*result_shape)
 
         rmse, snr = rmse_snr(u_code.reference_output, acc_result)
@@ -396,7 +398,7 @@ def test_qracc_with_all_onnx_single_node(
         'snr': snrs,
         'rmse': rmses
     })
-    snr_df.to_csv('sims/snr_results.csv', index=False)
+    snr_df.to_csv(os.path.join(sim_sims_dir(), 'snr_results.csv'), index=False)
 
 
 def make_packers():
@@ -501,17 +503,15 @@ def test_qracc_run_nx_model(
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
-    hw_output_path = f'tb/{tb_path}/outputs'
+    stimulus_output_path = sim_inputs(tb_path)
+    hw_output_path = sim_outputs(tb_path)
     empty_directory(stimulus_output_path)
     empty_directory(hw_output_path)
-    param_file_path = 'rtl/qracc_params.svh'
+    param_file_path = sim_params_path()
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {

@@ -11,18 +11,18 @@ outputWidth=16, weightInterfaceWidth=32) and asserts exit 0 and 'TB_PASS'.
 The test runs ONLY inside the container via the specified docker command.
 """
 
-import subprocess
 import os
 import pytest
 
 import numpy as np
 import onnx
 
+from .utils import run_verilator_case, sim_sims_dir
+
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 tb_dir = os.path.join(repo_root, 'tb', 'wsacc')
 rtl_dir = os.path.join(repo_root, 'rtl')
-sims_dir = os.path.join(repo_root, 'sims')
 onnx_path = os.path.join(repo_root, 'onnx_models', 'mbv2_cifar10_int8_binary.onnx')
 
 tb_file = os.path.join(tb_dir, 'tb_wsacc_dw32.sv')
@@ -131,84 +131,8 @@ def _generate_stimulus():
 
 
 def test_wsacc_dw32():
-    os.makedirs(sims_dir, exist_ok=True)
-    log_file = os.path.join(sims_dir, 'tb_wsacc_dw32.log')
-
     words, data_i, golden = _generate_stimulus()
-
-    # Write stimulus files into the workspace (sims/) so the container-run TB can $readmemh them.
-    with open(os.path.join(sims_dir, 'p9_dw_words.txt'), 'w') as f:
-        for wd in words:
-            f.write(f'{int(wd):08x}\n')
-    with open(os.path.join(sims_dir, 'dw_data_i.txt'), 'w') as f:
-        for p in range(NUM_POSITIONS):
-            for c in range(NUM_PES):
-                for t in range(WINDOW_ELEMENTS):
-                    f.write(f'{int(data_i[p, c, t]):02x}\n')
-    with open(os.path.join(sims_dir, 'dw_golden.txt'), 'w') as f:
-        for p in range(NUM_POSITIONS):
-            for c in range(NUM_PES):
-                f.write(f'{int(golden[p, c]) & 0xffff:04x}\n')
-
-    verilator_params = [
-        '-GnumPes=32',
-        '-GwindowElements=9',
-        '-GdataWidth=8',
-        '-GoutputWidth=16',
-        '-GweightInterfaceWidth=32',
-    ]
-
-    compile_command = [
-        'verilator',
-        *rtl_files,
-        tb_file,
-    ] + sim_args_verilator + verilator_params + [
-        '--top-module', top_name,
-        '-o', top_name,
-        '--Mdir', f'obj_dir_{top_name}',
-    ]
-
-    print(f'=====VERILATOR COMPILE COMMAND=====')
-    print(' '.join(compile_command))
-
-    with open(log_file, 'w+') as f:
-        proc = subprocess.Popen(
-            compile_command,
-            shell=False,
-            cwd=sims_dir,
-            stdout=f,
-            stderr=subprocess.STDOUT,
-        )
-    proc.wait()
-    retval = proc.returncode
-    assert retval == 0, f'Verilator compilation failed; see {log_file}'
-
-    run_command = [f'./obj_dir_{top_name}/{top_name}']
-
-    print(f'=====VERILATOR RUN COMMAND=====')
-    print(' '.join(run_command))
-
-    with open(log_file, 'a') as f:
-        f.write('\n===== VERILATOR RUN COMMAND =====\n')
-        f.write(' '.join(run_command))
-        f.write('\n')
-    sim = subprocess.Popen(
-        run_command,
-        shell=False,
-        cwd=sims_dir,
-        stdout=open(log_file, 'a'),
-        stderr=subprocess.STDOUT,
-    )
-    sim.wait()
-    retval = sim.returncode
-
-    with open(log_file, 'r') as f:
-        output = f.read()
-
-    print(output)
-
-    assert retval == 0, f'Simulation failed; see {log_file}'
-    assert 'TB_PASS' in output, f'TB_PASS not found in output:\n{output}'
+    _run_wsacc_sim('tb_wsacc_dw32.log', words, data_i, golden)
 
 
 def _pack_depthwise_words_correct(w):
@@ -228,8 +152,9 @@ def _pack_depthwise_words_correct(w):
     return words.astype(np.uint32)
 
 
-def _run_wsacc_sim(log_file, words, data_i, golden):
+def _run_wsacc_sim(log_name, words, data_i, golden):
     """Write stimulus files and run the verilator WSAcc depthwise TB."""
+    sims_dir = sim_sims_dir()
     with open(os.path.join(sims_dir, 'p9_dw_words.txt'), 'w') as f:
         for wd in words:
             f.write(f'{int(wd):08x}\n')
@@ -243,50 +168,20 @@ def _run_wsacc_sim(log_file, words, data_i, golden):
             for c in range(NUM_PES):
                 f.write(f'{int(golden[p, c]) & 0xffff:04x}\n')
 
-    verilator_params = [
-        '--binary', '--timing', '-j', '4', '-sv',
-        '+incdir+../rtl',
-        '-Wno-fatal', '-Wno-WIDTHEXPAND', '-Wno-WIDTHTRUNC',
-        '-Wno-UNUSEDSIGNAL', '-Wno-UNDRIVEN', '-Wno-UNUSEDPARAM',
-        '-Wno-PINMISSING', '-Wno-GENUNNAMED', '-Wno-CASEINCOMPLETE',
-        '-Wno-TIMESCALEMOD', '-Wno-IMPLICITSTATIC', '-Wno-LATCH',
-        '-Wno-COMBDLY', '-Wno-BLKSEQ', '-Wno-INITIALDLY',
-        '-CFLAGS', '-O1',
-    ]
-    verilator_params_spec = [
-        '-GnumPes=32', '-GwindowElements=9', '-GdataWidth=8',
-        '-GoutputWidth=16', '-GweightInterfaceWidth=32',
-    ]
-
-    compile_command = [
-        'verilator', rtl_files[0], rtl_files[1], tb_file,
-    ] + verilator_params + verilator_params_spec + [
-        '--top-module', top_name, '-o', top_name,
-        '--Mdir', f'obj_dir_{top_name}',
-    ]
-
-    with open(log_file, 'w+') as f:
-        proc = subprocess.Popen(compile_command, shell=False, cwd=sims_dir,
-                                stdout=f, stderr=subprocess.STDOUT)
-    proc.wait()
-    retval = proc.returncode
-    assert retval == 0, f'Verilator compilation failed; see {log_file}'
-
-    run_command = [f'./obj_dir_{top_name}/{top_name}']
-    with open(log_file, 'a') as f:
-        f.write('\n===== VERILATOR RUN COMMAND =====\n')
-        f.write(' '.join(run_command))
-        f.write('\n')
-    sim = subprocess.Popen(run_command, shell=False, cwd=sims_dir,
-                           stdout=open(log_file, 'a'), stderr=subprocess.STDOUT)
-    sim.wait()
-    retval = sim.returncode
-    with open(log_file, 'r') as f:
-        output = f.read()
-    print(output)
-    assert retval == 0, f'Simulation failed; see {log_file}'
-    assert 'TB_PASS' in output, f'TB_PASS not found in output:\n{output}'
-    return output
+    return run_verilator_case(
+        tb_file=tb_file,
+        rtl_file_list=rtl_files,
+        parameter_list={
+            'numPes': 32,
+            'windowElements': 9,
+            'dataWidth': 8,
+            'outputWidth': 16,
+            'weightInterfaceWidth': 32,
+        },
+        top_module=top_name,
+        log_name=log_name,
+        verilator_args=sim_args_verilator,
+    )
 
 
 def test_wsacc_dw32_onnx():
@@ -298,9 +193,6 @@ def test_wsacc_dw32_onnx():
     PE's data_o to the ONNX-derived golden sum over taps of
     W[c,0,t//3,t%3] * x[c,p,t]. All 32 PEs at all 4 positions must match.
     """
-    os.makedirs(sims_dir, exist_ok=True)
-    log_file = os.path.join(sims_dir, 'tb_wsacc_dw32_onnx.log')
-
     model = onnx.load(onnx_path)
     init = _find_mnode1_weight(model)
     assert init is not None, 'mnode 1 weight initializer Conv_543_quantized not found'
@@ -333,4 +225,4 @@ def test_wsacc_dw32_onnx():
                 nonzero_pes += 1
     print(f'P10-DW: nonzero-PE count (all positions) = {nonzero_pes}')
 
-    _run_wsacc_sim(log_file, words, data_i, golden)
+    _run_wsacc_sim('tb_wsacc_dw32_onnx.log', words, data_i, golden)

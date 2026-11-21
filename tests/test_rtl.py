@@ -124,16 +124,14 @@ def test_qr_acc_top_single_load(
 
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     # Setup log paths
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Parameters are bound to the specific hardware configuration
     parameter_list = {
@@ -199,8 +197,10 @@ def test_qr_acc_top_single_load(
     if 'NOIOFILES' in parameter_list.keys():
         print('Skipping output file check')
         return
-    acc_result_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
-    result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+    acc_result_flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+    result_shape = np.loadtxt(
+        os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
     acc_result = acc_result_flat.reshape(*result_shape)
 
     rmse, snr = rmse_snr(u_code.reference_output, acc_result)
@@ -335,9 +335,9 @@ def test_seq_acc(
     ]
     tb_name = 'tb_seq_acc'
     tb_path = 'seq_acc'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     os.makedirs(stimulus_output_path, exist_ok=True)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
 
     # Pre-simulation
     from qracc_marp.compile.stimulus_gen import generate_qracc_inputs
@@ -400,10 +400,7 @@ def test_seq_acc(
     print(df(wx_outBits.T[::-1].T))
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Simulation.  These parameterisations predate the fixed-full-scale ADC
     # model and are the datapath regression reference, so compile the
@@ -455,7 +452,7 @@ def test_tb_qracc(
     ]
     tb_name = 'tb_qracc'
     tb_path = 'qracc'
-    stimulus_output_path = 'tb/qracc/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     os.makedirs(stimulus_output_path, exist_ok=True)
 
     # Pre-simulation
@@ -508,10 +505,7 @@ def test_tb_qracc(
     print(df(wx_outBits.T[::-1].T))
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     # Simulation
     run_simulation(simulator, parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
@@ -538,10 +532,7 @@ def test_tb_column(simulator,run=True):
     ]
     tb_name = 'tb_column'
     tb_file = f'../tb/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}.log'
-    
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    log_file = f'{tb_name}.log'
 
     run_simulation(simulator, [], package_list, tb_file, sim_args, rtl_file_list, log_file, run=run, top_module=tb_name)
 
@@ -552,10 +543,8 @@ def test_tb_q_redis():
     tb_name = 'tb_q_redis'
 
     tb_file = f'../tb/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}.log'
-    
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir,exist_ok=True)
+    ensure_tb_path(tb_file)
+    log_file = sim_log_path(f'{tb_name}.log')
 
     with open(log_file,'w+') as f:
 
@@ -565,7 +554,7 @@ def test_tb_q_redis():
             tb_file
         ] + rtl_file_list, 
         shell=False,
-        cwd='./sims',
+        cwd=sim_sims_dir(),
         stdout=f
         )
 

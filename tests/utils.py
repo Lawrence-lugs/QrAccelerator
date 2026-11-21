@@ -9,6 +9,30 @@ import subprocess
 import os
 import sys
 import shutil
+try:
+    from .sim_workspace import (
+        ensure_tb_path,
+        sim_inputs,
+        sim_log_path,
+        sim_outputs,
+        sim_params_path,
+        sim_rtl_dir,
+        sim_run_dir,
+        sim_sims_dir,
+        sim_tb_dir,
+    )
+except ImportError:  # direct execution / conftest imported as a top-level module
+    from sim_workspace import (
+        ensure_tb_path,
+        sim_inputs,
+        sim_log_path,
+        sim_outputs,
+        sim_params_path,
+        sim_rtl_dir,
+        sim_run_dir,
+        sim_sims_dir,
+        sim_tb_dir,
+    )
 import qracc_marp.quantization.quant as q
 import numpy as np
 import pandas as pd
@@ -94,8 +118,12 @@ def empty_directory(directory):
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
-def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True,top_module=None):
+def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_file_list,log_file,run=True,top_module=None,run_plusargs=None):
     """Compile and run an RTL simulation, then assert TEST SUCCESS in the log.
+
+    Every invocation runs inside a private per-test workspace (see
+    :mod:`tests.sim_workspace`), so concurrent tests cannot overwrite each
+    other's parameter file, stimulus, outputs, compiler directory or log.
 
     Parameters
     ----------
@@ -112,20 +140,41 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
     rtl_file_list : list[str]
         RTL source files to compile.
     log_file : str
-        Path to write simulation stdout.
+        Name (or legacy path) for the simulation log.  Only the basename is
+        used; the log is written under the private workspace.
     run : bool
-        If False, only build the command without executing.
+        If False, only build the workspace/command without executing.
     top_module : str | None
         Explicit top-module name; inferred from *tb_file* when None.
-    """
-    os.makedirs('./sims', exist_ok=True)
+    run_plusargs : list[str] | None
+        Runtime plusargs for the simulation binary.  Verilator rejects these at
+        compile time, so they are forwarded only to the run command.  This is
+        explicit (instead of a module-global) so concurrent tests do not leak
+        plusargs into each other.
 
+    Returns
+    -------
+    str
+        The path of the log in the private workspace.
+    """
     if shutil.which(simulator) is None:
         pytest.skip(f"{simulator} not found on PATH (install {simulator} or run inside the devcontainer)")
 
+    # Materialise the private rtl/ and tb/ trees, then run from <run>/sims so
+    # '../rtl/...' and '../tb/...' resolve inside the workspace.
+    sim_rtl_dir()
+    ensure_tb_path(tb_file)
+    cwd = sim_sims_dir()
+
+    if log_file is None:
+        log_file = f'{top_module or os.path.splitext(os.path.basename(tb_file))[0]}_{simulator}.log'
+    log_file = sim_log_path(log_file)
+
     if simulator == 'verilator':
-        _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args, rtl_file_list, log_file, run, top_module)
-        return
+        _run_verilator_simulation(
+            parameter_list, package_list, tb_file, sim_args, rtl_file_list,
+            log_file, run, top_module, run_plusargs=run_plusargs, cwd=cwd)
+        return log_file
 
     if simulator == 'vcs':
         parameter_list = [f'-pvalue+{tb_file}.'+p for p in parameter_list]
@@ -146,19 +195,20 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
     print(log_file)
     print('=====================')
 
-    
-    if run:
-        with open(log_file,'w+') as f:
-            sim = subprocess.Popen(
-            command, 
-            shell=False,
-            cwd='./sims',
-            stdout=f
-            )
-        retval = sim.wait()
-        if retval:
-            get_log(log_file)
-        assert not retval, get_log_tail(log_file,10)
+    if not run:
+        return log_file
+
+    with open(log_file,'w+') as f:
+        sim = subprocess.Popen(
+        command, 
+        shell=False,
+        cwd=cwd,
+        stdout=f
+        )
+    retval = sim.wait()
+    if retval:
+        get_log(log_file)
+    assert not retval, get_log_tail(log_file,10)
 
     # Read log file
     with open(log_file,'r+') as f:
@@ -166,17 +216,22 @@ def run_simulation(simulator,parameter_list,package_list,tb_file,sim_args,rtl_fi
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file,10)
 
+    return log_file
 
-def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_dict, rtl_file_list, log_file, run=True, top_module=None):
+
+def _verilator_parameters(parameter_list):
+    """Translate design parameters to Verilator's -G syntax."""
+    if isinstance(parameter_list, dict):
+        return [f'-G{name}={value}' for name, value in parameter_list.items()]
+    if isinstance(parameter_list, list):
+        return [f'-G{p}' for p in parameter_list] if parameter_list else []
+    return []
+
+
+def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_dict, rtl_file_list, log_file, run=True, top_module=None, run_plusargs=None, cwd=None):
     """Run a Verilator simulation using its two-step compile-then-run flow."""
 
-    # Verilator parameters use -G syntax
-    if isinstance(parameter_list, dict):
-        verilator_params = [f'-G{name}={value}' for name, value in parameter_list.items()]
-    elif isinstance(parameter_list, list):
-        verilator_params = [f'-G{p}' for p in parameter_list] if parameter_list else []
-    else:
-        verilator_params = []
+    verilator_params = _verilator_parameters(parameter_list)
 
     # Determine top module name
     if top_module:
@@ -196,6 +251,8 @@ def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_di
         '-o', f'V{top_name}',
         '--Mdir', f'obj_dir_{top_name}',
     ]
+
+    cwd = cwd or sim_sims_dir()
 
     print('=====VERILATOR COMPILE COMMAND=====')
     print(' '.join(compile_command))
@@ -217,46 +274,143 @@ def _run_verilator_simulation(parameter_list, package_list, tb_file, sim_args_di
             proc = subprocess.Popen(
                 cmd,
                 shell=False,
-                cwd='./sims',
+                cwd=cwd,
                 stdout=f,
                 stderr=subprocess.STDOUT,
             )
         return proc.wait()
 
-    if run:
-        retval = _run_compile(parallel_command)
-        if retval:
-            print('Parallel verilator build failed; retrying with the serial '
-                  '(-j 1) configuration.')
-            retval = _run_compile(compile_command)
-        if retval:
-            get_log(log_file)
-        assert not retval, f'Verilator compilation failed:\n{get_log_tail(log_file, 30)}'
+    if not run:
+        return log_file
 
-        # Step 2: Run the compiled binary
-        run_command = [f'./obj_dir_{top_name}/V{top_name}', *VERILATOR_RUN_PLUSARGS]
+    retval = _run_compile(parallel_command)
+    if retval:
+        print('Parallel verilator build failed; retrying with the serial '
+              '(-j 1) configuration.')
+        retval = _run_compile(compile_command)
+    if retval:
+        get_log(log_file)
+    assert not retval, f'Verilator compilation failed:\n{get_log_tail(log_file, 30)}'
 
-        print('=====VERILATOR RUN COMMAND=====')
-        print(' '.join(run_command))
-        print('===============================')
+    # Step 2: Run the compiled binary
+    plusargs = VERILATOR_RUN_PLUSARGS if run_plusargs is None else run_plusargs
+    run_command = [f'./obj_dir_{top_name}/V{top_name}', *plusargs]
 
-        with open(log_file, 'a') as f:
-            f.write('\n===== SIMULATION OUTPUT =====\n')
-            sim = subprocess.Popen(
-                run_command,
-                shell=False,
-                cwd='./sims',
-                stdout=f,
-                stderr=subprocess.STDOUT,
-            )
-        retval = sim.wait()
-        # Verilator returns 0 on $finish, but some testbenches call $finish after failure
-        # We check for TEST SUCCESS in the log instead of relying on return code
+    print('=====VERILATOR RUN COMMAND=====')
+    print(' '.join(run_command))
+    print('===============================')
+
+    with open(log_file, 'a') as f:
+        f.write('\n===== SIMULATION OUTPUT =====\n')
+        sim = subprocess.Popen(
+            run_command,
+            shell=False,
+            cwd=cwd,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+    retval = sim.wait()
+    # Verilator returns 0 on $finish, but some testbenches call $finish after failure
+    # We check for TEST SUCCESS in the log instead of relying on return code
 
     # Read log file and check for success
     with open(log_file, 'r', errors='replace') as f:
         out = [line for line in f.readlines()]
         assert 'TEST SUCCESS\n' in out, get_log_tail(log_file, 10)
+
+    return log_file
+
+
+def run_verilator_case(
+    tb_file,
+    rtl_file_list,
+    parameter_list=None,
+    top_module=None,
+    log_name=None,
+    run_plusargs=None,
+    verilator_args=None,
+    success_token='TB_PASS',
+    run=True,
+):
+    """Compile and run a standalone Verilator testbench in a private workspace.
+
+    This is the shared driver for the unit testbenches that used to invoke
+    Verilator directly (shift-add tree, write path, WSAcc).  All artifacts
+    (``obj_dir_*``, binaries, dumps, logs) live under the current test's
+    workspace, so parametrisations may run concurrently.
+
+    Returns the log path.
+    """
+    if shutil.which('verilator') is None:
+        pytest.skip("verilator not found on PATH (install verilator or run inside the devcontainer)")
+
+    sim_rtl_dir()
+    ensure_tb_path(tb_file)
+    cwd = sim_sims_dir()
+
+    top_name = top_module or os.path.splitext(os.path.basename(tb_file))[0]
+    log_file = sim_log_path(log_name or f'{top_name}.log')
+    verilator_params = _verilator_parameters(parameter_list)
+    args = list(sim_args['verilator'] if verilator_args is None else verilator_args)
+
+    compile_command = [
+        'verilator',
+        *rtl_file_list,
+        tb_file,
+    ] + args + verilator_params + [
+        '--top-module', top_name,
+        '-o', f'V{top_name}',
+        '--Mdir', f'obj_dir_{top_name}',
+    ]
+
+    print(f'=====VERILATOR COMPILE COMMAND ({top_name})=====')
+    print(' '.join(compile_command))
+    print(f'=====LOG FILE: {log_file}=====')
+
+    if not run:
+        return log_file
+
+    with open(log_file, 'w') as f:
+        proc = subprocess.Popen(
+            compile_command,
+            shell=False,
+            cwd=cwd,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+    retval = proc.wait()
+    assert retval == 0, (
+        f'Verilator compilation failed for {top_name}; '
+        f'{get_log_tail(log_file, 30)}')
+
+    run_command = [f'./obj_dir_{top_name}/V{top_name}', *(run_plusargs or [])]
+
+    print(f'=====VERILATOR RUN COMMAND ({top_name})=====')
+    print(' '.join(run_command))
+
+    with open(log_file, 'a') as f:
+        f.write('\n===== VERILATOR RUN COMMAND =====\n')
+        f.write(' '.join(run_command))
+        f.write('\n')
+        sim = subprocess.Popen(
+            run_command,
+            shell=False,
+            cwd=cwd,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+    retval = sim.wait()
+
+    with open(log_file, 'r', errors='replace') as f:
+        output = f.read()
+
+    print(output)
+
+    assert retval == 0, f'Simulation failed for {top_name}; {get_log_tail(log_file, 10)}'
+    assert success_token in output, (
+        f'{success_token!r} not found in output for {top_name}:\n{output}')
+
+    return log_file
 
 def write_parameter_definition_file(parameter_list,filepath):
     with open(filepath,'w') as f:

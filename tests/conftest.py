@@ -5,13 +5,23 @@ logic, and shared fixtures for ONNX model loading and image preprocessing.
 """
 
 from PIL import Image
+import hashlib
+import os
+import re
 import shutil
+import sys
+import uuid
 import pytest
 import numpy as np
 try:
     import onnx
 except ImportError:
     onnx = None
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from tests import sim_workspace
 
 valid_simulators = ['xrun', 'vcs', 'verilator']
 
@@ -71,6 +81,62 @@ def pytest_addoption(parser):
         default=False,
         help="run tests needing Cadence/Synopsys tools or synthesized netlists",
     )
+    parser.addoption(
+        "--keep-sims",
+        action="store_true",
+        default=False,
+        help="keep each test's private sims/runs/<test> workspace after it passes",
+    )
+
+
+def _sim_run_id_for(item):
+    """Unique, filesystem-safe workspace id for one pytest test instance."""
+    node_id = item.nodeid
+    safe = re.sub(r'[^A-Za-z0-9_.-]+', '_', node_id).strip('._') or 'test'
+    digest = hashlib.sha1(node_id.encode('utf-8')).hexdigest()[:8]
+    # The random token also separates identical tests running in separate
+    # containers, where pid and node id are the same.
+    token = uuid.uuid4().hex[:8]
+    return f'{os.getpid()}_{safe[:96]}_{digest}_{token}'
+
+
+@pytest.fixture(autouse=True)
+def _qracc_sim_workspace(request):
+    """Give every test a private simulation workspace.
+
+    The id includes the pid, so separate pytest/xdist processes never collide.
+    A passing test's tree is removed unless ``--keep-sims`` is given; failed
+    tests keep their tree so the compiler/simulation log can be inspected.
+    """
+    sim_workspace.set_sim_run_id(_sim_run_id_for(request.node))
+    # Clear module-global runtime state between tests in the same process.
+    # Do not import tests.utils here: it pulls in qracc_marp and matplotlib,
+    # which Python-only tests do not need.
+    sim_utils = sys.modules.get('tests.utils')
+    if sim_utils is not None:
+        sim_utils.VERILATOR_RUN_PLUSARGS = []
+
+    yield
+
+    report = getattr(request.node, 'rep_call', None)
+    run_path = os.path.join(
+        _REPO_ROOT, 'sims', 'runs', sim_workspace.current_sim_run_id())
+    if (
+        report is not None
+        and report.passed
+        and not request.config.getoption('--keep-sims')
+    ):
+        sim_workspace.cleanup_sim_run()
+    elif os.path.isdir(run_path):
+        print(f'\n[qracc] kept simulation workspace: {run_path}')
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, f'rep_{report.when}', report)
+
 
 def pytest_generate_tests(metafunc):
     if "simulator" in metafunc.fixturenames:
