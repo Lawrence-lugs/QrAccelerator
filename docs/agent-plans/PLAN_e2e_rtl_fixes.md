@@ -536,3 +536,26 @@ Added `docs/DESIGN_internal_concat_actmem.md`, covering:
 That last case was a live compiler bug: `stride` was set to the parent channel
 count even when the parent was not resident.  Fixed in `traverse`: slice
 strides/offsets and `preserve_ifmap` now depend on `input_loaded`.
+
+## 22. Compiler internal-Concat feature (2026-11-21)
+
+Implemented compiler-side internal channel Concat:
+
+* `InternalConcatView` plan with inputs, channel offsets, group stride, parent
+  bytes, consumer output bytes, and live-byte budget;
+* MBV2 `split_4_concat_out` plans as supported: 32+32+32 channels, offsets
+  0/32/64, group stride 96, live bytes 55296 <= 262144;
+* capacity, non-channel-axis, unknown-shape, and non-compilable-producer cases
+  fall back to external;
+* split producers receive `ofmap_channel_stride=96` and offsets 0/32/64;
+* the projection consumer reads the group from ACTMEM with stride 96 and does
+  not load an external ifmap;
+* intermediate split readouts are suppressed for a supported group;
+* new CSR word `CSR_REG_OUTPUT_VIEW` (offset 8) carries
+  `[15:0] ofmap_channel_stride`, `[31:16] ofmap_channel_offset`.
+
+Compiler-only tests: `tests/test_internal_concat_compiler.py` (5 passed).
+
+RTL decode/use of the output-view word is intentionally not implemented yet;
+the existing RTL ignores the extra CSR write, so this commit is compiler-only
+behaviour plus command-stream changes.

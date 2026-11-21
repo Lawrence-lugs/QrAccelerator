@@ -38,6 +38,10 @@ CSR_REG_OFMAP_DIMS: int = 3
 CSR_REG_CHANNELS: int = 4
 CSR_REG_OFFSETS: int = 5
 CSR_REG_PADDING: int = 6
+CSR_REG_OUTPUT_VIEW: int = 8
+
+ACTMEM_BYTES: int = 256 * 1024
+"""Physical internal activation memory budget (byte-addressable)."""
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pathlib
 
 import numpy as np
@@ -30,8 +31,10 @@ from qracc_marp.constants import (
     CSR_REG_OFMAP_DIMS,
     CSR_REG_OFFSETS,
     CSR_REG_PADDING,
+    CSR_REG_OUTPUT_VIEW,
     CSR_REG_WEIGHT,
     DATA_WRITE_ADDR,
+    ACTMEM_BYTES,
     DEFAULT_CORE_SIZE,
     DWC_CORE_SIZE,
     MASK_1,
@@ -88,6 +91,8 @@ class QrAccNodeCode(object):
         nx_model: onnx.ModelProto | None = None,
         ifmap_channel_stride: int | None = None,
         ifmap_channel_offset: int = 0,
+        ofmap_channel_stride: int | None = None,
+        ofmap_channel_offset: int = 0,
     ) -> None:
 
         self.ifmap = ifmap if ifmap.ndim == 4 else ifmap.reshape((1, -1, 1, 1))
@@ -103,6 +108,11 @@ class QrAccNodeCode(object):
             pads=mapped_node.pads,
             stride=mapped_node.strides,
         )
+        self.ofmap_channel_stride = (
+            int(ofmap_channel_stride) if ofmap_channel_stride is not None
+            else int(self.ofmap_shape[1])
+        )
+        self.ofmap_channel_offset = int(ofmap_channel_offset)
 
         self.ifmap_bits = ifmap_bits
         self.ofmap_bits = ofmap_bits
@@ -229,6 +239,8 @@ class QrAccNodeCode(object):
             "num_output_channels": kernel_shape[0],
             "ifmap_channel_stride": self.ifmap_channel_stride,
             "ifmap_channel_offset": self.ifmap_channel_offset,
+            "ofmap_channel_stride": self.ofmap_channel_stride,
+            "ofmap_channel_offset": self.ofmap_channel_offset,
             "mapped_matrix_offset_x": mapped_node.offset_x,
             "mapped_matrix_offset_y": mapped_node.offset_y,
             "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
@@ -578,6 +590,10 @@ def bundle_config_into_write(
         ((config_dict.get('ifmap_channel_stride', 0) & 0xFFFF) << 5) |
         ((config_dict.get('ifmap_channel_offset', 0) & 0xFF) << 21)
     )
+    output_view_word = (
+        ((config_dict.get('ofmap_channel_stride', 0) & 0xFFFF) << 0) |
+        ((config_dict.get('ofmap_channel_offset', 0) & 0xFFFF) << 16)
+    )
 
     config_writes = [
         f"LOAD {base_addr + CSR_REG_CONFIG:08x} {config_word:08x}",
@@ -587,6 +603,7 @@ def bundle_config_into_write(
         f"LOAD {base_addr + CSR_REG_OFFSETS:08x} {offsets_word:08x}",
         f"LOAD {base_addr + CSR_REG_PADDING:08x} {padding_word:08x}",
         f"LOAD {base_addr + CSR_REG_WEIGHT:08x} {weight_word:08x}",
+        f"LOAD {base_addr + CSR_REG_OUTPUT_VIEW:08x} {output_view_word:08x}",
     ]
 
     return config_writes
@@ -716,6 +733,186 @@ def _next_compilable_input(nx_model, start_index, until):
     return None, None
 
 
+@dataclass
+class InternalConcatView:
+    """Compiler-side plan for one channel-axis Concat."""
+
+    output: str
+    inputs: tuple[str, ...]
+    channels: tuple[int, ...]
+    offsets: tuple[int, ...]
+    total_channels: int
+    height: int
+    width: int
+    producer_ids: tuple[int, ...]
+    parent_bytes: int
+    output_bytes: int
+    live_bytes: int
+    supported: bool
+    reason: str = ""
+
+    def offset_for(self, tensor_name: str) -> int | None:
+        try:
+            return self.offsets[self.inputs.index(tensor_name)]
+        except ValueError:
+            return None
+
+
+def _shape_of_tensor(nx_model, name, cache):
+    if name in cache:
+        return cache[name]
+    candidates = list(nx_model.graph.input) + list(nx_model.graph.output)
+    candidates += list(nx_model.graph.value_info)
+    for vi in candidates:
+        if vi.name != name:
+            continue
+        dims = []
+        for d in vi.type.tensor_type.shape.dim:
+            if not d.HasField('dim_value'):
+                cache[name] = None
+                return None
+            dims.append(int(d.dim_value))
+        cache[name] = tuple(dims)
+        return cache[name]
+    cache[name] = None
+    return None
+
+
+def _build_internal_concat_views(nx_model, u_nx_mapping, starting, until,
+                                 capacity=ACTMEM_BYTES):
+    """Plan channel-axis Concat groups that can live inside ACTMEM.
+
+    The plan is deliberately conservative: only same-shape, channel-axis
+    Concat of compilable producers is supported.  Everything else keeps the
+    existing external/L2 fallback behaviour.
+    """
+    shape_cache = {}
+
+    shape_in_progress = set()
+
+    def shape_for(name):
+        """Tensor shape, inferring synthetic split/Concat producer outputs."""
+        s = _shape_of_tensor(nx_model, name, shape_cache)
+        if s is not None:
+            return s
+        if name in shape_in_progress:
+            return None
+        shape_in_progress.add(name)
+        try:
+            p = _producer_index(nx_model, name)
+            if p is None:
+                return None
+            try:
+                mn = u_nx_mapping.get_mapped_node_by_id(p)
+            except ValueError:
+                # Non-compilable producer: if it is a channel Slice, the
+                # output shape is the parent shape with the sliced channels.
+                parent, _, nch = _resolve_channel_slice(
+                    nx_model, nx_model.graph.node[p].input[0])
+                ps = shape_for(parent) if parent != name else None
+                if ps is not None and len(ps) == 4:
+                    out = ((1, int(nch), ps[2], ps[3]) if nch else ps)
+                    shape_cache[name] = out
+                    return out
+                return None
+            parent, _, nch = _resolve_channel_slice(
+                nx_model, mn.nx_node.input[0])
+            parent_shape = shape_for(parent) if parent != name else None
+            if parent_shape is None or len(parent_shape) != 4:
+                return None
+            in_shape = (1, int(nch) if nch else parent_shape[1],
+                        parent_shape[2], parent_shape[3])
+            try:
+                out = infer_ofmap_shape(
+                    ifmap_shape=in_shape,
+                    kernel_shape=mn.kernel.shape,
+                    pads=mn.pads,
+                    stride=mn.strides,
+                )
+            except Exception:
+                return None
+            shape_cache[name] = tuple(out)
+            return tuple(out)
+        finally:
+            shape_in_progress.discard(name)
+
+    views = {}
+    for idx in range(starting, until):
+        node = nx_model.graph.node[idx]
+        if node.op_type != 'Concat' or not node.output:
+            continue
+        axis_attr = next((a for a in node.attribute if a.name == 'axis'), None)
+        axis = int(axis_attr.i) if axis_attr is not None else 1
+        out_name = node.output[0]
+        input_names = tuple(node.input)
+        if axis != 1:
+            views[out_name] = InternalConcatView(
+                out_name, input_names, (), (), 0, 0, 0, (), 0, 0, 0,
+                False, f'concat axis {axis} is not channel')
+            continue
+        shapes = [shape_for(n) for n in input_names]
+        if any(s is None or len(s) != 4 for s in shapes):
+            views[out_name] = InternalConcatView(
+                out_name, input_names, (), (), 0, 0, 0, (), 0, 0, 0,
+                False, 'unknown or non-4D concat input shape')
+            continue
+        hw = {(s[2], s[3]) for s in shapes}
+        if len(hw) != 1:
+            views[out_name] = InternalConcatView(
+                out_name, input_names, (), (), 0, 0, 0, (), 0, 0, 0,
+                False, 'concat inputs have different spatial shapes')
+            continue
+        channels = tuple(int(s[1]) for s in shapes)
+        offsets = tuple(int(x) for x in np.cumsum((0,) + channels[:-1]))
+        total = int(sum(channels))
+        producer_ids = []
+        parents = set()
+        for n in input_names:
+            p = _producer_index(nx_model, n)
+            if p is None or not is_nx_node_compilable(nx_model.graph.node[p]):
+                producer_ids = []
+                break
+            producer_ids.append(p)
+            parent, _, _ = _resolve_channel_slice(
+                nx_model, nx_model.graph.node[p].input[0])
+            if parent:
+                parents.add(parent)
+        if not producer_ids:
+            views[out_name] = InternalConcatView(
+                out_name, input_names, channels, offsets, total,
+                shapes[0][2], shapes[0][3],
+                (), 0, 0, 0, False,
+                'concat input producer is not compilable')
+            continue
+        parent_bytes = 0
+        for pname in parents:
+            ps = shape_for(pname)
+            if ps is not None and len(ps) == 4:
+                parent_bytes += int(ps[1] * ps[2] * ps[3])
+        consumer = next((n for n in nx_model.graph.node
+                         if out_name in n.input), None)
+        output_bytes = 0
+        if consumer is not None and consumer.output:
+            os_ = shape_for(consumer.output[0])
+            if os_ is not None and len(os_) == 4:
+                output_bytes = int(os_[1] * os_[2] * os_[3])
+        group_bytes = total * shapes[0][2] * shapes[0][3]
+        live_bytes = parent_bytes + group_bytes + output_bytes
+        reason = ''
+        if total > 0xFFFF:
+            reason = 'concat width exceeds 16-bit stride'
+        elif max(offsets or (0,)) > 0xFFFF:
+            reason = 'concat channel offset exceeds 16 bits'
+        elif live_bytes > capacity:
+            reason = (f'live ACTMEM {live_bytes} B exceeds {capacity} B')
+        views[out_name] = InternalConcatView(
+            out_name, input_names, channels, offsets, total,
+            shapes[0][2], shapes[0][3], tuple(producer_ids),
+            parent_bytes, output_bytes, live_bytes,
+            reason == '', reason)
+    return views
+
+
 def traverse_and_compile_nx_graph(
     nx_model     : onnx.ModelProto,
     input_dict   : dict,
@@ -745,6 +942,15 @@ def traverse_and_compile_nx_graph(
     if until is None:
         until = len(nx_model.graph.node)
     commands = []
+
+    concat_views = _build_internal_concat_views(
+        nx_model, u_nx_mapping, starting, until)
+    producer_views = {}
+    for view in concat_views.values():
+        if not view.supported:
+            continue
+        for name, off in zip(view.inputs, view.offsets):
+            producer_views[name] = (view, off)
 
     def bits_for(graph_node_id):
         if isinstance(weight_bits, dict):
@@ -787,6 +993,28 @@ def traverse_and_compile_nx_graph(
                     slice_offset_eff = slice_offset
                 else:
                     stride = int(slice_channels)
+
+            # A supported internal Concat is a single logical group: its
+            # consumer reads from the group base with the group channel stride.
+            input_view = concat_views.get(nx_node.input[0])
+            if input_view is not None and input_view.supported:
+                input_loaded = True
+                stride = input_view.total_channels
+                slice_offset_eff = 0
+                slice_channels = None
+
+            # A split that writes into a supported Concat group gets the
+            # group's pixel stride and its channel offset in that group.
+            producer_name = next(
+                (o for o in nx_node.output if o in producer_views), None)
+            ofmap_stride = None
+            ofmap_offset = 0
+            if producer_name is not None:
+                pview, ofmap_offset = producer_views[producer_name]
+                ofmap_stride = pview.total_channels
+                if graph_node_id != until - 1:
+                    readout = False
+
             next_compilable_id, next_parent = _next_compilable_input(
                 nx_model, graph_node_id, until)
             # A non-compilable Slice between two compilable nodes is an
@@ -809,6 +1037,8 @@ def traverse_and_compile_nx_graph(
                 nx_model      = nx_model,
                 ifmap_channel_stride = stride,
                 ifmap_channel_offset = slice_offset_eff,
+                ofmap_channel_stride = ofmap_stride,
+                ofmap_channel_offset = ofmap_offset,
             )
 
             # preserve_ifmap means "the next node consumes the SAME input",
@@ -877,6 +1107,13 @@ def traverse_and_compile_nx_graph(
 
         else:
             print(f'Skipping {nx_node.name} as it is not compilable...')
+            # A supported Concat is an internal ACTMEM group.  Its consumer
+            # must see the group as the current activation, not as an external
+            # tensor.
+            if (nx_node.op_type == 'Concat' and nx_node.output
+                    and concat_views.get(nx_node.output[0]) is not None
+                    and concat_views[nx_node.output[0]].supported):
+                current_loaded_ifmap_name = nx_node.output[0]
 
     commands += ['END'] 
     prev_node = nx_node
