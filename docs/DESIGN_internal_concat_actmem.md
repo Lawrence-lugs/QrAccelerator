@@ -1,8 +1,23 @@
 # DESIGN — internal Concat views in ACTMEM
 
-Status: design evaluation, not implemented.
+Status: **compiler implementation landed; RTL not yet.**
 Scope: extend the internal channel-Slice view to channel Concat, and define
 when the compiler must fall back to the external/L2 "black hole" model.
+
+Compiler status:
+
+* `_build_internal_concat_views` recognizes same-shape channel Concat of
+  compilable producers and computes channel offsets, group stride, parent
+  bytes, consumer output bytes, and live bytes against `ACTMEM_BYTES`;
+* MBV2 `split_4_concat_out` is supported: offsets 0/32/64, group stride 96,
+  live 55296 B;
+* `QrAccNodeCode` now has `ofmap_channel_stride` / `ofmap_channel_offset`,
+  packed into `CSR_REG_OUTPUT_VIEW`;
+* supported split outputs suppress external readout; the consumer reads the
+  group from ACTMEM;
+* `tests/test_internal_concat_compiler.py` covers the plan, capacity fallback,
+  axis fallback, group offsets, and the command stream;
+* RTL decode/use of the output-view word is still pending.
 
 ## 1. Current model
 
