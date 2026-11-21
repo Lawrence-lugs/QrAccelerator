@@ -849,6 +849,7 @@ task bus_write_loop();
                 $display("Waiting for QRAcc Readout, time:", $time);
                 // $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
                 i = 0;
+                l2_mem_addr = 0;
                 l2_mem_enable = 1;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
                     bus_req.addr = QRACC_MAIN_ADDR;

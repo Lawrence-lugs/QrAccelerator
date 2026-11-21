@@ -282,7 +282,7 @@ def test_marp_binary_chain_conv_depthwise(simulator):
 
 
 @pytest.mark.needs_verilator
-@pytest.mark.parametrize("n_nodes", [3, 4, 5])
+@pytest.mark.parametrize("n_nodes", [3, 4, 5, 7])
 def test_marp_e2e_multibit_slice(simulator, n_nodes):
     """True e2e: real ONNX activations, per-node B, contiguous slice."""
     nx_model = onnx.load(MODEL_PATH)
@@ -347,9 +347,13 @@ def test_marp_e2e_multibit_slice(simulator, n_nodes):
         pass
     log_file = f'tests/logs/tb_qracc_top_{simulator}_e2e3.log'
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    sim_args = {k: list(v) for k, v in diag_utils.sim_args.items()}
+    if n_nodes == 7:
+        for args in sim_args.values():
+            args.append('+define+ACTMEM_DEBUG')
     run_simulation(
         simulator, {}, package_list, '../tb/qracc_top/tb_qracc_top.sv',
-        diag_utils.sim_args, rtl_file_list, log_file, run=True)
+        sim_args, rtl_file_list, log_file, run=True)
 
     expected_nchw = onnx_utils.get_intermediate_tensor_value(
         nx_model, last_node.nx_node.output[0], input_dict=input_dict)

@@ -472,3 +472,22 @@ stream.  The 5-node case has only one split and passes.
 Next: trace `wsacc_output_valid` / `activation_buffer_int_wr_en` across all
 three splits and check whether the WSAcc output pipeline is being held in
 reset/stall after a preserving node.  Do not change read addressing.
+
+## 18. Testbench L2 readout pointer bug (2026-11-21)
+
+The 7-node output being "split0" was a **testbench/Python-facing bug**, not
+RTL:
+
+* `l2_mem_addr` was reset only by `nrst`;
+* every `WAITREAD` appended at the current pointer;
+* `export_l2()` always exports `l2_mem[0..ofmap_size-1]`, i.e. the **first**
+  readout ever performed (split0);
+* all three splits do write 256 outputs each (`[DBG wsacc-node] in=256 out=256
+  wr=256` at 56528, 64752, 72976).
+
+Fix: reset `l2_mem_addr = 0` at the start of each `WAITREAD`.
+
+Also added under `ACTMEM_DEBUG`:
+
+* a timestamped `$monitor` stream for digital state;
+* per-node `wsacc-data-i-valid` / `wsacc-output-valid` / write counters.

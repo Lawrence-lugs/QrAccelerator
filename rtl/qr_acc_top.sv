@@ -136,6 +136,51 @@ logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data_padded; 
 logic [featureLoaderNumElements-1:0][qrAccInputBits-1:0] feature_loader_data_out;
 
+`ifdef ACTMEM_DEBUG
+// One $monitor stream for the WSAcc/ACTMEM handshake.  Filter the log by
+// timestamp/state; this is cheaper than many separate displays.
+always @(posedge clk) begin
+    if (u_qracc_controller.state_q == 7)
+        $monitor("[MON] t=%0t st=%0d opix=(%0d,%0d) fy=%0d rs=%0d nrs=%0d flv=%0d wdv=%0d wsdi=%0d wsov=%0d wr=%0d waddr=%0d ifmap=%0d ofmap=%0d res=%0d preserve=%0d",
+                 $time, u_qracc_controller.state_q,
+                 u_qracc_controller.opix_pos_x,
+                 u_qracc_controller.opix_pos_y,
+                 u_qracc_controller.fy_ctr,
+                 u_qracc_controller.read_set,
+                 u_qracc_controller.num_read_sets,
+                 u_qracc_controller.feature_loader_valid_out_qq,
+                 u_qracc_controller.window_data_valid_q,
+                 qracc_ctrl.wsacc_data_i_valid,
+                 wsacc_data_o_valid,
+                 qracc_ctrl.activation_buffer_int_wr_en,
+                 qracc_ctrl.activation_buffer_int_wr_addr,
+                 u_qracc_controller.ifmap_start_addr,
+                 u_qracc_controller.ofmap_start_addr,
+                 u_qracc_controller.result_start_addr,
+                 cfg.preserve_ifmap);
+    else
+        $monitoroff;
+end
+// Per-node WSAcc/ACTMEM transaction counts, printed when digital ends.
+integer dbg_ws_i = 0, dbg_ws_o = 0, dbg_wr = 0;
+logic dbg_dig_q;
+always @(posedge clk) begin
+    if (u_qracc_controller.state_q == 7) begin
+        if (qracc_ctrl.wsacc_data_i_valid) dbg_ws_i <= dbg_ws_i + 1;
+        if (wsacc_data_o_valid) dbg_ws_o <= dbg_ws_o + 1;
+        if (qracc_ctrl.activation_buffer_int_wr_en) dbg_wr <= dbg_wr + 1;
+    end
+    if (dbg_dig_q && u_qracc_controller.state_q != 7)
+        $display("[DBG wsacc-node] t=%0t in=%0d out=%0d wr=%0d ofmap=%0d preserve=%0d",
+                 $time, dbg_ws_i, dbg_ws_o, dbg_wr,
+                 u_qracc_controller.ofmap_start_addr, cfg.preserve_ifmap);
+    if (u_qracc_controller.state_q != 7) begin
+        dbg_ws_i <= 0; dbg_ws_o <= 0; dbg_wr <= 0;
+    end
+    dbg_dig_q <= (u_qracc_controller.state_q == 7);
+end
+`endif
+
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] aligned_output_scaler_output;
