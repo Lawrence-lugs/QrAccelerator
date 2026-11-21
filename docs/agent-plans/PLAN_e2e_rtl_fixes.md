@@ -491,3 +491,22 @@ Also added under `ACTMEM_DEBUG`:
 
 * a timestamped `$monitor` stream for digital state;
 * per-node `wsacc-data-i-valid` / `wsacc-output-valid` / write counters.
+
+## 19. All-three-slice gate passes (2026-11-21)
+
+With `l2_mem_addr` reset per readout, the full 7-node chain passes:
+
+`test_marp_e2e_multibit_slice[verilator-7]`: **19.705 dB**, RMSE 2.498.
+
+The RTL was already writing all three split outputs; the exported file was the
+first readout because `l2_mem_addr` never reset.  Final e2e gates:
+
+| chain | SNR |
+|---|---|
+| 3-node | 19.559 dB |
+| 4-node | 19.559 dB |
+| 5-node (one split) | 19.910 dB |
+| 7-node (all three splits) | 19.705 dB |
+
+Debug instrumentation (`$monitor` with timestamps + per-node WSAcc counters)
+remains compile-time under `ACTMEM_DEBUG`.
