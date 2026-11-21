@@ -212,9 +212,10 @@ def _run_binary_node(simulator, nx_model, node, ifmap, tag, weight_bits=1):
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
     ]
-    stimulus_output_path = 'tb/qracc_top/inputs'
+    tb_path = 'qracc_top'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs('tb/qracc_top/outputs', exist_ok=True)
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
     write_parameter_definition_file({
         "SRAM_ROWS": 256,
         "SRAM_COLS": 256,
@@ -222,22 +223,23 @@ def _run_binary_node(simulator, nx_model, node, ifmap, tag, weight_bits=1):
         "QRACC_OUTPUT_BITS": 8,
         "GB_INT_IF_WIDTH": 32 * 8,
         "MODEL_MEM": 1,
-    }, 'rtl/qracc_params.svh')
+    }, sim_params_path())
 
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in u_code.compile():
             f.write(write + '\n')
     u_code.write_files(stimulus_output_path)
 
-    diag_utils.VERILATOR_RUN_PLUSARGS = []
-    log_file = f'tests/logs/tb_qracc_top_{simulator}_{tag}.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_file = f'tb_qracc_top_{simulator}_{tag}.log'
     run_simulation(
         simulator, {}, package_list, '../tb/qracc_top/tb_qracc_top.sv',
-        diag_utils.sim_args, rtl_file_list, log_file, run=True)
+        diag_utils.sim_args, rtl_file_list, log_file, run=True,
+        run_plusargs=[])
 
-    flat = np.loadtxt('tb/qracc_top/outputs/hw_ofmap.txt', dtype=int)
-    shape = np.loadtxt('tb/qracc_top/inputs/result_shape.txt', dtype=int)
+    flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+    shape = np.loadtxt(
+        os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
     return u_code, flat.reshape(*shape)
 
 
@@ -323,9 +325,10 @@ def test_marp_e2e_multibit_slice(simulator, n_nodes):
         '../rtl/control/qracc_csr.sv',
         '../rtl/control/qracc_controller.sv',
     ]
-    stimulus_output_path = 'tb/qracc_top/inputs'
+    tb_path = 'qracc_top'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs('tb/qracc_top/outputs', exist_ok=True)
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
     write_parameter_definition_file({
         "SRAM_ROWS": 256,
         "SRAM_COLS": 256,
@@ -334,27 +337,27 @@ def test_marp_e2e_multibit_slice(simulator, n_nodes):
         "GB_INT_IF_WIDTH": 32 * 8,
         "MODEL_MEM": 1,
         "NOIOFILES": 1,
-    }, 'rtl/qracc_params.svh')
+    }, sim_params_path())
     with open(f'{stimulus_output_path}/commands.txt', 'w') as f:
         for write in commands:
             f.write(write + '\n')
 
-    diag_utils.VERILATOR_RUN_PLUSARGS = []
     # Do not let a previous run's readout mask a node that never wrote.
     try:
-        os.remove('tb/qracc_top/outputs/hw_ofmap.txt')
+        os.remove(os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'))
     except FileNotFoundError:
         pass
-    log_file = f'tests/logs/tb_qracc_top_{simulator}_e2e3.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_file = f'tb_qracc_top_{simulator}_e2e3.log'
     run_simulation(
         simulator, {}, package_list, '../tb/qracc_top/tb_qracc_top.sv',
-        diag_utils.sim_args, rtl_file_list, log_file, run=True)
+        diag_utils.sim_args, rtl_file_list, log_file, run=True,
+        run_plusargs=[])
 
     expected_nchw = onnx_utils.get_intermediate_tensor_value(
         nx_model, last_node.nx_node.output[0], input_dict=input_dict)
     expected = expected_nchw.transpose(0, 2, 3, 1)
-    flat = np.loadtxt('tb/qracc_top/outputs/hw_ofmap.txt', dtype=int)
+    flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
     assert flat.size == expected.size, (flat.size, expected.size)
     actual = flat.reshape(expected.shape)
     rmse, snr = rmse_snr(expected, actual)
@@ -422,10 +425,10 @@ def test_marp_multibit_postscale(simulator, weight_bits, figures):
         '../rtl/control/qracc_controller.sv',
     ]
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     parameter_list = {
         "SRAM_ROWS": 256,
@@ -444,15 +447,16 @@ def test_marp_multibit_postscale(simulator, weight_bits, figures):
     u_code.write_files(stimulus_output_path)
 
     tb_file = f'../tb/{tb_path}/tb_qracc_top.sv'
-    log_file = f'tests/logs/tb_qracc_top_{simulator}.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_file = f'tb_qracc_top_{simulator}.log'
 
-    diag_utils.VERILATOR_RUN_PLUSARGS = ['+qr_dbg_mac']
     run_simulation(simulator, {}, package_list, tb_file, diag_utils.sim_args,
-                   rtl_file_list, log_file, run=True)
+                   rtl_file_list, log_file, run=True,
+                   run_plusargs=['+qr_dbg_mac'])
 
-    actual_flat = np.loadtxt("tb/qracc_top/outputs/hw_ofmap.txt", dtype=int)
-    result_shape = np.loadtxt("tb/qracc_top/inputs/result_shape.txt", dtype=int)
+    actual_flat = np.loadtxt(
+        os.path.join(sim_outputs(tb_path), 'hw_ofmap.txt'), dtype=int)
+    result_shape = np.loadtxt(
+        os.path.join(sim_inputs(tb_path), 'result_shape.txt'), dtype=int)
     actual = actual_flat.reshape(*result_shape)
     expected = qlinearconv_onnx_reference(
         node, input_tensor, nx_model, weight_bits=weight_bits)

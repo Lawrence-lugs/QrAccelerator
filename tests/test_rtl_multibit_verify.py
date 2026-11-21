@@ -16,7 +16,7 @@ import pytest
 
 import qracc_marp.quantization.quant as q
 from . import utils as test_utils
-from .utils import run_simulation
+from .utils import run_simulation, sim_inputs, sim_outputs
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -50,8 +50,7 @@ def test_ts_qracc_adc(simulator, numAdcBits, adcFullScale):
     rtl_file_list = ['../rtl/ts_qracc.sv']
     tb_name = 'tb_ts_qracc'
     tb_file = f'../tb/ts_qracc/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     parameters = {
         'SRAM_ROWS': 64,
@@ -60,9 +59,10 @@ def test_ts_qracc_adc(simulator, numAdcBits, adcFullScale):
         'adcFullScale': adcFullScale,
     }
 
-    run_simulation(simulator, parameters, package_list, tb_file,
-                   test_utils.sim_args, rtl_file_list, log_file, run=True,
-                   top_module=tb_name)
+    log_file = run_simulation(
+        simulator, parameters, package_list, tb_file,
+        test_utils.sim_args, rtl_file_list, log_file, run=True,
+        top_module=tb_name)
 
     rows = _parse_adc_log(log_file)
     assert rows, 'no [ADC] lines found in the simulation log'
@@ -91,8 +91,9 @@ def test_bipolar_bias_sub(simulator, inputTrits, numTrials=32, seed=0):
     for j in range(inputTrits):
         expected += a[:, j] << j
 
-    in_dir = 'tb/bipolar_bias_sub/inputs'
-    out_dir = 'tb/bipolar_bias_sub/outputs'
+    tb_path = 'bipolar_bias_sub'
+    in_dir = sim_inputs(tb_path)
+    out_dir = sim_outputs(tb_path)
     os.makedirs(in_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
     np.savetxt(f'{in_dir}/a.txt', a, fmt='%d')
@@ -100,9 +101,8 @@ def test_bipolar_bias_sub(simulator, inputTrits, numTrials=32, seed=0):
     package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = ['../rtl/bipolar_bias_sub.sv']
     tb_name = 'tb_bipolar_bias_sub'
-    tb_file = f'../tb/bipolar_bias_sub/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    tb_file = f'../tb/{tb_path}/{tb_name}.sv'
+    log_file = f'{tb_name}_{simulator}.log'
 
     parameters = {
         'inputTrits': inputTrits,
@@ -214,8 +214,9 @@ def test_seq_acc_multibit(simulator, weight_bits, adc_bits, adc_full_scale,
             plane_words[r, b] = int(sum(int(v) << c for c, v in enumerate(bits)))
     plane_words = plane_words.astype(np.int64)
 
-    in_dir = 'tb/seq_acc/inputs'
-    out_dir = 'tb/seq_acc/outputs'
+    tb_path = 'seq_acc'
+    in_dir = sim_inputs(tb_path)
+    out_dir = sim_outputs(tb_path)
     os.makedirs(in_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)
     np.savetxt(f'{in_dir}/w.txt', plane_words, fmt='%d')
@@ -235,8 +236,7 @@ def test_seq_acc_multibit(simulator, weight_bits, adc_bits, adc_full_scale,
     ]
     tb_name = 'tb_seq_acc'
     tb_file = '../tb/seq_acc/tb_seq_acc.sv'
-    log_file = f'tests/logs/{tb_name}_multibit_{weight_bits}_{adc_bits}.log'
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    log_file = f'{tb_name}_multibit_{weight_bits}_{adc_bits}.log'
 
     parameters = [
         f'SRAM_ROWS={rows}',

@@ -56,6 +56,9 @@ from .utils import (
     qlinearconv_prescale_snr,
     run_simulation,
     save_scatter_fig,
+    sim_inputs,
+    sim_outputs,
+    sim_params_path,
     write_parameter_definition_file,
 )
 from . import utils as diag_utils
@@ -198,15 +201,13 @@ def test_marp_multibit_prestack(
     ]
     tb_name = 'tb_qracc_top'
     tb_path = 'qracc_top'
-    stimulus_output_path = f'tb/{tb_path}/inputs'
+    stimulus_output_path = sim_inputs(tb_path)
     empty_directory(stimulus_output_path)
-    os.makedirs(f'tb/{tb_path}/outputs', exist_ok=True)
-    param_file_path = 'rtl/qracc_params.svh'
+    os.makedirs(sim_outputs(tb_path), exist_ok=True)
+    param_file_path = sim_params_path()
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
-    log_file = f'tests/logs/{tb_name}_{simulator}.log'
-    logdir = os.path.dirname(log_file)
-    os.makedirs(logdir, exist_ok=True)
+    log_file = f'{tb_name}_{simulator}.log'
 
     parameter_list = {
         "SRAM_ROWS": imc_core_size[0],
@@ -229,15 +230,15 @@ def test_marp_multibit_prestack(
     # The capture is gated by the runtime plusarg +qr_dbg_mac (the testbench
     # cannot use a compile-time define: verilator defines are position-sensitive
     # on the command line, and the tb is listed before sim_args).
-    diag_utils.VERILATOR_RUN_PLUSARGS = ['+qr_dbg_mac']
-
-    run_simulation(simulator, {}, package_list, tb_file, diag_utils.sim_args,
-                   rtl_file_list, log_file, run=True)
+    # Pass it explicitly so concurrent tests cannot leak plusargs.
+    log_file = run_simulation(
+        simulator, {}, package_list, tb_file, diag_utils.sim_args,
+        rtl_file_list, log_file, run=True, run_plusargs=['+qr_dbg_mac'])
 
     cfg_info, wins, pre, post = parse_mac_capture(log_file)
     assert cfg_info, (
         'no [DBG cfg] line found - the +qr_dbg_mac plusarg did not reach the '
-        'simulation (see VERILATOR_RUN_PLUSARGS)')
+        'simulation (see run_simulation(run_plusargs=...))')
     shift = cfg_info['adc_ref_range_shifts']
     # The CSR value the hardware used must agree with the compiler decision.
     assert shift == int(u_code.config()['adc_ref_range_shifts']), (
