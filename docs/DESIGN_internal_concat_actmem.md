@@ -102,15 +102,73 @@ consumer to be external:
 * offsets/width exceeding the fields;
 * Concat followed by a shape-changing op that cannot be composed as a view.
 
-## 5. Memory edge cases
+## 5. Memory accounting: input group + output group
 
-### 5.1 Group larger than ACTMEM
+The budget is not “one activation tensor fits”.  At every point in time ACTMEM
+must hold **all live groups**, including:
+
+* the input group the current node is reading;
+* the output group the current node is writing;
+* any parent/slice group that must stay live for another consumer;
+* readout staging if a result is both read out and consumed.
+
+For a normal node:
+
+```text
+need = bytes(input_group) + bytes(output_group) + bytes(other_live)
+bytes(T) = C * H * W
+```
+
+For an internal split/Concat:
+
+```text
+need = bytes(parent) + bytes(concat_group) + bytes(consumer_output)
+                    + bytes(other_live)
+```
+
+The parent and concat group cannot alias for a 3x3 depthwise split: the
+convolution reuses input pixels across output pixels, so overwriting the
+parent in place would destroy data still needed by later windows.  A separate
+concat group is required.  A 1x1 in-place path would have to be proven
+window-safe; do not assume it.
+
+### 5.1 MBV2 budget
+
+At the split block:
+
+```text
+parent          96*16*16 = 24576
+concat group    96*16*16 = 24576
+project output  24*16*16 =  6144
+other live      ~27k (earlier layers, under the current monotonic allocator)
+------------------------------------------------------------
+peak            ~82k of 262144
+```
+
+So the first block fits, but the compiler must still prove the peak, not just
+the 24 kB group.
+
+### 5.2 Theoretical cases
+
+| live groups | bytes | result |
+|---|---:|---|
+| 256×32×32 parent + same-size concat | 524288 | does not fit |
+| 256×32×32 parent + 256×32×32 output | 524288 | does not fit |
+| 96×16×16 parent + concat + 24×16×16 output | 55296 | fits |
+| 144×8×8 parent + concat + 24×8×8 output | 19968 | fits |
+| 256×4×4 parent + concat + 64×4×4 output | 9216 | fits |
+
+A single 256×32×32 group already equals 262144 bytes, so any live input plus
+output group forces external fallback.  The testbench L2 is 2 MB and will hide
+this; the compiler must check the **256 kB physical** limit.
+
+### 5.3 Group larger than ACTMEM
 
 If `bytes(concat) > 262144`, external fallback is mandatory. A 256-channel
 32×32 tensor alone is 262144 bytes, leaving no room for the parent, output, or
 scratch. This is a realistic theoretical order (ResNet-style 256×32×32).
 
-### 5.2 Group fits but peak liveness does not
+### 5.4 Group fits but peak liveness does not
 
 Fitting the group alone is insufficient. The compiler must account for:
 
@@ -122,7 +180,7 @@ A monotonic `ofmap_start_addr` allocator can still exceed 256 kB. A liveness /
 reference-count allocator is required before claiming support. If the peak
 exceeds the budget, fall back externally or stream.
 
-### 5.3 Allocation granularity and aliasing
+### 5.5 Allocation granularity and aliasing
 
 The group needs a byte base and a pixel stride. Address arithmetic is byte
 based; channel counts need not be powers of two (96, 144, 192, 256). Ensure:
@@ -132,7 +190,26 @@ based; channel counts need not be powers of two (96, 144, 192, 256). Ensure:
 * no split overwrites a parent still needed by another split;
 * no split writes into a slot that a later op still reads as a different view.
 
-### 5.4 Readout pressure
+### 5.6 Allocator policy
+
+A monotonic `ofmap_start_addr` bump allocator is not sufficient for a 256 kB
+budget: it never reclaims a dead parent, so the high-water mark can exceed the
+sum of simultaneously live bytes.  The planner must either:
+
+1. compute live ranges from the consumer graph and use first-fit with free
+   ranges; and
+2. check `peak_live_bytes <= 262144` before selecting internal views; or
+3. fall back the whole concat region to external if allocation fails.
+
+Fallback must be decided **before** emitting any of the group, not halfway
+through.  A partially internal/partially external concat is not a supported
+mode.
+
+Each group should carry `base`, `bytes`, `readers`, and `last_use`.  A group is
+reclaimable only when `readers == 0` and `last_use` has passed.  Split outputs
+that are also graph outputs or fan-out keep their readers until readout.
+
+### 5.7 Readout pressure
 
 If every split is still marked `readout=True`, the L2 traffic can hide a
 missing internal view. For certification, suppress readout for internal concat
