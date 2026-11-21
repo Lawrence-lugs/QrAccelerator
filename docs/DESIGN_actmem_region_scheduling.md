@@ -10,9 +10,10 @@ R5 evidence so far:
 * 3-node simple readout: passed;
 * compiler-only suite: 12 passed.
 
-R5 compiler checks are complete: Add boundaries, projection has no external
-ifmap load, full MBV2 is 37 regions/79872 B.  Deferred heavy items: full-MBV2
-RTL accuracy and a poisoned-L2 RTL run.
+R5 is complete for the practical MBV2 boundary set.  RTL validation: 3-node
+21.825 dB, 7-node 19.705 dB, 8-node internal Concat 11.371 dB, and 16-node
+across the first residual Add 29.384 dB.  Compiler tests: 12 passed.  A full
+660-node MBV2 accuracy run remains optional/heavy.
 
 Implemented now:
 

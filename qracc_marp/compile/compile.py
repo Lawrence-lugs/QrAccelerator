@@ -892,20 +892,24 @@ def _resolve_shape(nx_model, u_nx_mapping, name, cache, in_progress=None):
     return out
 
 
-def _allocate_slots(slots, capacity):
+def _allocate_slots(slots, capacity, entry_names=()):
     """First-fit byte allocator with liveness-based slot reuse.
 
     Slots are intervals over the region schedule.  A slot is placed in the
     lowest free range that does not overlap a still-live allocation.  Aliased
-    view slots are not passed here.
+    view slots are not passed here.  Entry tensors are placed first because
+    the external loader writes them at the region base (address 0 in the
+    current LOADACTS path).
     """
+    entry_names = set(entry_names)
     allocations = []
     active = []
     # Entries and short-lived slots at the same schedule point are placed
     # before long-lived outputs, so an external entry remains at its load
     # address instead of being overwritten by its first producer output.
     for name, nbytes, first, last in sorted(
-            slots, key=lambda s: (s[2], s[3], -s[1], s[0])):
+            slots, key=lambda s: (
+                s[2], 0 if s[0] in entry_names else 1, s[3], -s[1], s[0])):
         if nbytes <= 0:
             continue
         active = [(b, e, s_last, n) for b, e, s_last, n in active
@@ -1059,7 +1063,8 @@ def _build_region_plan_once(nx_model, u_nx_mapping, concat_views,
             peak = max(peak, live)
         slot_rows = tuple((n, b, slot_first[n], slot_last[n])
                           for n, b in sorted(slot_bytes.items()))
-        allocations, alloc_reason = _allocate_slots(slot_rows, capacity)
+        allocations, alloc_reason = _allocate_slots(
+            slot_rows, capacity, entry_names=entries)
         reason = ''
         if peak > capacity:
             reason = f'peak ACTMEM {peak} B exceeds {capacity} B'

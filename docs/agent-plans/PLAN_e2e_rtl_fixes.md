@@ -829,3 +829,51 @@ R5 compiler checks completed:
 Still deferred/heavy: full-MBV2 end-to-end accuracy with all Add boundaries and
 a poisoned-L2 RTL image. The compiler command-stream check is the proof that
 the Concat group path does not depend on L2.
+
+### 23.13 R5 Add-boundary RTL validation (2026-11-21)
+
+Added `n_nodes=16` to the e2e parametrization.  Mapped node 15 is the first
+conv after the first residual Add, so this run crosses an unsupported Add:
+
+* region exits both pre-Add tensors;
+* Add output is loaded externally;
+* next region runs the post-Add conv and is read out.
+
+This is the practical RTL Add-boundary check without running all 660 MBV2 nodes.
+
+Note on the planned "poisoned L2": the TB L2 is only the readout black hole;
+external ifmaps are written into ACTMEM by explicit commands, so poisoning
+`l2_mem` would not prove the internal Concat path.  The command-stream test
+(no `TRIGGER_LOAD_ACTIVATION` in the projection segment) is the stronger proof.
+
+### 23.14 R5 parallel workspace validation (2026-11-22)
+
+Using the merged per-test workspace structure, four RTL chains were run
+concurrently:
+
+* 3-node: 21.825 dB, passed (15:51)
+* 7-node: 19.705 dB, passed (29:18)
+* 8-node: pending
+* 16-node Add boundary: pending
+
+Compiler suite: 12 passed.
+
+### 23.15 R5 validation complete (2026-11-22)
+
+All targeted RTL validation passes after the entry-first allocator fix:
+
+| chain | SNR | status |
+|---|---:|---|
+| 3-node simple readout | 21.825 dB | passed |
+| 7-node all splits, compact readout | 19.705 dB | passed |
+| 8-node all splits + internal Concat + projection | 11.371 dB | passed |
+| 16-node across first residual Add | 29.384 dB | passed |
+
+The 16-node run crosses the unsupported `QLinearAdd` boundary: both pre-Add
+outputs are region exits and the Add output is loaded as the next region entry.
+This validates the external Add boundary, not just the split/Concat path.
+
+Compiler suite: 12 passed.
+
+R5 is complete for the practical MBV2 boundary set.  A full 660-node MBV2
+accuracy run remains optional/heavy.
