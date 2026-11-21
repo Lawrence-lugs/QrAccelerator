@@ -428,3 +428,24 @@ Direct checks remain:
 
 All three pass after the spurious-readout fix (`6adc6df`).  The next gate is
 `n_nodes=7`, which exercises all three 32-channel depthwise slices.
+
+## 16. All-three-slices gate (n_nodes=7) (2026-11-21)
+
+`test_marp_e2e_multibit_slice[verilator-7]` fails at **-2.872 dB**.
+
+The actual output is **split0**, not split2:
+
+```
+corr(actual, ONNX depthwise channels 0:32)  = 0.995
+corr(actual, channels 32:64 / 64:96)       ~ 0.04 / -0.05
+```
+
+Command trace shows all three split compute triggers, each with
+`0x1004` (trigger 4 + preserve bit 12), and read triggers between them.
+So the compiler emits the right sequence; the later preserve/readout path is
+not advancing to split1/split2 output.
+
+Next: trace `result_start_addr`, `ofmap_start_addr`, and `csr_set[MAIN][12]`
+after each split, and the `S_READACTS` base for split1/2. The direct 5-node
+case and the manual preserve chain both pass, so the remaining issue is
+specific to multiple consecutive preserving splits.
