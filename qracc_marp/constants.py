@@ -39,8 +39,14 @@ CSR_REG_CHANNELS: int = 4
 CSR_REG_OFFSETS: int = 5
 CSR_REG_PADDING: int = 6
 CSR_REG_OUTPUT_VIEW: int = 8
+CSR_REG_IFMAP_BASE: int = 9
+CSR_REG_OFMAP_BASE: int = 10
 
 ACTMEM_BYTES: int = 256 * 1024
+ACTMEM_ADDR_BITS: int = 18
+ACTMEM_ALIGN: int = 32
+ACTMEM_BASE_NONE: int = 0xFFFFFFFF
+"""Sentinel: use the controller's sequential ACTMEM base."""
 """Physical internal activation memory budget (byte-addressable)."""
 
 

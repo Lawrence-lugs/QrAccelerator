@@ -93,7 +93,7 @@ def test_split_configs_use_one_concat_group(monkeypatch):
     assert word >> 16 == 32
 
 
-def test_region_plan_mbv2_accounts_for_all_live_groups():
+def test_region_plan_first_mbv2_residual_block_accounts_for_all_live_groups():
     nx, mapping = _mapping()
     views = _build_internal_concat_views(nx, mapping, 0, 13)
     plan = _build_region_plan(nx, mapping, views, 0, 13)
@@ -109,6 +109,46 @@ def test_region_plan_mbv2_accounts_for_all_live_groups():
                and v.pixel_stride == 96 for v in region.views)
     assert any(v.role == 'slice' and v.channel_offset == 32
                for v in region.views)
+
+
+def test_add_nodes_form_external_region_boundaries():
+    nx, mapping = _mapping()
+    n = len(nx.graph.node)
+    views = _build_internal_concat_views(nx, mapping, 0, n)
+    plan = _build_region_plan(nx, mapping, views, 0, n)
+    add = next(node for node in nx.graph.node
+               if node.op_type == 'QLinearAdd'
+               and node.output[0].endswith('/features/features.3/Add_output_0_quantized'))
+    exit_sets = [set(r.exits) for r in plan.regions]
+    assert any(add.input[0] in ex and add.input[3] in ex
+               for ex in exit_sets)
+    assert any(add.output[0] in set(r.entries) for r in plan.regions)
+    # Add boundaries make the full graph multi-region; it is not one region.
+    assert len(plan.regions) == 37
+    assert plan.peak_live_bytes < ACTMEM_BYTES
+
+
+def test_region_allocations_do_not_overlap_when_live():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    region = _build_region_plan(nx, mapping, views, 0, 13).regions[0]
+    allocs = region.allocations
+    assert allocs
+    assert all(a.base % 32 == 0 for a in allocs)
+    assert all(a.base + a.bytes <= ACTMEM_BYTES for a in allocs)
+    for i, a in enumerate(allocs):
+        for b in allocs[i + 1:]:
+            live_overlap = not (a.last < b.first or b.last < a.first)
+            if live_overlap:
+                assert (a.base + a.bytes <= b.base
+                        or b.base + b.bytes <= a.base)
+
+
+def test_region_allocator_reuses_dead_slots():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    region = _build_region_plan(nx, mapping, views, 0, 13).regions[0]
+    assert sum(1 for a in region.allocations if a.base == 0) >= 2
 
 
 def test_region_plan_splits_linear_over_budget():
@@ -141,7 +181,7 @@ def test_region_plan_rejects_over_budget():
 
 
 def test_traverse_uses_internal_concat_and_suppresses_split_readout():
-    nx, _ = _mapping()
+    nx, mapping = _mapping()
     np.random.seed(0)
     d = {'input.1': np.random.rand(1, 3, 32, 32).astype(np.float32)}
     commands = traverse_and_compile_nx_graph(
@@ -159,6 +199,19 @@ def test_traverse_uses_internal_concat_and_suppresses_split_readout():
     assert (96, 0) in split_offsets
     assert (96, 32) in split_offsets
     assert (96, 64) in split_offsets
+
+    # The same explicit group base is used by all three split writers and as
+    # the projection's ifmap base.
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    plan = _build_region_plan(nx, mapping, views, 0, 13)
+    group_base = next(a.base for r in plan.regions for a in r.allocations
+                      if a.name == CONCAT_OUT)
+    ifmap_bases = [int(s.split()[2], 16) for s in commands
+                   if s.startswith('LOAD 00000019')]
+    ofmap_bases = [int(s.split()[2], 16) for s in commands
+                   if s.startswith('LOAD 0000001a')]
+    assert ofmap_bases.count(group_base) == 3
+    assert ifmap_bases.count(group_base) == 1
 
     # The projection must consume the group from ACTMEM, not a fresh external
     # ifmap, and the intermediate splits must not be externally read out.

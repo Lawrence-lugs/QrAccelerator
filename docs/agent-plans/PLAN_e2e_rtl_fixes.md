@@ -641,3 +641,173 @@ Added deterministic recursive splitting:
 
 Remaining: explicit group output bases, allocator reuse, RTL output-view
 decode, and re-running the RTL e2e gates.
+
+### 23.3 Allocator checkpoint (2026-11-21)
+
+Added compiler-side first-fit allocation with liveness-based reuse:
+
+* `SlotAllocation(name, base, bytes, first, last)` per non-aliased slot;
+* allocations are checked for address overlap while live and against
+  `ACTMEM_BYTES`;
+* MBV2 region slots are assigned bases and dead slots are reused (for example
+  later slots return to base 0);
+* compiler-only tests now 11 passed, including live-slot non-overlap and
+  dead-slot reuse.
+
+Still not wired: explicit bases into node commands/RTL and output-view CSR
+decode.  The midpoint split tie-break has a TODO in `_build_region_plan`; it is
+intentionally retained for now.
+
+### 23.4 R4 base plumbing (2026-11-21)
+
+Added explicit ACTMEM bases and output-view decode:
+
+* compiler config carries `ifmap_base` / `ofmap_base` (sentinel `0xFFFFFFFF`);
+* CSR registers 9 and 10 decode those bases; reset defaults to the sentinel;
+* output writes use `explicit_ofmap_base + ofmap_offset_ptr +
+  ofmap_channel_offset`, and `ofmap_offset_ptr` advances by
+  `ofmap_channel_stride`;
+* a supported Concat group is activated only when all split producers and the
+  group output are internal; if any group member is a region exit, the old
+  compact per-split form is retained (so the 7-node final-split readout path is
+  unchanged);
+* compiler tests assert all three split writers use the same explicit group
+  base and the projection uses it as its ifmap base.
+
+An 8-node RTL test (all three splits plus projection) is running to validate
+the explicit-base path.
+
+### 23.5 Clarification: MBV2 does not split at 256 kB
+
+Full MBV2 region planning (all nodes) was checked:
+
+```text
+regions: 37
+max peak: 79872 B
+capacity: 262144 B
+supported: True
+```
+
+So R3 never splits MBV2 at the physical capacity. The split tests use
+artificial capacities (20 kB / 40 kB) to exercise the algorithm. The 256 kB
+overrun case is the theoretical 256x32x32 tensor (exactly 262144 B), which
+cannot coexist with any other live input/output group.
+
+Pointer legality now checked:
+
+* allocation bases are 4-byte aligned;
+* every allocation satisfies `base + bytes <= 262144`;
+* Slice input channel offsets must fit the 8-bit CSR field;
+* view pixel strides must fit the 16-bit CSR field;
+* supported Concat groups are only activated when no producer/group output is
+  a region exit (so a compact readout path is never mixed with a strided
+  group).
+
+### 23.6 ADD boundaries (2026-11-21)
+
+Residual `QLinearAdd` is non-compilable and therefore a mandatory region
+boundary:
+
+* Add inputs become exits of the producer regions;
+* Add output becomes an entry of the next region;
+* the Add itself is modelled externally, so both input tensors are read out
+  and the Add output is read back in.
+
+Checked on MBV2: for
+`/features/features.3/Add_quant`, one region exits both pre-Add tensors and the
+next region enters on `/features/features.3/Add_output_0_quantized`.
+Added compiler test `test_add_nodes_form_external_region_boundaries`.
+
+MBV2 full-graph region peaks remain below 256 kB, so Add boundaries, not
+capacity, are what create the many regions.
+
+### 23.7 R4 write-drain fix (2026-11-21)
+
+An 8-node trace showed the projection starting while split output rows were
+still being drained from the PISO write queue.  `csr_main_busy` previously
+only reflected the controller state, so the testbench could observe IDLE
+between the last accepted window and the final ACTMEM writes.
+
+Changed:
+
+```systemverilog
+csr_main_busy = (state_q != S_IDLE) || int_write_queue_valid;
+```
+
+This keeps the next node from reading a group whose producer queue has not
+drained.  Re-running the 8-node all-splits-plus-projection RTL test.
+
+### 23.8 R4 full base binding (2026-11-21)
+
+The first explicit-base 8-node result was 2.148 dB: row 0 matched, later rows
+degraded.  The allocator bases for normal nodes were not being passed to the
+RTL, so the group base assigned by the planner (for example 0x7000) could
+overlap the controller's sequential base for the parent node3 output.  Split
+writes then overwrote the parent activation.
+
+Fixed by binding allocator bases for every internal region tensor:
+
+* normal chained input -> `ifmap_base` from its producer allocation;
+* normal output -> `ofmap_base` from its own allocation;
+* Slice input -> parent allocation + existing channel offset;
+* readout base -> explicit `ofmap_base + ofmap_channel_offset`.
+
+Re-running the 8-node all-splits-plus-projection RTL test.
+
+### 23.9 R4 allocator ordering fix (2026-11-21)
+
+Allocator ordering initially placed a large producer output at base 0 before
+the external entry tensor at the same schedule point.  With explicit bases,
+that let the first compute overwrite the externally loaded ifmap.
+
+Fixed by ordering same-start slots by last use (shorter-lived entry first),
+then size.  MBV2 allocation now:
+
+```text
+entry input.1_quantized            base 0,    3072 B
+node0 output                       base 3072, 8192 B
+...
+node3 parent                       base 4096, 24576 B
+concat group                       base 28672,24576 B
+projection output                  base 0,    6144 B
+```
+
+Re-running the 8-node RTL test.
+
+### 23.10 R4 8-node result (2026-11-21)
+
+After binding allocator bases for all internal tensors (not just the Concat
+group), the 8-node all-splits-plus-projection RTL test passes:
+
+```text
+e2e 8-node B=8 SNR = 11.371 dB
+RMSE = 3.858
+```
+
+The earlier 2.148 dB failure was caused by the group base overlapping the
+controller's sequential base for the parent node3 output; explicit bases for
+all internal tensors removed the collision.
+
+The test parametrization now includes `[3, 4, 5, 7, 8]`.  Running 3/4/5/7
+regressions with the all-tensor explicit-base path.
+
+### 23.11 R4/R5 regression status (2026-11-21)
+
+RTL validation after all-tensor explicit bases:
+
+* 8-node all splits + projection: **11.371 dB**, passed.
+* 7-node all splits, compact final readout: **19.705 dB**, passed.
+* 3-node simple readout: passed.
+* Combined 3+7 run: **2 passed in 51:03**.
+
+Compiler-only suite: **12 passed** (region plan, Add boundaries, allocator,
+splitting, Concat group offsets/bases, stale-output hygiene).
+
+Remaining for R5:
+
+* full-MBV2 end-to-end accuracy run (Add/external boundaries);
+* poisoned-L2 test proving the internal Concat path never reads the external
+  concat tensor;
+* explicit compiler tests for multi-exit/fanout beyond the Add boundary;
+* optional 4/5 intermediate readout spot checks (3+7+8 now cover the distinct
+  readout modes).

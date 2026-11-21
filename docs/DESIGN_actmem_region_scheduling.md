@@ -1,25 +1,53 @@
 # DESIGN — ACTMEM resident-region scheduling
 
-Status: approved design direction; **R1/R2/R3 metadata implemented, R4-R5 pending.**
+Status: approved design direction; **R1-R4 implemented; R5 partially validated.**
 The scheduling unit is a **DAG-shaped resident region**, not a Concat view.
+
+R5 evidence so far:
+
+* 8-node all-splits + internal Concat/projection: 11.371 dB, passed;
+* 7-node all-splits compact readout: 19.705 dB, passed;
+* 3-node simple readout: passed;
+* compiler-only suite: 12 passed.
+
+Remaining R5: full-MBV2 accuracy with Add/external boundaries, poisoned-L2
+proof, and multi-exit/fanout coverage.
 
 Implemented now:
 
 * `TensorView`, `ResidentRegion`, `RegionPlan` metadata in `compile.py`;
 * region entry/exit derivation from producers/consumers;
 * Slice-view lifetime propagation and Concat group views;
-* live-range peak over all live groups (MBV2 peak 49152 B);
+* live-range peak over all live groups (first MBV2 residual block peak
+  49152 B; full MBV2 has 37 regions, max 79872 B, driven by unsupported Add
+  and view boundaries);
 * `traverse` readout decisions from region exits, replacing the
   next-consumer heuristic;
 * deterministic recursive region splitting at legal comp-node boundaries,
   with protection against cutting a supported Concat group;
+* first-fit byte allocator with liveness-based reuse; every region records
+  per-slot `SlotAllocation(base, bytes, first, last)`;
 * compiler-only tests for the MBV2 DAG, entries/exits, views, budget, linear
-  splitting, and group-preserving splitting.
+  splitting, group-preserving splitting, non-overlap of live allocations, and
+  dead-slot reuse.
+
+R4 base plumbing (compiler + RTL) is implemented:
+
+* `ifmap_base` / `ofmap_base` CSR registers (sentinel `0xFFFFFFFF` means use
+  the sequential base);
+* explicit Concat group base supplied to every split producer and to the
+  consuming node;
+* `ofmap_channel_stride` drives the per-pixel output offset and
+  `ofmap_channel_offset` the channel offset;
+* a group is only activated when every producer and the group output are
+  internal to the region; if a split is a region exit, the compact per-split
+  command form is retained.
 
 Still pending:
 
-* explicit per-group output bases and allocator reuse;
-* RTL decode/use of the output-view CSR (R4).
+* validating the RTL 8-node (all splits + projection) path;
+* allocator-backed bases for non-Concat groups/regions;
+* cleanup of the legacy sequential-base path.
 
 This redesign replaces `DESIGN_internal_concat_actmem.md`.
 It records two explicit decisions:
@@ -296,9 +324,10 @@ still an open implementation item.
 
 ## 11. Compiler-only acceptance tests
 
-1. **MBV2 DAG:** node0...split0/1/2...Concat...projection schedules as one
-   region; splits have group stride 96, offsets 0/32/64; projection reads the
-   group and no split is read out.
+1. **MBV2 residual block:** node0...split0/1/2...Concat...projection schedules
+   as one region; splits have group stride 96, offsets 0/32/64; projection
+   reads the group and no split is read out.  Full MBV2 is not one region:
+   unsupported Add/view boundaries create 37 regions.
 2. **Multi-exit DAG:** two external consumers/readouts for one producer group;
    every exit is scheduled and each L2 read starts at pointer 0.
 3. **Fanout and join:** multiple consumers and Concat producers share a region;
@@ -338,6 +367,11 @@ The current 7-node high-water is about 81–82 kB, leaving room within 256 kB.
 96. The conservative parent+group+projection sum is 55296 B; the measured
 simultaneous peak from live ranges is 49152 B because the projection output is
 written after the parent's last use.
+
+Full MBV2 (all 660 graph nodes) currently plans as **37 regions**, maximum
+peak **79872 B**.  The region count comes from unsupported `QLinearAdd`,
+Slice/Concat boundaries, and per-block split structure; it is not a capacity
+split.  The first residual block alone is one region.
 
 ## 14. Current state versus target
 

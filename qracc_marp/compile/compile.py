@@ -32,9 +32,13 @@ from qracc_marp.constants import (
     CSR_REG_OFFSETS,
     CSR_REG_PADDING,
     CSR_REG_OUTPUT_VIEW,
+    CSR_REG_IFMAP_BASE,
+    CSR_REG_OFMAP_BASE,
     CSR_REG_WEIGHT,
     DATA_WRITE_ADDR,
     ACTMEM_BYTES,
+    ACTMEM_ALIGN,
+    ACTMEM_BASE_NONE,
     DEFAULT_CORE_SIZE,
     DWC_CORE_SIZE,
     MASK_1,
@@ -93,6 +97,8 @@ class QrAccNodeCode(object):
         ifmap_channel_offset: int = 0,
         ofmap_channel_stride: int | None = None,
         ofmap_channel_offset: int = 0,
+        ifmap_base: int = ACTMEM_BASE_NONE,
+        ofmap_base: int = ACTMEM_BASE_NONE,
     ) -> None:
 
         self.ifmap = ifmap if ifmap.ndim == 4 else ifmap.reshape((1, -1, 1, 1))
@@ -113,6 +119,8 @@ class QrAccNodeCode(object):
             else int(self.ofmap_shape[1])
         )
         self.ofmap_channel_offset = int(ofmap_channel_offset)
+        self.ifmap_base = int(ifmap_base)
+        self.ofmap_base = int(ofmap_base)
 
         self.ifmap_bits = ifmap_bits
         self.ofmap_bits = ofmap_bits
@@ -241,6 +249,8 @@ class QrAccNodeCode(object):
             "ifmap_channel_offset": self.ifmap_channel_offset,
             "ofmap_channel_stride": self.ofmap_channel_stride,
             "ofmap_channel_offset": self.ofmap_channel_offset,
+            "ifmap_base": self.ifmap_base,
+            "ofmap_base": self.ofmap_base,
             "mapped_matrix_offset_x": mapped_node.offset_x,
             "mapped_matrix_offset_y": mapped_node.offset_y,
             "padding": mapped_node.pads[0],  # Use 0 padding for soft padding
@@ -594,6 +604,8 @@ def bundle_config_into_write(
         ((config_dict.get('ofmap_channel_stride', 0) & 0xFFFF) << 0) |
         ((config_dict.get('ofmap_channel_offset', 0) & 0xFFFF) << 16)
     )
+    ifmap_base_word = config_dict.get('ifmap_base', ACTMEM_BASE_NONE) & 0xFFFFFFFF
+    ofmap_base_word = config_dict.get('ofmap_base', ACTMEM_BASE_NONE) & 0xFFFFFFFF
 
     config_writes = [
         f"LOAD {base_addr + CSR_REG_CONFIG:08x} {config_word:08x}",
@@ -604,6 +616,8 @@ def bundle_config_into_write(
         f"LOAD {base_addr + CSR_REG_PADDING:08x} {padding_word:08x}",
         f"LOAD {base_addr + CSR_REG_WEIGHT:08x} {weight_word:08x}",
         f"LOAD {base_addr + CSR_REG_OUTPUT_VIEW:08x} {output_view_word:08x}",
+        f"LOAD {base_addr + CSR_REG_IFMAP_BASE:08x} {ifmap_base_word:08x}",
+        f"LOAD {base_addr + CSR_REG_OFMAP_BASE:08x} {ofmap_base_word:08x}",
     ]
 
     return config_writes
@@ -779,6 +793,17 @@ def _shape_of_tensor(nx_model, name, cache):
 
 
 @dataclass(frozen=True)
+class SlotAllocation:
+    """One byte range assigned to a non-aliased tensor slot."""
+
+    name: str
+    base: int
+    bytes: int
+    first: int
+    last: int
+
+
+@dataclass(frozen=True)
 class TensorView:
     """Physical layout of a tensor in ACTMEM."""
 
@@ -803,6 +828,7 @@ class ResidentRegion:
     supported: bool
     reason: str = ""
     slots: tuple[tuple[str, int, int, int], ...] = ()
+    allocations: tuple[SlotAllocation, ...] = ()
 
 
 @dataclass
@@ -864,6 +890,39 @@ def _resolve_shape(nx_model, u_nx_mapping, name, cache, in_progress=None):
     out = (1, int(nch), ps[2], ps[3]) if nch else ps
     cache[name] = out
     return out
+
+
+def _allocate_slots(slots, capacity):
+    """First-fit byte allocator with liveness-based slot reuse.
+
+    Slots are intervals over the region schedule.  A slot is placed in the
+    lowest free range that does not overlap a still-live allocation.  Aliased
+    view slots are not passed here.
+    """
+    allocations = []
+    active = []
+    # Entries and short-lived slots at the same schedule point are placed
+    # before long-lived outputs, so an external entry remains at its load
+    # address instead of being overwritten by its first producer output.
+    for name, nbytes, first, last in sorted(
+            slots, key=lambda s: (s[2], s[3], -s[1], s[0])):
+        if nbytes <= 0:
+            continue
+        active = [(b, e, s_last, n) for b, e, s_last, n in active
+                  if s_last >= first]
+        base = 0
+        for b, e, _, _ in sorted(active):
+            if base + nbytes <= b:
+                break
+            base = max(base, e)
+        base = ((base + ACTMEM_ALIGN - 1) // ACTMEM_ALIGN) * ACTMEM_ALIGN
+        if base + nbytes > capacity:
+            return tuple(allocations), (
+                f'slot {name} needs {nbytes} B at base {base}, '
+                f'exceeds {capacity} B')
+        allocations.append(SlotAllocation(name, base, nbytes, first, last))
+        active.append((base, base + nbytes, last, name))
+    return tuple(allocations), ''
 
 
 def _build_region_plan_once(nx_model, u_nx_mapping, concat_views,
@@ -998,13 +1057,23 @@ def _build_region_plan_once(nx_model, u_nx_mapping, concat_views,
             live = sum(b for name, b in slot_bytes.items()
                        if slot_first.get(name, 0) <= pos <= slot_last.get(name, 0))
             peak = max(peak, live)
-        supported = peak <= capacity
+        slot_rows = tuple((n, b, slot_first[n], slot_last[n])
+                          for n, b in sorted(slot_bytes.items()))
+        allocations, alloc_reason = _allocate_slots(slot_rows, capacity)
+        reason = ''
+        if peak > capacity:
+            reason = f'peak ACTMEM {peak} B exceeds {capacity} B'
+        elif alloc_reason:
+            reason = alloc_reason
+        elif any(v.role == 'slice' and v.channel_offset > 0xFF
+                 for v in views):
+            reason = 'Slice input channel offset exceeds 8-bit CSR field'
+        elif any(v.pixel_stride > 0xFFFF for v in views):
+            reason = 'view pixel stride exceeds 16-bit CSR field'
+        supported = reason == ''
         regions.append(ResidentRegion(
             tuple(comp), tuple(entries), tuple(exits), tuple(views), peak,
-            supported, '' if supported else
-            f'peak ACTMEM {peak} B exceeds {capacity} B',
-            tuple((n, b, slot_first[n], slot_last[n])
-                  for n, b in sorted(slot_bytes.items()))))
+            supported, reason, slot_rows, allocations))
         run.clear(); run_nodes.clear()
 
     for i in range(starting, until):
@@ -1036,6 +1105,12 @@ def _build_region_plan(nx_model, u_nx_mapping, concat_views,
     the left output and right input external tensors; this is conservative but
     legal, and it preserves DAG correctness without trying to solve global
     placement optimally.
+
+    TODO(scheduling): midpoint-proximity is only a deterministic tie-break for
+    now.  Once the allocator is in place, rank legal split points
+    lexicographically by: both sides feasible; minimum crossing-boundary bytes;
+    minimum max(left_peak, right_peak); minimum number of crossing tensors;
+    minimum view-group disruption; midpoint/id as the final tie-break.
     """
     plan = _build_region_plan_once(
         nx_model, u_nx_mapping, concat_views, starting, until, capacity)
@@ -1258,17 +1333,31 @@ def traverse_and_compile_nx_graph(
 
     concat_views = _build_internal_concat_views(
         nx_model, u_nx_mapping, starting, until)
-    producer_views = {}
-    for view in concat_views.values():
-        if not view.supported:
-            continue
-        for name, off in zip(view.inputs, view.offsets):
-            producer_views[name] = (view, off)
-
     region_plan = _build_region_plan(
         nx_model, u_nx_mapping, concat_views, starting, until)
     region_exits = {tensor for r in region_plan.regions
                     for tensor in r.exits}
+    allocation_by_name = {
+        a.name: a.base for r in region_plan.regions for a in r.allocations}
+
+    # A Concat group is written with explicit bases only when the whole group
+    # is internal.  If any producer (or the group output) is a region exit, the
+    # existing compact per-split command form is kept.
+    active_views = {}
+    for view in concat_views.values():
+        if not view.supported:
+            continue
+        if any(name in region_exits for name in view.inputs):
+            continue
+        if view.output in region_exits:
+            continue
+        if view.output not in allocation_by_name:
+            continue
+        active_views[view.output] = view
+    producer_views = {}
+    for view in active_views.values():
+        for name, off in zip(view.inputs, view.offsets):
+            producer_views[name] = (view, off)
 
     def bits_for(graph_node_id):
         if isinstance(weight_bits, dict):
@@ -1316,24 +1405,40 @@ def traverse_and_compile_nx_graph(
 
             # A supported internal Concat is a single logical group: its
             # consumer reads from the group base with the group channel stride.
-            input_view = concat_views.get(nx_node.input[0])
-            if input_view is not None and input_view.supported:
+            input_view = active_views.get(nx_node.input[0])
+            ifmap_base = ACTMEM_BASE_NONE
+            if input_view is not None:
                 input_loaded = True
                 stride = input_view.total_channels
                 slice_offset_eff = 0
                 slice_channels = None
+                ifmap_base = allocation_by_name[input_view.output]
+            elif input_loaded:
+                # Internal parent/slice or normal chained input: use the
+                # allocator's base, not the controller's sequential base.
+                if slice_channels is not None:
+                    ifmap_base = allocation_by_name.get(
+                        input_parent, ACTMEM_BASE_NONE)
+                else:
+                    ifmap_base = allocation_by_name.get(
+                        nx_node.input[0], ACTMEM_BASE_NONE)
 
             # A split that writes into a supported Concat group gets the
-            # group's pixel stride and its channel offset in that group.
+            # group's pixel stride, explicit base, and channel offset.
             producer_name = next(
                 (o for o in nx_node.output if o in producer_views), None)
             ofmap_stride = None
             ofmap_offset = 0
+            ofmap_base = ACTMEM_BASE_NONE
             if producer_name is not None:
                 pview, ofmap_offset = producer_views[producer_name]
                 ofmap_stride = pview.total_channels
+                ofmap_base = allocation_by_name[pview.output]
                 if graph_node_id != until - 1:
                     readout = False
+            else:
+                ofmap_base = allocation_by_name.get(
+                    nx_node.output[0], ACTMEM_BASE_NONE)
 
             next_compilable_id, next_parent = _next_compilable_input(
                 nx_model, graph_node_id, until)
@@ -1359,6 +1464,8 @@ def traverse_and_compile_nx_graph(
                 ifmap_channel_offset = slice_offset_eff,
                 ofmap_channel_stride = ofmap_stride,
                 ofmap_channel_offset = ofmap_offset,
+                ifmap_base = ifmap_base,
+                ofmap_base = ofmap_base,
             )
 
             # preserve_ifmap means "the next node consumes the SAME input",

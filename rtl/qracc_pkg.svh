@@ -141,6 +141,14 @@ package qracc_pkg;
         // first channel of the slice.
         logic [15:0] ifmap_channel_stride;      // CSR 7:20:5
         logic [7:0]  ifmap_channel_offset;      // CSR 7:28:21
+
+        // CSR 8: output view
+        logic [15:0] ofmap_channel_stride;      // 15:0
+        logic [15:0] ofmap_channel_offset;      // 31:16
+        // CSR 9/10: explicit region bases.  32'hFFFFFFFF means "use the
+        // controller's sequential ACTMEM base".
+        logic [31:0] ifmap_base;                // CSR 9
+        logic [31:0] ofmap_base;                // CSR 10
     } qracc_config_t;
 
     typedef struct packed {

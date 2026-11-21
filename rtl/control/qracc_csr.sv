@@ -31,7 +31,10 @@ typedef enum logic [3:0] {
     CSR_REG_CHANNELS = 4,
     CSR_REG_OFFSETS = 5,
     CSR_REG_PADDING = 6,
-    CSR_REG_WEIGHT = 7
+    CSR_REG_WEIGHT = 7,
+    CSR_REG_OUTPUT_VIEW = 8,
+    CSR_REG_IFMAP_BASE = 9,
+    CSR_REG_OFMAP_BASE = 10
 } csr_names_t;
 
 // Signals
@@ -54,7 +57,9 @@ end
 always_ff @( posedge clk or negedge nrst ) begin : csrWriteReads
     if (!nrst) begin
         for(int i = 0; i < numCsr; i++) begin
-            csr_set[i] = 0;
+            csr_set[i] = (i == CSR_REG_IFMAP_BASE
+                          || i == CSR_REG_OFMAP_BASE)
+                         ? 32'hFFFFFFFF : 32'h0;
         end
         bus_resp_o.ready <= 1;
         bus_resp_o.rd_data_valid <= 1'b0;
@@ -144,6 +149,10 @@ always_comb begin : csrDecode
     cfg_o.weight_signed_cfg = csr_set[CSR_REG_WEIGHT][4];
     cfg_o.ifmap_channel_stride = csr_set[CSR_REG_WEIGHT][20:5];
     cfg_o.ifmap_channel_offset = csr_set[CSR_REG_WEIGHT][28:21];
+    cfg_o.ofmap_channel_stride = csr_set[CSR_REG_OUTPUT_VIEW][15:0];
+    cfg_o.ofmap_channel_offset = csr_set[CSR_REG_OUTPUT_VIEW][31:16];
+    cfg_o.ifmap_base = csr_set[CSR_REG_IFMAP_BASE];
+    cfg_o.ofmap_base = csr_set[CSR_REG_OFMAP_BASE];
 end
 
 endmodule

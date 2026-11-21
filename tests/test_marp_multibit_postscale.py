@@ -282,7 +282,7 @@ def test_marp_binary_chain_conv_depthwise(simulator):
 
 
 @pytest.mark.needs_verilator
-@pytest.mark.parametrize("n_nodes", [3, 4, 5, 7])
+@pytest.mark.parametrize("n_nodes", [3, 4, 5, 7, 8])
 def test_marp_e2e_multibit_slice(simulator, n_nodes):
     """True e2e: real ONNX activations, per-node B, contiguous slice."""
     nx_model = onnx.load(MODEL_PATH)

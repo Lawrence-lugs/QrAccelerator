@@ -197,6 +197,8 @@ end
 
 always_comb begin : ctrlDecode
     int rel_addr;
+    logic [31:0] ifmap_base_eff;
+    logic [31:0] ofmap_base_eff;
     ctrl_o = 0; // must be that ctrl_o is a NOP
     to_sram_rq_wr = 0;
     to_sram_rq_valid = 0;
@@ -206,7 +208,10 @@ always_comb begin : ctrlDecode
     bus_resp_o.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
-    csr_main_busy = ~( state_q == S_IDLE );
+    // Keep the CSR busy until the output write queue is fully drained.  A node
+    // can return to IDLE while the PISO queue still holds its last rows; the
+    // next node must not start reading those rows yet.
+    csr_main_busy = (state_q != S_IDLE) || int_write_queue_valid;
     case(state_q)
         S_IDLE: begin
             bus_resp_o.ready = 1; // CSR is always ready to take data
@@ -247,6 +252,12 @@ always_comb begin : ctrlDecode
 
             bus_resp_o.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
+            // Explicit region bases override the sequential ACTMEM bases.
+            // 32'hFFFFFFFF means "not supplied; use the sequential base".
+            ifmap_base_eff = (cfg.ifmap_base == 32'hFFFFFFFF)
+                             ? ifmap_start_addr : cfg.ifmap_base;
+            ofmap_base_eff = (cfg.ofmap_base == 32'hFFFFFFFF)
+                             ? ofmap_start_addr : cfg.ofmap_base;
             // The compute-read address is relative to the activation slot that
             // holds this node's ifmap.  Without the base, a chained node reads
             // address 0 (the previous external load) instead of the previous
@@ -274,7 +285,7 @@ always_comb begin : ctrlDecode
                 ctrl_o.activation_buffer_int_rd_addr = rel_addr;
             end else begin
                 ctrl_o.activation_buffer_int_rd_addr =
-                    ifmap_start_addr + rel_addr;
+                    ifmap_base_eff + rel_addr;
             end
             // rel_addr = h*W*C + w*C + c relative to the ifmap slot.
             
@@ -288,7 +299,9 @@ always_comb begin : ctrlDecode
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid || wsacc_output_valid;
-            ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
+            ctrl_o.activation_buffer_int_wr_addr =
+                ofmap_base_eff + ofmap_offset_ptr
+                + cfg.ofmap_channel_offset;
 
             ctrl_o.padding_start = padding_start_q;
             ctrl_o.padding_end = padding_end_q;
@@ -511,7 +524,10 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         if (state_q == S_COMPUTE_ANALOG || state_q == S_COMPUTE_DIGITAL) begin
 
             if (qracc_output_valid || wsacc_output_valid) begin
-                ofmap_offset_ptr <=  ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                ofmap_offset_ptr <= ofmap_offset_ptr
+                    + {16'b0, (cfg.ofmap_channel_stride == 0)
+                               ? cfg.num_output_channels
+                               : cfg.ofmap_channel_stride};
             end
 
             if (last_window) begin
@@ -645,7 +661,10 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             if (state_d != S_COMPUTE_ANALOG) begin
                 if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                result_start_addr <= ofmap_start_addr;
+                result_start_addr <=
+                    ((cfg.ofmap_base == 32'hFFFFFFFF)
+                     ? ofmap_start_addr : cfg.ofmap_base)
+                    + cfg.ofmap_channel_offset;
                 // Always reserve a new output slot.  A preserving node keeps
                 // its input base live while writing its output elsewhere;
                 // otherwise a slice consumer would overwrite its parent.
@@ -658,7 +677,10 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
             if (state_d != S_COMPUTE_DIGITAL) begin
                 if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                result_start_addr <= ofmap_start_addr;
+                result_start_addr <=
+                    ((cfg.ofmap_base == 32'hFFFFFFFF)
+                     ? ofmap_start_addr : cfg.ofmap_base)
+                    + cfg.ofmap_channel_offset;
                 ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
                                     + { 16'b0 , cfg.num_output_channels};
             end
