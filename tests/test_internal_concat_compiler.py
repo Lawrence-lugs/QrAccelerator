@@ -227,3 +227,15 @@ def test_traverse_uses_internal_concat_and_suppresses_split_readout():
             f'split_4_qconv_{i}' in s and 'read ifmap' in s
             and 'external memory' in s
             for s in commands)
+
+    # The projection's segment must not trigger an ifmap load: its input is
+    # the resident Concat group, not an L2 tensor.
+    project_start = next(
+        i for i, s in enumerate(commands)
+        if s.startswith('NODE ') and 'conv.2/Conv_quant' in s)
+    next_node = next(
+        (i for i in range(project_start + 1, len(commands))
+         if commands[i].startswith('NODE ')), len(commands))
+    project_segment = commands[project_start:next_node]
+    assert not any(
+        s.startswith('LOAD 00000010 00000001') for s in project_segment)

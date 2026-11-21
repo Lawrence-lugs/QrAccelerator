@@ -811,3 +811,21 @@ Remaining for R5:
 * explicit compiler tests for multi-exit/fanout beyond the Add boundary;
 * optional 4/5 intermediate readout spot checks (3+7+8 now cover the distinct
   readout modes).
+
+### 23.12 R5 compiler validation (2026-11-21)
+
+The new per-test simulation workspace structure (merge `0466395`) is in use:
+RTL tests write `commands.txt`, `hw_ofmap.txt`, params and logs under the
+private `sims/runs/<test>` tree, so the 3/7/8 RTL runs can be parallelized.
+
+R5 compiler checks completed:
+
+* projection segment contains no `TRIGGER_LOAD_ACTIVATION`, proving the
+  internal Concat consumer does not request an L2 ifmap;
+* intermediate split outputs are not externally read out;
+* Add nodes create both-input exits and Add-output entries;
+* full MBV2 plans as 37 regions, max 79872 B.
+
+Still deferred/heavy: full-MBV2 end-to-end accuracy with all Add boundaries and
+a poisoned-L2 RTL image. The compiler command-stream check is the proof that
+the Concat group path does not depend on L2.

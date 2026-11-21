@@ -10,8 +10,9 @@ R5 evidence so far:
 * 3-node simple readout: passed;
 * compiler-only suite: 12 passed.
 
-Remaining R5: full-MBV2 accuracy with Add/external boundaries, poisoned-L2
-proof, and multi-exit/fanout coverage.
+R5 compiler checks are complete: Add boundaries, projection has no external
+ifmap load, full MBV2 is 37 regions/79872 B.  Deferred heavy items: full-MBV2
+RTL accuracy and a poisoned-L2 RTL run.
 
 Implemented now:
 
