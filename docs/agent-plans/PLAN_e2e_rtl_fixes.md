@@ -510,3 +510,12 @@ first readout because `l2_mem_addr` never reset.  Final e2e gates:
 
 Debug instrumentation (`$monitor` with timestamps + per-node WSAcc counters)
 remains compile-time under `ACTMEM_DEBUG`.
+
+## 20. Next gate: Concat consumer (2026-11-21)
+
+`n_nodes=7` passes. The next mapped node (the 1x1 projection after the three
+depthwise splits) consumes `split_4_concat_out`.  `traverse` currently treats
+that as `reading ifmap ... from external memory`, i.e. it materializes the
+Concat, which violates the internal-view split decision.  A true internal
+Concat view (three 32-channel slots -> one 96-channel consumer) is the next
+design step; do not claim all-slice internal execution until then.
