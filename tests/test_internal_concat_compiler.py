@@ -11,6 +11,7 @@ from qracc_marp.compile.compile import (
     ACTMEM_BYTES,
     QrAccNodeCode,
     _build_internal_concat_views,
+    _build_region_plan,
     bundle_config_into_write,
     traverse_and_compile_nx_graph,
 )
@@ -90,6 +91,53 @@ def test_split_configs_use_one_concat_group(monkeypatch):
     word = int(view.split()[2], 16)
     assert word & 0xFFFF == 96
     assert word >> 16 == 32
+
+
+def test_region_plan_mbv2_accounts_for_all_live_groups():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    plan = _build_region_plan(nx, mapping, views, 0, 13)
+    assert plan.supported
+    assert plan.peak_live_bytes >= 96 * 16 * 16 + 96 * 16 * 16
+    assert plan.peak_live_bytes <= ACTMEM_BYTES
+    assert len(plan.regions) == 1
+    region = plan.regions[0]
+    assert region.entries == ('input.1_quantized',)
+    assert region.exits == (
+        '/features/features.2/conv/conv.2/Conv_output_0_quantized',)
+    assert any(v.role == 'concat_group' and v.channel_offset == 0
+               and v.pixel_stride == 96 for v in region.views)
+    assert any(v.role == 'slice' and v.channel_offset == 32
+               for v in region.views)
+
+
+def test_region_plan_splits_linear_over_budget():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 5)
+    plan = _build_region_plan(nx, mapping, views, 0, 5, capacity=20000)
+    assert len(plan.regions) > 1
+    assert not plan.supported
+    assert any(r.supported for r in plan.regions)
+
+
+def test_region_split_keeps_concat_group_together():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    plan = _build_region_plan(nx, mapping, views, 0, 13, capacity=40000)
+    group_nodes = {8, 9, 10, 12}
+    containing = [r for r in plan.regions
+                  if group_nodes.issubset(set(r.node_ids))]
+    assert len(containing) == 1
+    assert any(r.supported for r in plan.regions)
+    assert not plan.supported
+
+
+def test_region_plan_rejects_over_budget():
+    nx, mapping = _mapping()
+    views = _build_internal_concat_views(nx, mapping, 0, 13)
+    plan = _build_region_plan(nx, mapping, views, 0, 13, capacity=1024)
+    assert not plan.supported
+    assert 'exceeds' in plan.regions[0].reason
 
 
 def test_traverse_uses_internal_concat_and_suppresses_split_readout():

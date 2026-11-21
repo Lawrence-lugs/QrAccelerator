@@ -778,6 +778,319 @@ def _shape_of_tensor(nx_model, name, cache):
     return None
 
 
+@dataclass(frozen=True)
+class TensorView:
+    """Physical layout of a tensor in ACTMEM."""
+
+    tensor: str
+    backing: str
+    shape: tuple[int, ...] | None
+    bytes: int
+    pixel_stride: int
+    channel_offset: int
+    role: str = "tensor"
+
+
+@dataclass
+class ResidentRegion:
+    """A DAG of nodes scheduled without leaving ACTMEM."""
+
+    node_ids: tuple[int, ...]
+    entries: tuple[str, ...]
+    exits: tuple[str, ...]
+    views: tuple[TensorView, ...]
+    peak_live_bytes: int
+    supported: bool
+    reason: str = ""
+    slots: tuple[tuple[str, int, int, int], ...] = ()
+
+
+@dataclass
+class RegionPlan:
+    """Compiler-side region schedule plus its memory/layout evidence."""
+
+    regions: tuple[ResidentRegion, ...]
+
+    @property
+    def supported(self) -> bool:
+        return all(r.supported for r in self.regions)
+
+    @property
+    def peak_live_bytes(self) -> int:
+        return max((r.peak_live_bytes for r in self.regions), default=0)
+
+
+def _resolve_shape(nx_model, u_nx_mapping, name, cache, in_progress=None):
+    """Resolve a tensor shape through pass-through/split/view producers."""
+    if name in cache:
+        return cache[name]
+    in_progress = in_progress or set()
+    if name in in_progress:
+        return None
+    in_progress.add(name)
+    s = _shape_of_tensor(nx_model, name, cache)
+    if s is not None:
+        return s
+    p = _producer_index(nx_model, name)
+    if p is None:
+        return None
+    node = nx_model.graph.node[p]
+    try:
+        mn = u_nx_mapping.get_mapped_node_by_id(p)
+    except ValueError:
+        mn = None
+    if mn is not None:
+        parent, _, nch = _resolve_channel_slice(nx_model, mn.nx_node.input[0])
+        ps = _resolve_shape(nx_model, u_nx_mapping, parent, cache, in_progress)
+        if ps is None or len(ps) != 4:
+            return None
+        in_shape = (1, int(nch) if nch else ps[1], ps[2], ps[3])
+        try:
+            out = infer_ofmap_shape(
+                ifmap_shape=in_shape, kernel_shape=mn.kernel.shape,
+                pads=mn.pads, stride=mn.strides)
+        except Exception:
+            return None
+        cache[name] = tuple(out)
+        return tuple(out)
+    # Non-compilable pass-through (QuantizeLinear) or channel Slice.  For a
+    # Slice, the tensor being resolved is the Slice *output*, so resolve its
+    # own output name rather than its input.
+    slice_parent, _, nch = _resolve_channel_slice(nx_model, name)
+    parent = slice_parent if nch is not None else node.input[0]
+    ps = _resolve_shape(nx_model, u_nx_mapping, parent, cache, in_progress)
+    if ps is None or len(ps) != 4:
+        return None
+    out = (1, int(nch), ps[2], ps[3]) if nch else ps
+    cache[name] = out
+    return out
+
+
+def _build_region_plan_once(nx_model, u_nx_mapping, concat_views,
+                            starting, until, capacity=ACTMEM_BYTES):
+    """Build the current DAG-region view without changing command emission.
+
+    This is Phase R1 of the region scheduler: it exposes region/entry/exit/view
+    metadata and a full live-range budget while the existing traverse loop keeps
+    emitting the validated MBV2 command stream.
+    """
+    shape_cache = {}
+    regions = []
+    run = []
+    run_nodes = set()
+
+    def close_run():
+        if not run:
+            return
+        comp = [i for i in run if is_nx_node_compilable(nx_model.graph.node[i])]
+        if not comp:
+            run.clear(); run_nodes.clear(); return
+        # Entries: true inputs with no producer inside this region.
+        init_names = {i.name for i in nx_model.graph.initializer}
+        entries = []
+        for i in comp:
+            node = nx_model.graph.node[i]
+            for inp in node.input:
+                if inp in init_names:
+                    continue
+                p = _producer_index(nx_model, inp)
+                if p is None or p not in run_nodes:
+                    if inp not in entries:
+                        entries.append(inp)
+        # Exits: outputs with an outside consumer or graph-output status.
+        exits = []
+        outputs = set(nx_model.graph.output[i].name
+                      for i in range(len(nx_model.graph.output)))
+        for i in comp:
+            for out in nx_model.graph.node[i].output:
+                consumers = [j for j, n in enumerate(nx_model.graph.node)
+                             if out in n.input]
+                if out in outputs or any(j not in run_nodes for j in consumers):
+                    if out not in exits:
+                        exits.append(out)
+
+        views = []
+        for i in run:
+            node = nx_model.graph.node[i]
+            if node.op_type == 'Slice' and node.output:
+                parent, off, nch = _resolve_channel_slice(
+                    nx_model, node.output[0])
+                ps = _resolve_shape(
+                    nx_model, u_nx_mapping, parent, shape_cache)
+                if (nch is not None and ps is not None and len(ps) == 4):
+                    views.append(TensorView(
+                        tensor=node.output[0], backing=parent,
+                        shape=(1, int(nch), ps[2], ps[3]), bytes=0,
+                        pixel_stride=ps[1], channel_offset=off,
+                        role='slice'))
+            if node.op_type == 'Concat' and node.output:
+                view = concat_views.get(node.output[0])
+                if view is not None and view.supported:
+                    views.append(TensorView(
+                        tensor=view.output, backing=view.output,
+                        shape=(1, view.total_channels, view.height, view.width),
+                        bytes=view.total_channels * view.height * view.width,
+                        pixel_stride=view.total_channels, channel_offset=0,
+                        role='concat_group'))
+                    for name, off in zip(view.inputs, view.offsets):
+                        views.append(TensorView(
+                            tensor=name, backing=view.output,
+                            shape=(1, view.channels[view.inputs.index(name)],
+                                   view.height, view.width),
+                            bytes=0, pixel_stride=view.total_channels,
+                            channel_offset=off, role='concat_slice'))
+        # Slots are non-aliased tensors: entries, normal outputs, and groups.
+        slot_bytes = {}
+        slot_first = {}
+        slot_last = {}
+        positions = {node_id: pos for pos, node_id in enumerate(comp)}
+        for name in entries:
+            s = _resolve_shape(nx_model, u_nx_mapping, name, shape_cache)
+            if s is not None and len(s) == 4:
+                slot_bytes[name] = int(s[1] * s[2] * s[3])
+                slot_first[name] = 0
+                slot_last[name] = 0
+        for pos, i in enumerate(comp):
+            for out in nx_model.graph.node[i].output:
+                s = _resolve_shape(nx_model, u_nx_mapping, out, shape_cache)
+                if s is None or len(s) != 4:
+                    continue
+                aliased = next((v for v in views
+                                if v.tensor == out and v.bytes == 0), None)
+                if aliased is None:
+                    slot_bytes[out] = int(s[1] * s[2] * s[3])
+                    slot_first[out] = pos
+                    slot_last[out] = pos
+        for name in list(slot_bytes):
+            consumers = [positions[j] for j, n in
+                         enumerate(nx_model.graph.node)
+                         if name in n.input and j in positions]
+            if consumers:
+                slot_last[name] = max([slot_last.get(name, 0)] + consumers)
+        # A Slice is a zero-copy view: its consumers extend the backing
+        # parent's lifetime.
+        for view in views:
+            if view.role != 'slice':
+                continue
+            consumers = [positions[j] for j, n in
+                         enumerate(nx_model.graph.node)
+                         if view.tensor in n.input and j in positions]
+            if consumers and view.backing in slot_last:
+                slot_last[view.backing] = max(
+                    [slot_last[view.backing]] + consumers)
+        # Group slots and their lifetimes.
+        for view in views:
+            if view.role == 'concat_group':
+                slot_bytes[view.tensor] = view.bytes
+                input_names = {v.tensor for v in views
+                               if v.role == 'concat_slice'
+                               and v.backing == view.tensor}
+                firsts = [pos for i, pos in positions.items()
+                          if any(o in input_names
+                                 for o in nx_model.graph.node[i].output)]
+                lasts = [pos for i, pos in positions.items()
+                         if view.tensor in nx_model.graph.node[i].input]
+                slot_first[view.tensor] = min(firsts) if firsts else 0
+                slot_last[view.tensor] = (max(lasts) if lasts
+                                          else max(positions.values()))
+        peak = 0
+        for pos in range(len(comp)):
+            live = sum(b for name, b in slot_bytes.items()
+                       if slot_first.get(name, 0) <= pos <= slot_last.get(name, 0))
+            peak = max(peak, live)
+        supported = peak <= capacity
+        regions.append(ResidentRegion(
+            tuple(comp), tuple(entries), tuple(exits), tuple(views), peak,
+            supported, '' if supported else
+            f'peak ACTMEM {peak} B exceeds {capacity} B',
+            tuple((n, b, slot_first[n], slot_last[n])
+                  for n, b in sorted(slot_bytes.items()))))
+        run.clear(); run_nodes.clear()
+
+    for i in range(starting, until):
+        node = nx_model.graph.node[i]
+        is_slice_view = False
+        if node.op_type == 'Slice' and node.output:
+            _, _, nch = _resolve_channel_slice(nx_model, node.output[0])
+            is_slice_view = nch is not None
+        is_concat_view = (node.op_type == 'Concat' and node.output
+                          and concat_views.get(node.output[0]) is not None
+                          and concat_views[node.output[0]].supported)
+        is_view = is_slice_view or is_concat_view
+        if is_nx_node_compilable(node) or is_view:
+            run.append(i); run_nodes.add(i)
+        elif node.op_type == 'QuantizeLinear' and not run:
+            continue
+        else:
+            close_run()
+    close_run()
+    return RegionPlan(tuple(regions))
+
+
+def _build_region_plan(nx_model, u_nx_mapping, concat_views,
+                       starting, until, capacity=ACTMEM_BYTES,
+                       _depth=0):
+    """Build a region plan, recursively splitting oversized DAG candidates.
+
+    The split points are deterministic comp-node boundaries.  A boundary makes
+    the left output and right input external tensors; this is conservative but
+    legal, and it preserves DAG correctness without trying to solve global
+    placement optimally.
+    """
+    plan = _build_region_plan_once(
+        nx_model, u_nx_mapping, concat_views, starting, until, capacity)
+    if _depth >= 16 or all(r.supported for r in plan.regions):
+        return plan
+
+    groups = []
+    for view in concat_views.values():
+        if not view.supported:
+            continue
+        members = set()
+        for name in view.inputs:
+            p = _producer_index(nx_model, name)
+            if p is not None:
+                members.add(p)
+        consumer = next((j for j, n in enumerate(nx_model.graph.node)
+                         if view.output in n.input), None)
+        if consumer is not None:
+            members.add(consumer)
+        groups.append(members)
+
+    out = []
+    for region in plan.regions:
+        if region.supported or len(region.node_ids) <= 1:
+            out.append(region)
+            continue
+        ids = list(region.node_ids)
+        id_set = set(ids)
+        legal = []
+        for pos in range(1, len(ids)):
+            mid = ids[pos]
+            crosses = any(
+                any(n < mid for n in g & id_set)
+                and any(n >= mid for n in g & id_set)
+                for g in groups)
+            if not crosses:
+                legal.append(mid)
+        if not legal:
+            out.append(region)
+            continue
+        mid = min(legal, key=lambda m: abs(ids.index(m) - len(ids) // 2))
+        left = _build_region_plan(
+            nx_model, u_nx_mapping, concat_views,
+            ids[0], mid, capacity, _depth + 1)
+        right = _build_region_plan(
+            nx_model, u_nx_mapping, concat_views,
+            mid, ids[-1] + 1, capacity, _depth + 1)
+        if not left.regions or not right.regions:
+            out.append(region)
+        else:
+            out.extend(left.regions)
+            out.extend(right.regions)
+    return RegionPlan(tuple(out))
+
+
 def _build_internal_concat_views(nx_model, u_nx_mapping, starting, until,
                                  capacity=ACTMEM_BYTES):
     """Plan channel-axis Concat groups that can live inside ACTMEM.
@@ -952,6 +1265,11 @@ def traverse_and_compile_nx_graph(
         for name, off in zip(view.inputs, view.offsets):
             producer_views[name] = (view, off)
 
+    region_plan = _build_region_plan(
+        nx_model, u_nx_mapping, concat_views, starting, until)
+    region_exits = {tensor for r in region_plan.regions
+                    for tensor in r.exits}
+
     def bits_for(graph_node_id):
         if isinstance(weight_bits, dict):
             return int(weight_bits.get(graph_node_id, 1))
@@ -961,7 +1279,9 @@ def traverse_and_compile_nx_graph(
     current_loaded_ifmap_name = None
     for offset, nx_node in enumerate(nx_model.graph.node[starting:until]):
         graph_node_id = starting + offset
-        readout = check_if_any_consumers_are_noncompilable(nx_model, nx_node)
+        # Readout is a region-boundary property: an output is read out when it
+        # has a consumer outside the resident region or is a graph output.
+        readout = any(o in region_exits for o in nx_node.output)
         # The last node in the requested range must be read out even if its
         # ONNX consumers are compilable, otherwise the e2e test has no output.
         if graph_node_id == until - 1:

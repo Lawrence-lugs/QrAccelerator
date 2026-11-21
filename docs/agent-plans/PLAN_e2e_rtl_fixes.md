@@ -522,7 +522,8 @@ design step; do not claim all-slice internal execution until then.
 
 ## 21. Internal Concat design + external-split handling
 
-Added `docs/DESIGN_internal_concat_actmem.md`, covering:
+Added the initial design (later generalized and renamed to
+`docs/DESIGN_actmem_region_scheduling.md`), covering:
 
 * MBV2 sizes vs the 256 kB physical ACTMEM (MBV2 block fits comfortably);
 * channel-Concat group addressing;
@@ -559,3 +560,84 @@ Compiler-only tests: `tests/test_internal_concat_compiler.py` (5 passed).
 RTL decode/use of the output-view word is intentionally not implemented yet;
 the existing RTL ignores the extra CSR write, so this commit is compiler-only
 behaviour plus command-stream changes.
+
+## 23. Design pivot: DAG resident-region scheduling (2026-11-21)
+
+The internal-Concat prototype conflated layout and scheduling.  The design is
+now `docs/DESIGN_actmem_region_scheduling.md`, which supersedes
+`DESIGN_internal_concat_actmem.md` (file renamed).
+
+User-selected semantics:
+
+* scheduling candidates are **DAG-shaped resident regions**, including fanout
+  and Concat joins, with potentially multiple external entries and exits;
+* if a candidate exceeds physical ACTMEM, split it at legal external
+  boundaries into smaller feasible regions instead of forcing all of it
+  external;
+* L2 remains the external/unsupported-op model; physical ACTMEM is 262144 B.
+
+The important separation is:
+
+```text
+ResidentRegion = DAG node schedule + entry/exit tensors + memory plan
+TensorView     = base, spatial stride, channel offset/stride
+RegionPlan     = region + views + boundary + allocation + readiness
+```
+
+`readout` must become a property of an exit tensor (an outside-region consumer
+or graph output), never a per-Concat heuristic.  Split/Concat only describe
+layout.  Capacity is the maximum simultaneously live bytes of all input,
+output, parent, concat, fanout and readout groups, not a single tensor size.
+A legal legal-boundary split is required before overflow fallback; a group too
+large to fit even alone is external.
+
+Implementation sequence now:
+
+1. introduce region/tensor-view/plan data structures while preserving MBV2
+   command streams;
+2. calculate full live ranges and peak usage;
+3. add legal-boundary splitting and multi-entry/multi-exit handling;
+4. implement RTL per-group output base/stride/offset decode;
+5. compiler-only DAG/capability/fallback/fanout tests, then RTL tests.
+
+RTL use of `CSR_REG_OUTPUT_VIEW` remains pending; an arbitrary per-group base
+and reclaimable allocation contract is also still unspecified.  Current
+Concat compiler test coverage (5 tests) is a useful subset, not the general
+region scheduler.
+
+### 23.1 R1/R2 progress (2026-11-21)
+
+Implemented compiler-side region metadata:
+
+* `TensorView`, `ResidentRegion`, `RegionPlan` in `compile.py`;
+* `_build_region_plan` forms maximal DAG candidates from compilable nodes and
+  supported Slice/Concat views;
+* entries exclude initializers and include true external tensors;
+* exits come from consumers outside the region or graph outputs;
+* Slice views extend the backing parent's live range;
+* Concat group slots are counted once while split outputs are aliases;
+* peak live bytes includes all simultaneous input/output/parent/group slots
+  (MBV2 split block: 49152 B);
+* `traverse` now derives `readout` from region exits, not the immediate-next
+  opcode heuristic;
+* compiler-only tests now 7 passed, adding region budget and exit assertions.
+
+Not yet implemented: R3 legal-boundary splitting for an oversized DAG, explicit
+per-group output bases, allocator reuse, and RTL output-view decode.
+
+### 23.2 R3 progress: legal-boundary splitting (2026-11-21)
+
+Added deterministic recursive splitting:
+
+* `_build_region_plan_once` forms region metadata;
+* `_build_region_plan` recursively splits an over-budget region at comp-node
+  boundaries;
+* legal split points must not cut a supported Concat group (producer set +
+  consumer node);
+* if no legal split exists or a single region remains over budget, the region
+  stays unsupported for external fallback;
+* tests: 9 passed, including linear over-budget splitting and preserving the
+  MBV2 96-channel group as one region.
+
+Remaining: explicit group output bases, allocator reuse, RTL output-view
+decode, and re-running the RTL e2e gates.
