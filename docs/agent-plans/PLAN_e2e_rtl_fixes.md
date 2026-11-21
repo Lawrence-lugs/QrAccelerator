@@ -449,3 +449,26 @@ Next: trace `result_start_addr`, `ofmap_start_addr`, and `csr_set[MAIN][12]`
 after each split, and the `S_READACTS` base for split1/2. The direct 5-node
 case and the manual preserve chain both pass, so the remaining issue is
 specific to multiple consecutive preserving splits.
+
+## 17. Multiple preserving splits: only split0 writes (2026-11-21)
+
+A manual three-split chain (node3 -> split0 -> split1 -> split2), with all
+three using `preserve_ifmap=True` and their own readout, reproduces the
+7-node failure at **-2.863 dB**.
+
+Debug evidence:
+
+* all three splits enter `S_COMPUTE_DIGITAL` and issue reads;
+* their first read addresses differ by 32 (`-1632`, `-1600`, `-1568`), so the
+  channel offsets are applied;
+* only **split0** produces `[DBG actwr]` writes at base `28768`;
+* split1 and split2 produce no `activation_buffer_int_wr_en` writes, so the
+  final readout still selects split0.
+
+So the failure is in the **WSAcc output-valid/write path for consecutive
+preserving split nodes**, not in read addressing or the compiler command
+stream.  The 5-node case has only one split and passes.
+
+Next: trace `wsacc_output_valid` / `activation_buffer_int_wr_en` across all
+three splits and check whether the WSAcc output pipeline is being held in
+reset/stall after a preserving node.  Do not change read addressing.
