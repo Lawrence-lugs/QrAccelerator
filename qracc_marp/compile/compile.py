@@ -1319,11 +1319,25 @@ def traverse_and_compile_nx_graph(
 ):
     """Compile a subgraph or the full graph to QRAcc commands.
 
-    ``weight_bits`` may be a scalar applied to every non-depthwise node or a
-    ``{graph_node_id: bits}`` dict.  Depthwise/WSAcc nodes keep their raw int8
-    kernel.  ``real_activations=True`` feeds ONNX-computed intermediate
-    tensors instead of random ones; the first compilable node writes its
-    ifmap, and subsequent nodes consume the previous node's ACTMEM output.
+    .. note::
+       This is the **legacy command-emission entry point** retained for
+       existing node/chain tests.  Scheduling policy now lives in
+       :func:`_build_region_plan`: DAG regions, entries/exits, liveness,
+       allocator bases and legal over-budget splits are decided there, and
+       this function consumes that plan to emit LOAD/trigger streams.
+
+       The ``starting`` / ``until`` arguments are legacy sub-range selectors;
+       they do **not** define a scheduler region.  A region is defined by the
+       plan's node set and entry/exit tensors.  New callers that need region
+       metadata should build the plan explicitly rather than using these
+       bounds as a scheduling API.
+
+       ``weight_bits`` may be a scalar applied to every non-depthwise node or
+       a ``{graph_node_id: bits}`` dict.  Depthwise/WSAcc nodes keep their raw
+       int8 kernel.  ``real_activations=True`` feeds ONNX-computed
+       intermediate tensors instead of random ones; the first compilable node
+       writes its ifmap, and subsequent nodes consume the previous node's
+       ACTMEM output.
     """
     u_nx_mapping = core.NxModelMapping(
         nx_model,
