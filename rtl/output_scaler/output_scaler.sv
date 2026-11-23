@@ -72,10 +72,10 @@ always_comb begin : fpMultComb
     
     if (wx_i_biased[31] == 1) begin
         // wx_i_biased is negative
-        scaled_wx = ~(48'( inputWidth'(~wx_i_biased+1) * output_scale)) + 1;
+        scaled_wx = -(48'($signed(~wx_i_biased+1)) * 48'(output_scale));
     end else begin
-        // wx_i_biased is positive
-        scaled_wx = 48'(wx_i_biased * output_scale);
+        // wx_i_biased is positive.  output_scale is unsigned Q0.16.
+        scaled_wx = 48'($signed(wx_i_biased)) * 48'(output_scale);
     end
 
     // It doesn't do arithmetic shift unless $signed for some reason

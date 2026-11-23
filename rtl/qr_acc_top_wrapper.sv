@@ -21,12 +21,13 @@ module qr_acc_top_wrapper #(
     parameter ctrlInterfaceSize = 32,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = 8,
+    parameter qrAccInputBits = qrAccMaxInputBits,
     parameter qrAccInputElements = 256,
     parameter qrAccOutputBits = 8,
     parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
+    parameter int numPlanes = 8,
 
     //  Parameters: Per Bank
     parameter numRows = 256,
@@ -100,8 +101,8 @@ module qr_acc_top_wrapper #(
 );
 
     qracc_data_interface bus();
-    to_analog_t to_analog;
-    from_analog_t from_analog;
+    to_analog_t to_analog [numPlanes-1:0];
+    from_analog_t from_analog [numPlanes-1:0];
 
     assign bus.data_in = bus_data_in;
     assign bus.addr = bus_addr;
@@ -111,34 +112,39 @@ module qr_acc_top_wrapper #(
     assign bus_data_out = bus.data_out;
     assign bus_rd_data_valid = bus.rd_data_valid;
 
-    assign from_analog.SA_OUT = from_analog_SA_OUT;
-    assign from_analog.ADC_OUT = from_analog_ADC_OUT;
+    genvar p;
+    generate
+        for (p = 0; p < numPlanes; p++) begin : g_analog_bcast
+            assign from_analog[p].SA_OUT = from_analog_SA_OUT;
+            assign from_analog[p].ADC_OUT = from_analog_ADC_OUT;
+        end
+    endgenerate
 
-    assign to_analog_PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
-    assign to_analog_PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
-    assign to_analog_PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
-    assign to_analog_PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
-    assign to_analog_PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
-    assign to_analog_PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
-    assign to_analog_NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
-    assign to_analog_NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
-    assign to_analog_NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
-    assign to_analog_NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
-    assign to_analog_NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
-    assign to_analog_NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
-    assign to_analog_WL = to_analog.WL;
-    assign to_analog_PCH = to_analog.PCH;
-    assign to_analog_WR_DATA = to_analog.WR_DATA;
-    assign to_analog_WRITE = to_analog.WRITE;
-    assign to_analog_CSEL = to_analog.CSEL;
-    assign to_analog_SAEN = to_analog.SAEN;
-    assign to_analog_NF = to_analog.NF;
-    assign to_analog_NFB = to_analog.NFB;
-    assign to_analog_M2A = to_analog.M2A;
-    assign to_analog_M2AB = to_analog.M2AB;
-    assign to_analog_R2A = to_analog.R2A;
-    assign to_analog_R2AB = to_analog.R2AB;
-    assign to_analog_CLK = to_analog.CLK;
+    assign to_analog_PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
+    assign to_analog_PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
+    assign to_analog_PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
+    assign to_analog_PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
+    assign to_analog_PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
+    assign to_analog_PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
+    assign to_analog_NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
+    assign to_analog_NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
+    assign to_analog_NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
+    assign to_analog_NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
+    assign to_analog_NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
+    assign to_analog_NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
+    assign to_analog_WL = to_analog[0].WL;
+    assign to_analog_PCH = to_analog[0].PCH;
+    assign to_analog_WR_DATA = to_analog[0].WR_DATA;
+    assign to_analog_WRITE = to_analog[0].WRITE;
+    assign to_analog_CSEL = to_analog[0].CSEL;
+    assign to_analog_SAEN = to_analog[0].SAEN;
+    assign to_analog_NF = to_analog[0].NF;
+    assign to_analog_NFB = to_analog[0].NFB;
+    assign to_analog_M2A = to_analog[0].M2A;
+    assign to_analog_M2AB = to_analog[0].M2AB;
+    assign to_analog_R2A = to_analog[0].R2A;
+    assign to_analog_R2AB = to_analog[0].R2AB;
+    assign to_analog_CLK = to_analog[0].CLK;
 
     qr_acc_top #(
         .dataInterfaceSize(dataInterfaceSize),

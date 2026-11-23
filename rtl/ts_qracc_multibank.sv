@@ -12,11 +12,14 @@ module ts_qracc_multibank #(
     parameter numRows = 128,
     parameter numCols = 8,
     parameter numAdcBits = 4,
+    parameter int adcFullScale = numRows,
     localparam compCount = (2**numAdcBits)-1, // An ADC only has 2^numAdcBits-1 comparators
-    parameter numBanks = 8
+    parameter numBanks = 8,
+    parameter int numPlanes = 8
 ) (
 
     input logic [3:0] adc_ref_range_shifts,
+    input logic binary_cfg,
     input logic [numBanks-1:0] bank_select,
 
     // ANALOG INTERFACE : SWITCH MATRIX
@@ -45,6 +48,7 @@ module ts_qracc_multibank #(
 
     // ANALOG INTERFACE : ADC
     output logic [compCount*numCols*numBanks-1:0] ADC_OUT, // the only non-banked signal
+    output logic signed [numBanks-1:0][numCols-1:0][qrAccAdcCodeBits-1:0] ADC_CODE,
     input logic NF,
     input logic NFB,
     input logic M2A,
@@ -79,9 +83,11 @@ generate
         ts_qracc #(
             .numRows(numRows),
             .numCols(numCols),
-            .numAdcBits(numAdcBits)
+            .numAdcBits(numAdcBits),
+            .adcFullScale(adcFullScale)
         ) qracc (
             .adc_ref_range_shifts(adc_ref_range_shifts),
+            .binary_cfg(binary_cfg),
 
             // ANALOG INTERFACE : SWITCH MATRIX
             .PSM_VDR_SEL(PSM_VDR_SEL),
@@ -109,6 +115,7 @@ generate
 
             // ANALOG INTERFACE : ADC
             .ADC_OUT(ADC_OUT[(i+1)*compCount*numCols-1:i*compCount*numCols]),
+            .ADC_CODE(ADC_CODE[i]),
             .NF(NF),
             .NFB(NFB),
             .M2A(M2A),

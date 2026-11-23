@@ -28,6 +28,14 @@ package qracc_pkg;
     parameter numCfgBits = 8;
     parameter numBanks   = 256/numCols;
     parameter outputElements = 256;
+    localparam int numPlanes = 8;
+    localparam int qrAccMaxInputBits = 9;
+    // Wide digital tap for the ADC code.  The physical analog interface is the
+    // thermometer bus (ADC_OUT), which is fixed at the synthesised 4-bit
+    // comparator count.  Modelling a wider converter (the bit-exact seq_acc
+    // tests use 12 bits to take the ADC out of the loop) needs the code itself,
+    // so every ts_qracc instance also publishes its code on this bus.
+    localparam int qrAccAdcCodeBits = 16;
     
       // Output Scaler Parameters
     parameter accumulatorBits = 16;
@@ -100,8 +108,12 @@ package qracc_pkg;
         logic [3:0] filter_size_x;              // 15:12
         logic [3:0] stride_x;                   // 19:16
         logic [3:0] stride_y;                   // 23:20
-        logic [3:0] n_input_bits_cfg;           // 27:24 
+        logic [3:0] n_input_bits_cfg;           // 27:24, values above qrAccMaxInputBits are clamped in seq_acc
         logic [3:0] n_output_bits_cfg;          // 31:28
+        logic [3:0] weight_bits_cfg;            // B in 1..8 (0 treated as 1); per weight bit-plane count
+        logic weight_signed_cfg;                // 1: two's complement (MSB plane negated); 0: unsigned planes
+        logic [1:0] wr_bus_sel;                 // 0: 32B, 1: 64B, 2: 128B write bus
+        logic [3:0] adc_bits_cfg;         // per-plane ADC bits (8 planes x 4 bits), indexed [planeIdx*4 +: 4], default 4
 
         // CSR 2: Ifmap Dims
         logic [15:0] input_fmap_dimx;           // 15:0
@@ -122,6 +134,21 @@ package qracc_pkg;
         // CSR 6: Padding Information
         logic [3:0] padding;                    // 3:0 - 1 if zeropad enabled
         logic [7:0] padding_value;              // 11:4
+
+        // Internal channel-slice view of the ACTMEM ifmap.
+        // Normal nodes: stride = num_input_channels, offset = 0.
+        // A channel Slice consumer: stride = parent channel count, offset =
+        // first channel of the slice.
+        logic [15:0] ifmap_channel_stride;      // CSR 7:20:5
+        logic [7:0]  ifmap_channel_offset;      // CSR 7:28:21
+
+        // CSR 8: output view
+        logic [15:0] ofmap_channel_stride;      // 15:0
+        logic [15:0] ofmap_channel_offset;      // 31:16
+        // CSR 9/10: explicit region bases.  32'hFFFFFFFF means "use the
+        // controller's sequential ACTMEM base".
+        logic [31:0] ifmap_base;                // CSR 9
+        logic [31:0] ofmap_base;                // CSR 10
     } qracc_config_t;
 
     typedef struct packed {
@@ -192,6 +219,10 @@ package qracc_pkg;
     typedef struct packed {
         logic [numCols-1:0] SA_OUT;
         logic [compCount*outputElements-1:0] ADC_OUT;
+        // Digital (non-analog) ADC code, sign-extended to qrAccAdcCodeBits.
+        // Used by the parametrised ADC model; the analog schematic leaves it
+        // undriven.  See qrAccAdcCodeBits above.
+        logic signed [outputElements-1:0][qrAccAdcCodeBits-1:0] ADC_CODE;
     } from_analog_t;
 
     typedef struct packed {

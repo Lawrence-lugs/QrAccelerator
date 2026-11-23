@@ -36,8 +36,7 @@ always_ff @( posedge clk or negedge nrst ) begin : writeDecode
             stats.statFLWrites++;
             `endif
             for (int i = 0; i < inputWidth/elementWidth; i++) begin
-                // For verilator, nonblocking assignments cause issues inside for loops (%Error-BLKLOOPINIT)
-                staging_register[addr_i + i] = data_i[(inputWidth/elementWidth-1-i)*elementWidth +: elementWidth];
+                staging_register[addr_i + i] <= data_i[(inputWidth/elementWidth-1-i)*elementWidth +: elementWidth];
             end
         end
     end

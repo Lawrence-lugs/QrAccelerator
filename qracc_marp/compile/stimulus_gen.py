@@ -9,7 +9,7 @@ import onnx
 import rectpack
 
 from qracc_marp.compile import compute
-from qracc_marp.constants import DWC_CORE_SIZE, NUM_BANK_COLS
+from qracc_marp.constants import DATA_WRITE_ADDR, DWC_CORE_SIZE, NUM_BANK_COLS
 from qracc_marp.onnx_tools import onnx_utils
 from qracc_marp.quantization import quant
 
@@ -45,6 +45,9 @@ def kernel_to_writes(kernel, channels, hexes=True):
     kernel_flat = kernel.reshape(-1, channels)
     kernel_flat = np.pad(kernel_flat, ((0, 0), (0, 4 - (kernel_flat.shape[1] % 4) if kernel_flat.shape[1] % 4 != 0 else 0)), mode='constant', constant_values=0)
     kernel_flat = kernel_flat.reshape(-1, 4).astype(np.uint8)
+    # Build the packed word from Python ints: shifting uint8 values overflows
+    # and zeroes the high bytes, so the non-hex path must not shift on uint8.
+    kernel_int = kernel_flat.astype(np.int64) & 0xFF
     if hexes:
         kernel_packed = vhex3(kernel_flat, hexits=2)
         kernel_writes = []
@@ -54,7 +57,8 @@ def kernel_to_writes(kernel, channels, hexes=True):
         if hexes:
             kernel_writes.append(f'{kernel_packed[i,3]}{kernel_packed[i,2]}{kernel_packed[i,1]}{kernel_packed[i,0]}')
         else:
-            kernel_writes[i] += (kernel_flat[i,3] & 0xFF) << 24 | (kernel_flat[i,2] & 0xFF) << 16 | (kernel_flat[i,1] & 0xFF) << 8 | (kernel_flat[i,0] & 0xFF)
+            word = int(kernel_int[i,3]) << 24 | int(kernel_int[i,2]) << 16 | int(kernel_int[i,1]) << 8 | int(kernel_int[i,0])
+            kernel_writes[i] = np.uint32(word)
     return kernel_writes
 
 def _conv2d_int(x, w, padding=0, stride=1):
@@ -290,18 +294,308 @@ def mapped_matrix_to_bank_writes(matrix_map, num_bank_cols=NUM_BANK_COLS):
 
     return write_array
 
-def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits = 8):
-    first_partials = quant.int_to_trit(tplitz_act_vector,ifmap_bits).T @ weights
-    mean_partial = first_partials.mean()
-    if mean_partial < 1:
-        adc_ref_range_shifts = 0
-    adc_ref_range_shifts = np.ceil(np.log(mean_partial)/np.log(2)) - 3
-    if adc_ref_range_shifts < 0:
-        adc_ref_range_shifts = 0
-    if np.isnan(adc_ref_range_shifts):
-        adc_ref_range_shifts = 0
+def _sample_rows(toeplitz_acts, max_sample_rows=32):
+    """Strided window subsample shared by the partials and the bit counts."""
+    x = np.asarray(toeplitz_acts, dtype=np.int64)
+    if x.ndim == 1:
+        x = x[None, :]
+    if max_sample_rows and x.shape[0] > max_sample_rows:
+        stride = int(np.ceil(x.shape[0] / max_sample_rows))
+        x = x[::stride][:max_sample_rows]
+    return x
 
-    return adc_ref_range_shifts
+
+def _bitplane_partials(toeplitz_acts, weights, ifmap_bits, weight_bits,
+                       max_sample_rows=32):
+    """Per-(activation bit, weight plane) partial sums seen by the flash ADC.
+
+    Returns ``partials[j][b]`` of shape ``(windows, cols)``.  Only a strided
+    subsample of at most ``max_sample_rows`` windows is used so the search stays
+    cheap for large tiles.
+    """
+    x = _sample_rows(toeplitz_acts, max_sample_rows)
+    # Same weight reduction as the golden MAC (and the SRAM contents): a signed
+    # B-bit arithmetic shift with clamping, *not* a mask of the low bits.
+    # B=1 is the legacy binary path: its weights are already 0/1, so treating
+    # them as signed int8 shifts every 1 to 0 and makes the ADC search score an
+    # all-zero MAC as perfect.
+    w = quant.quantize_int8_to_bits(np.asarray(weights), weight_bits,
+                                    signed=(weight_bits > 1))
+    planes = [((w >> b) & 1) for b in range(weight_bits)]
+    partials = []
+    for j in range(ifmap_bits):
+        xj = (x >> j) & 1
+        partials.append([xj @ pb for pb in planes])
+    return partials
+
+
+def _activation_bit_counts(toeplitz_acts, ifmap_bits=8, max_sample_rows=32):
+    """``A_j`` per window: number of lanes whose activation bit ``j`` is set.
+
+    Needed by the bipolar switch-matrix model, where the column sees
+    ``mbl = 2P - A_j``.
+    """
+    x = _sample_rows(toeplitz_acts, max_sample_rows)
+    return [((x >> j) & 1).sum(axis=1).astype(np.int64)
+            for j in range(ifmap_bits)]
+
+
+def _shift_add(partials, weight_bits, ifmap_bits, quantize=None, adc_bits=4,
+               shift=0):
+    """Shift-add the per-plane partials, optionally through the flash ADC.
+
+    ``quantize`` is a callable applied to each partial sum.  Returns
+    ``(mac, saturated, total)`` where the counters describe the ADC clipping.
+    """
+    shape = partials[0][0].shape
+    mac = np.zeros(shape, dtype=np.int64)
+    win_hi = (1 << (adc_bits + shift - 1)) - 1
+    win_lo = -(1 << (adc_bits + shift - 1))
+    saturated = 0
+    total = 0
+    for j, row in enumerate(partials):
+        tree = np.zeros(shape, dtype=np.int64)
+        for b, partial in enumerate(row):
+            if quantize is not None:
+                term = quantize(partial) << b
+                saturated += int(np.count_nonzero(
+                    (partial > win_hi) | (partial < win_lo)))
+                total += int(partial.size)
+            else:
+                term = partial << b
+            if b == weight_bits - 1 and weight_bits > 1:
+                term = -term
+            tree += term
+        mac += tree << j
+    return mac, saturated, total
+
+
+def _bipolar_partials(partials, act_counts, weight_bits):
+    """``mbl = 2P - A_j`` for the bipolar switch matrix, plus the bias sum.
+
+    Returns ``(mbl, bias)`` where ``mbl[j][b]`` has shape ``(windows, cols)``
+    and ``bias`` has shape ``(windows, 1)`` and equals ``sum_j A_j 2**j``, i.e.
+    the window's activation sum (in the MAC's shift-add units).
+    """
+    mbl = []
+    bias = None
+    for j, row in enumerate(partials):
+        a_j = act_counts[j]
+        if bias is None:
+            bias = np.zeros((a_j.shape[0], 1), dtype=np.int64)
+        bias += a_j[:, None] << j
+        mbl.append([2 * p - a_j[:, None] for p in row])
+    return mbl, bias
+
+
+def _reconstruct(codes, weight_bits, ifmap_bits, bias=None, lsb=1.0):
+    """Shift-add the plane codes (MSB plane negated) and undo the mbl bias.
+
+    ``codes`` are ADC codes, so the shift-add yields
+    ``sum_j 2**j sum_b sign_b 2**b q`` with ``q ~ mbl / lsb``.  In bipolar mode
+    ``mbl = 2P - A_j`` and ``sum_b sign_b 2**b == -1``, hence
+
+        MAC = (lsb * acc - sum_j 2**j A_j) / 2
+
+    (``bias`` is that activation sum).  In binary mode ``mbl = P`` and
+    ``MAC = lsb * acc``.
+    """
+    shape = codes[0][0].shape
+    acc = np.zeros(shape, dtype=np.int64)
+    for j in range(ifmap_bits):
+        for b in range(weight_bits):
+            term = codes[j][b] << (j + b)
+            if b == weight_bits - 1 and weight_bits > 1:
+                term = -term
+            acc += term
+    out = acc.astype(np.float64) * lsb
+    if bias is not None:
+        out = (out - bias) / 2.0
+    return out
+
+
+def infer_adc_config(toeplitz_acts, weights, ifmap_bits=8, weight_bits=8,
+                     adc_bits=4, ladder="bipolar", fs_counts=None,
+                     saturation_budget=0.05, s_max=6,
+                     preview_bits=(5, 6, 8), max_sample_rows=32,
+                     verbose=False):
+    """Choose the ADC range shift ``s`` for one layer, and preview wider ADCs.
+
+    Hardware model (``rtl/ts_qracc.sv``, ``PLAN_adc_range_model_correction.md``):
+    the ladder has a *fixed* full scale and ``adc_ref_range_shifts = s`` halves
+    the span towards ``V_RST``.  The LSB is therefore::
+
+        lsb_counts = fs_counts / 2**(adc_bits - 1 + s)
+
+    so raising ``s`` makes the conversion *finer* and saturates it *earlier* --
+    the opposite of the legacy model.  ``fs_counts`` is the per-layer analog
+    full scale (half-span in counts at ``s == 0``).  When omitted it is
+    *searched* together with ``s``: the candidates are the powers of two around
+    the observed peak ``|mbl|`` plus the peak itself.  That matters because
+    ``mbl = 2P - A_j`` is an integer whose parity is shared by every plane of a
+    window, so an LSB of exactly 2 counts (``fs = 2**(bits)``, ``s = 0``) makes
+    the rounding almost lossless; on the first MobileNetV2 layer that is worth
+    ~35 dB over the best ``fs = peak`` setting.
+
+    Candidates are scored by reconstructing the pre-shift MAC from the
+    quantised partials and comparing with the exact integer MAC::
+
+        SNR(s) = 10 log10( var(exact) / var(exact - recon(s)) )
+
+    A candidate is discarded when it clips more than ``saturation_budget`` of
+    the partial sums, so the search cannot buy SNR with a lucky-but-saturated
+    setting.  (The clip error is also counted by the SNR itself; the budget is
+    a safety rail.  On the first MobileNetV2 layer the best setting clips
+    ~3.7 % of the partials and gains ~11 dB over the clip-free one, so the
+    default budget is 5 %.)  The returned ``preview`` records what
+    ``preview_bits`` wider converters would achieve on the same data (advisory:
+    the hardware is fixed at ``adc_bits`` comparators).
+
+    Parameters
+    ----------
+    toeplitz_acts : array_like
+        ``(windows, rows)`` unsigned activations (padded with the zero point),
+        or a single row vector.
+    weights : array_like
+        ``(rows, cols)`` integer weights (two's complement, ``weight_bits``).
+    ifmap_bits, weight_bits, adc_bits : int
+        Activation width, weight width ``B`` and comparator count.
+    ladder : {"bipolar", "binary"}
+        Switch-matrix arrangement: ``mbl = 2P - A_j`` or ``mbl = P``.
+    fs_counts : float, optional
+        Half-span in counts at ``s == 0``.
+    saturation_budget : float
+        Maximum tolerated fraction of clipped partial sums.
+    s_max : int
+        Highest range shift considered.
+    preview_bits : iterable of int
+        Extra converter widths to report.
+    max_sample_rows : int
+        Window subsample size used for scoring.
+
+    Returns
+    -------
+    dict
+        ``bits``, ``s``, ``fs_counts``, ``lsb_counts``, ``clip_frac``,
+        ``snr_db`` and ``preview`` (mapping ``bits -> dict`` with the same
+        keys).
+    """
+    if ladder not in ("bipolar", "binary"):
+        raise ValueError(f"ladder must be 'bipolar' or 'binary', got {ladder!r}")
+    partials = _bitplane_partials(toeplitz_acts, weights, ifmap_bits,
+                                  weight_bits, max_sample_rows=max_sample_rows)
+    if ladder == "bipolar":
+        acts = _activation_bit_counts(toeplitz_acts, ifmap_bits,
+                                      max_sample_rows=max_sample_rows)
+        mbl, bias = _bipolar_partials(partials, acts, weight_bits)
+    else:
+        mbl, bias = partials, None
+
+    if fs_counts is None:
+        peak = float(max(int(np.abs(m).max())
+                         for row in mbl for m in row))
+        # The analog full scale is a per-layer knob.  Powers of two matter: with
+        # mbl = 2P - A_j (integers) an LSB that is an exact integer count makes
+        # the rounding almost lossless, because every plane of a given window
+        # shares A_j's parity.
+        cand_fs = sorted({float(1 << k) for k in range(2, 12)} | {peak})
+        cand_fs = [f for f in cand_fs if f >= peak / 4.0] or [peak]
+    else:
+        cand_fs = [float(fs_counts)]
+    fs_counts = float(cand_fs[-1])
+
+    exact = _reconstruct(mbl, weight_bits, ifmap_bits, bias)
+    var_exact = float(np.var(exact.astype(np.float64)))
+    total = sum(m.size for row in mbl for m in row)
+
+    def score(bits, fs, s):
+        half = 1 << (bits - 1)
+        lsb = fs / float(1 << (bits - 1 + s))
+        limit = lsb * (half - 1)
+        clipped = sum(int(np.count_nonzero(np.abs(m) > limit))
+                      for row in mbl for m in row)
+        codes = [[quant.adc_quantize(m, adc_bits=bits, shift=s,
+                                     fs_counts=fs, mode=ladder)
+                  for m in row] for row in mbl]
+        recon = _reconstruct(codes, weight_bits, ifmap_bits, bias, lsb=lsb)
+        var_err = float(np.var((exact - recon).astype(np.float64)))
+        snr = float("inf") if var_err == 0 else 10.0 * np.log10(
+            var_exact / var_err)
+        return {
+            "bits": int(bits),
+            "s": int(s),
+            "fs_counts": float(fs),
+            "lsb_counts": lsb,
+            "clip_frac": clipped / total if total else 0.0,
+            "snr_db": float(snr),
+        }
+
+    widths = [int(adc_bits)] + [int(b) for b in preview_bits if int(b) != adc_bits]
+    table = {bits: [score(bits, fs, s) for fs in cand_fs
+                    for s in range(s_max + 1)]
+             for bits in widths}
+
+    def pick(cands):
+        ok = [c for c in cands if c["clip_frac"] <= saturation_budget]
+        if not ok:
+            return None
+        # Prefer the smaller shift, then the larger full scale, on ties.
+        best = max(ok, key=lambda c: (c["snr_db"], -c["s"], c["fs_counts"]))
+        return best
+
+    chosen = pick(table[int(adc_bits)])
+    if chosen is None:
+        chosen = min(table[int(adc_bits)], key=lambda c: c["clip_frac"])
+        chosen = dict(chosen, saturated_budget_exceeded=True)
+
+    preview = {}
+    for bits in widths:
+        if bits == int(adc_bits):
+            continue
+        best = pick(table[bits])
+        preview[bits] = best if best is not None else min(
+            table[bits], key=lambda c: c["clip_frac"])
+
+    if verbose:
+        for bits in widths:
+            for c in table[bits]:
+                print(f"[adc_cfg] bits={bits} s={c['s']} lsb={c['lsb_counts']:.3f} "
+                      f"clip={c['clip_frac']*100:.2f}% snr={c['snr_db']:.2f} dB")
+        print(f"[adc_cfg] selected bits={chosen['bits']} s={chosen['s']} "
+              f"snr={chosen['snr_db']:.2f} dB clip={chosen['clip_frac']*100:.2f}%")
+
+    out = dict(chosen)
+    out["preview"] = preview
+    out["candidates"] = table
+    return out
+
+
+def infer_bitplane_adc_range_shifts(toeplitz_acts, weights, ifmap_bits=8,
+                                    weight_bits=8, adc_bits=4,
+                                    saturation_budget=0.01,
+                                    max_sample_rows=32, verbose=False):
+    """Deprecated: return only the range shift of :func:`infer_adc_config`.
+
+    Kept so older call sites keep working; new code should use
+    :func:`infer_adc_config` and record ``bits``/``fs_counts`` alongside ``s``.
+    """
+    cfg = infer_adc_config(
+        toeplitz_acts, weights, ifmap_bits=ifmap_bits,
+        weight_bits=weight_bits, adc_bits=adc_bits,
+        saturation_budget=saturation_budget,
+        max_sample_rows=max_sample_rows, verbose=verbose,
+    )
+    return int(cfg["s"])
+
+
+def infer_optimal_adc_range_shifts(tplitz_act_vector, weights, ifmap_bits=8,
+                                   weight_bits=8):
+    """Deprecated shim: delegate to :func:`infer_bitplane_adc_range_shifts`."""
+    return infer_bitplane_adc_range_shifts(
+        tplitz_act_vector, weights, ifmap_bits=ifmap_bits,
+        weight_bits=weight_bits,
+    )
+
 
 def minorize_pad_ifmap(t_ifmap, padding=1, act_zero_point=0):
     """
@@ -341,6 +635,29 @@ def imc_matrix_to_writes(t_matrix, core_shape, x_offset, y_offset, num_bank_cols
     matrix_map = map_single_matrix(t_matrix, core_shape, x_offset=x_offset, y_offset=y_offset)
     write_array = mapped_matrix_to_bank_writes(matrix_map,num_bank_cols)
     return write_array
+
+def write_weight_rows_to_asm(write_array: np.ndarray | list, address: str = DATA_WRITE_ADDR, words_per_row: int = 8, signed: bool = False) -> list[str]:
+    """Emit LOADs for multibit weight rows: words_per_row LOADs per row.
+    Address = DATA_WRITE_ADDR + (row << log2(words_per_row)) + word.
+    Word w holds row bits [w*hostBusBits +: hostBusBits] (plane w of the row).
+    Legacy binary emitter (write_array_to_asm) is unchanged."""
+    asm = []
+    base_addr = int(address, 16)
+    row_shift = (words_per_row - 1).bit_length()
+    for idx, element in enumerate(write_array):
+        row = idx // words_per_row
+        word = idx % words_per_row
+        addr = base_addr + (row << row_shift) + word
+        val = int(element)
+        if signed:
+            # Encode each weight byte as two's complement (int64 & 0xFF, like kernel_to_writes)
+            b0 = int(np.int64(val) & 0xFF)
+            b1 = int(np.int64(val) >> 8 & 0xFF)
+            b2 = int(np.int64(val) >> 16 & 0xFF)
+            b3 = int(np.int64(val) >> 24 & 0xFF)
+            val = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+        asm.append(f"LOAD {addr:08x} {vhex3(val)}")
+    return asm
 
 def write_input_files(res_dict, savepath):
     if savepath is not None:

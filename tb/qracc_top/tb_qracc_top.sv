@@ -33,7 +33,8 @@ module tb_qracc_top #(
     parameter qrAccOutputBits = `QRACC_OUTPUT_BITS,
     parameter qrAccOutputElements = `SRAM_COLS,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
+    parameter int numPlanes = 8,
     
     //  Parameters: Per Bank
     parameter numRows = `SRAM_ROWS,
@@ -69,11 +70,11 @@ logic nrst;
 bus_req_t bus_req;
 bus_resp_t bus_resp;
 
-to_analog_t to_analog;
-from_analog_t from_analog;
+to_analog_t to_analog [numPlanes-1:0];
+from_analog_t from_analog [numPlanes-1:0];
 
-logic [3871:0] from_analog_wire;
-logic [3401:0] to_analog_wire;
+logic [numPlanes-1:0][3871:0] from_analog_wire;
+logic [numPlanes-1:0][3401:0] to_analog_wire;
 
 `ifdef POST_SYNTH
 assign from_analog_wire = from_analog;
@@ -101,66 +102,7 @@ int i,j,k,l,x,y;
 
 // ======= BEGIN ANALOG SIGNALS =======
 
-logic [numRows-1:0] PSM_VDR_SEL;
-logic [numRows-1:0] PSM_VDR_SELB;
-logic [numRows-1:0] PSM_VSS_SEL;
-logic [numRows-1:0] PSM_VSS_SELB;
-logic [numRows-1:0] PSM_VRST_SEL;
-logic [numRows-1:0] PSM_VRST_SELB;
-
-logic [numRows-1:0] NSM_VDR_SEL;
-logic [numRows-1:0] NSM_VDR_SELB;
-logic [numRows-1:0] NSM_VSS_SEL;
-logic [numRows-1:0] NSM_VSS_SELB;
-logic [numRows-1:0] NSM_VRST_SEL;
-logic [numRows-1:0] NSM_VRST_SELB;
-
-logic [numCols-1:0] SA_OUT;
-logic [numRows-1:0] WL;
-logic PCH;
-logic [numCols-1:0] WR_DATA;
-logic WRITE;
-logic [numCols-1:0] CSEL;
-logic SAEN;
-logic [compCount*qrAccOutputElements-1:0] ADC_OUT;
-logic NF;
-logic NFB;
-logic M2A;
-logic M2AB;
-logic R2A;
-logic R2AB;
-logic CLK;
-
-// We need to do this because
-// it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
-
-assign from_analog.SA_OUT = SA_OUT;
-assign WL = to_analog.WL;
-assign PCH = to_analog.PCH;
-assign WR_DATA = to_analog.WR_DATA;
-assign WRITE = to_analog.WRITE;
-assign CSEL = to_analog.CSEL;
-assign SAEN = to_analog.SAEN;
-assign from_analog.ADC_OUT = ADC_OUT;
-assign NF = to_analog.NF;
-assign NFB = to_analog.NFB;
-assign M2A = to_analog.M2A;
-assign M2AB = to_analog.M2AB;
-assign R2A = to_analog.R2A;
-assign R2AB = to_analog.R2AB;
-assign CLK = to_analog.CLK;
+// One ts_qracc_multibank per plane; analog wires driven per-plane in g_ts.
 
 // ======= END ANALOG SIGNALS =======
 
@@ -232,45 +174,58 @@ qracc_csr #(
     .csr_main_internal_state    (0)
 );
 
-// Analog test schematic
-logic [3:0] adc_ref_range_shifts; 
+// Analog test schematic: one ts_qracc_multibank per plane
+logic [3:0] adc_ref_range_shifts;
 
-ts_qracc_multibank #(
-    .numRows(qrAccInputElements),
-    .numCols(numCols),
-    .numAdcBits(numAdcBits),
-    .numBanks(numBanks)
-) u_ts_qracc (
-    .adc_ref_range_shifts(adc_ref_range_shifts),
-    .bank_select(bank_select),
-    .PSM_VDR_SEL(PSM_VDR_SEL),
-    .PSM_VDR_SELB(PSM_VDR_SELB),
-    .PSM_VSS_SEL(PSM_VSS_SEL),
-    .PSM_VSS_SELB(PSM_VSS_SELB),
-    .PSM_VRST_SEL(PSM_VRST_SEL),
-    .PSM_VRST_SELB(PSM_VRST_SELB),
-    .NSM_VDR_SEL(NSM_VDR_SEL),
-    .NSM_VDR_SELB(NSM_VDR_SELB),
-    .NSM_VSS_SEL(NSM_VSS_SEL), 
-    .NSM_VSS_SELB(NSM_VSS_SELB),
-    .NSM_VRST_SEL(NSM_VRST_SEL),
-    .NSM_VRST_SELB(NSM_VRST_SELB),
-    .SA_OUT(SA_OUT),
-    .WL(WL),
-    .PCH(PCH),
-    .WR_DATA(WR_DATA),
-    .WRITE(WRITE),
-    .CSEL(CSEL),
-    .SAEN(SAEN),
-    .ADC_OUT(ADC_OUT),
-    .NF(NF),
-    .NFB(NFB),
-    .M2A(M2A),
-    .M2AB(M2AB),
-    .R2A(R2A),
-    .R2AB(R2AB),
-    .CLK(clk)
-);
+genvar p;
+generate
+    for (p = 0; p < numPlanes; p++) begin : g_ts
+        logic [numCols-1:0] SA_OUT_p;
+        logic [compCount*qrAccOutputElements-1:0] ADC_OUT_p;
+
+        ts_qracc_multibank #(
+            .numRows(qrAccInputElements),
+            .numCols(numCols),
+            .numAdcBits(numAdcBits),
+            .numBanks(numBanks)
+        ) u_ts_qracc (
+            .adc_ref_range_shifts(adc_ref_range_shifts),
+            .binary_cfg(u_qr_acc_top.cfg.binary_cfg),
+            .bank_select(bank_select),
+            .PSM_VDR_SEL(to_analog[p].PSM_VDR_SEL),
+            .PSM_VDR_SELB(to_analog[p].PSM_VDR_SELB),
+            .PSM_VSS_SEL(to_analog[p].PSM_VSS_SEL),
+            .PSM_VSS_SELB(to_analog[p].PSM_VSS_SELB),
+            .PSM_VRST_SEL(to_analog[p].PSM_VRST_SEL),
+            .PSM_VRST_SELB(to_analog[p].PSM_VRST_SELB),
+            .NSM_VDR_SEL(to_analog[p].NSM_VDR_SEL),
+            .NSM_VDR_SELB(to_analog[p].NSM_VDR_SELB),
+            .NSM_VSS_SEL(to_analog[p].NSM_VSS_SEL),
+            .NSM_VSS_SELB(to_analog[p].NSM_VSS_SELB),
+            .NSM_VRST_SEL(to_analog[p].NSM_VRST_SEL),
+            .NSM_VRST_SELB(to_analog[p].NSM_VRST_SELB),
+            .SA_OUT(SA_OUT_p),
+            .WL(to_analog[p].WL),
+            .PCH(to_analog[p].PCH),
+            .WR_DATA(to_analog[p].WR_DATA),
+            .WRITE(to_analog[p].WRITE),
+            .CSEL(to_analog[p].CSEL),
+            .SAEN(to_analog[p].SAEN),
+            .ADC_OUT(ADC_OUT_p),
+            .ADC_CODE(),
+            .NF(to_analog[p].NF),
+            .NFB(to_analog[p].NFB),
+            .M2A(to_analog[p].M2A),
+            .M2AB(to_analog[p].M2AB),
+            .R2A(to_analog[p].R2A),
+            .R2AB(to_analog[p].R2AB),
+            .CLK(clk)
+        );
+
+        assign from_analog[p].SA_OUT = SA_OUT_p;
+        assign from_analog[p].ADC_OUT = ADC_OUT_p;
+    end
+endgenerate
 
 // Fake L2 Memory
 
@@ -472,6 +427,86 @@ endclass
 NumpyArray ifmap, ofmap, weight_matrix, toeplitz, scaler_data, biases;
 `endif // VERILATOR
 int errcnt = 0;
+
+// ---------------------------------------------------------------------------
+// Full-stream MAC capture (test only, enabled with +qr_dbg_mac at run time).
+//
+// Deliberately runtime-gated rather than `` `ifdef DEBUG ``: verilator applies
+// its +define options in command-line order and the tb is listed before
+// sim_args, so a compile-time guard here would silently vanish (see AGENTS.md
+// section 5 for the same trap via QRACC_DEBUG).
+//
+// NOTE: this block must stay OUTSIDE the `` `ifndef VERILATOR `` task region
+// below, otherwise verilator never compiles it.
+//
+// [DBG cfg] adc_ref_range_shifts=.. num_output_channels=.. ...
+//      Once, on the first accepted word (the CSR-programmed values in use).
+// [DBG win] k=<accepted window index> x=<opix_x> y=<opix_y>
+//      One line per accepted MAC word; ``k`` is the acceptance order.
+// [DBG mac] k=<same index> o=<output channel> pre=<accumulator> post=<mac_data_o>
+//      One line per output channel of every completed window.
+//
+// ``pre`` is the pre-shift accumulator in seq_acc (pre-scale MAC) and ``post``
+// is what the SRAM/scaler path sees (accumulator << cfg.adc_ref_range_shifts),
+// so the test can check both and verify post == pre << s.
+// ---------------------------------------------------------------------------
+int dbg_win_k = 0;
+int dbg_mac_k = 0;
+int dbg_probe = 0;
+logic dbg_probe_on = 0;
+logic dbg_cap_en;
+initial dbg_cap_en = $test$plusargs("qr_dbg_mac");
+always @(posedge clk) begin
+    if (dbg_cap_en) begin
+        if (u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid && u_qr_acc_top.qracc_ready) begin
+            dbg_probe_on <= 1;
+            if (dbg_win_k == 0) begin
+                $display("[DBG cfg] adc_ref_range_shifts=%0d num_output_channels=%0d mapped_matrix_offset_x=%0d output_fmap_dimx=%0d output_fmap_dimy=%0d weight_bits=%0d weight_signed=%0d unsigned=%0d n_input_bits=%0d input_trits=%0d",
+                         u_qr_acc_top.cfg.adc_ref_range_shifts,
+                         u_qr_acc_top.cfg.num_output_channels,
+                         u_qr_acc_top.cfg.mapped_matrix_offset_x,
+                         u_qr_acc_top.cfg.output_fmap_dimx,
+                         u_qr_acc_top.cfg.output_fmap_dimy,
+                         u_qr_acc_top.cfg.weight_bits_cfg,
+                         u_qr_acc_top.cfg.weight_signed_cfg,
+                         u_qr_acc_top.cfg.unsigned_acts,
+                         u_qr_acc_top.cfg.n_input_bits_cfg,
+                         u_qr_acc_top.u_seq_acc.input_trits);
+            end
+            $display("[DBG win] k=%0d x=%0d y=%0d", dbg_win_k,
+                     u_qr_acc_top.u_qracc_controller.opix_pos_x,
+                     u_qr_acc_top.u_qracc_controller.opix_pos_y);
+            dbg_win_k++;
+        end
+        if (u_qr_acc_top.qracc_output_valid) begin
+            for (int d = 0; d < u_qr_acc_top.cfg.num_output_channels; d++) begin
+                $display("[DBG mac] k=%0d o=%0d pre=%0d post=%0d", dbg_mac_k, d,
+                         $signed(u_qr_acc_top.u_seq_acc.accumulator[u_qr_acc_top.cfg.mapped_matrix_offset_x + d]),
+                         $signed(u_qr_acc_top.qracc_mac_output[u_qr_acc_top.cfg.mapped_matrix_offset_x + d]));
+            end
+            dbg_mac_k++;
+        end
+
+        // One-shot timing probe for the first window: shows how the
+        // accumulator evolves relative to valid_o.
+        if (dbg_probe_on && dbg_probe < 24) begin
+            $display("[DBG probe] t=%0d trk=%b acc=%0d tree=%0d mac=%0d valid=%0d macen=%0d mvalid=%0d ready=%0d pop=%0d bias=%0d",
+                     dbg_probe,
+                     u_qr_acc_top.u_seq_acc.pipeline_tracker,
+                     $signed(u_qr_acc_top.u_seq_acc.accumulator[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     $signed(u_qr_acc_top.u_seq_acc.tree_sum[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     $signed(u_qr_acc_top.qracc_mac_output[u_qr_acc_top.cfg.mapped_matrix_offset_x]),
+                     u_qr_acc_top.qracc_output_valid,
+                     u_qr_acc_top.u_seq_acc.mac_en,
+                     u_qr_acc_top.qracc_ctrl.qracc_mac_data_valid,
+                     u_qr_acc_top.u_seq_acc.ready_o,
+                     $signed(u_qr_acc_top.u_seq_acc.act_popcount_q),
+                     $signed(u_qr_acc_top.u_seq_acc.bias_out));
+
+            dbg_probe++;
+        end
+    end
+end
 
 `ifndef POST_SYNTH
 `ifndef VERILATOR
@@ -814,6 +849,7 @@ task bus_write_loop();
                 $display("Waiting for QRAcc Readout, time:", $time);
                 // $display("ofmap loc: %d, ifmap loc: %d", u_qr_acc_top.u_qracc_controller.ofmap_start_addr + u_qr_acc_top.u_qracc_controller.ofmap_offset_ptr, u_qr_acc_top.u_qracc_controller.ifmap_start_addr + u_qr_acc_top.u_qracc_controller.act_rd_ptr);
                 i = 0;
+                l2_mem_addr = 0;
                 l2_mem_enable = 1;
                 for(i=0;i<cfg.output_fmap_dimx * cfg.output_fmap_dimy * cfg.num_output_channels;i++) begin
                     bus_req.addr = QRACC_MAIN_ADDR;

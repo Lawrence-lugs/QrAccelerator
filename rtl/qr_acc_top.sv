@@ -19,23 +19,26 @@ module qr_acc_top #(
     //  Parameters: Interface
     parameter dataInterfaceSize = 32,
     parameter ctrlInterfaceSize = 32,
+    parameter int hostBusBits = 32,
 
     //  Parameters: CSRs
     // parameter csrWidth = 32,
     // parameter numCsr = 4,
 
     //  Parameters: QRAcc
-    parameter qrAccInputBits = 8,
+    parameter qrAccInputBits = qrAccMaxInputBits,
     parameter qrAccInputElements = 256,
     parameter qrAccOutputBits = 8,
     parameter qrAccOutputElements = 256,
     parameter qrAccAdcBits = 4,
-    parameter qrAccAccumulatorBits = 16, // Internal parameter of seq acc
+    parameter qrAccAccumulatorBits = 24, // Internal parameter of seq acc
+    parameter int numPlanes = 8,
 
     //  Parameters: Per Bank
     parameter numRows = 256,
     parameter numCols = 32,
     parameter numBanks = 256/numCols,
+    parameter int numBeatRows = 4,
 
     //  Parameters: Global Buffer
     parameter globalBufferDepth = 2**8,
@@ -65,8 +68,8 @@ module qr_acc_top #(
     output bus_resp_t bus_resp_o,
 
     // Analog passthrough signals
-    output to_analog_t to_analog,
-    input from_analog_t from_analog,
+    output to_analog_t to_analog [numPlanes-1:0],
+    input from_analog_t from_analog [numPlanes-1:0],
     output [numBanks-1:0] bank_select
 
     // // CSR signals for testing for now
@@ -105,11 +108,22 @@ logic qracc_ready;
 // SRAM Signals
 logic to_sram_rq_wr;
 logic to_sram_rq_valid;
-logic [numCols-1:0] to_sram_wr_data;
+logic [numBeatRows*numPlanes*numCols-1:0] to_sram_wr_data_ctl;
+logic [numBeatRows*numPlanes*numCols-1:0] to_sram_wr_data;
 logic [$clog2(numRows)-1:0] to_sram_addr;
+logic [numBanks-1:0] legacy_bank_select;
 logic from_sram_rq_ready;
 logic from_sram_rd_valid;
 logic [numCols-1:0] from_sram_rd_data;
+
+// Host-bus row staging: assemble numPlanes*numCols-bit rows from hostBusBits-wide LOADs
+logic [numPlanes*numCols-1:0] row_stage_q;
+logic [numCols-1:0] legacy_wr_data;
+
+// Controller-internal SRAM signals (muxed with staging logic at top level)
+logic wr_ctrl_rq_wr;
+logic wr_ctrl_rq_valid;
+logic [$clog2(numRows)-1:0] wr_ctrl_addr;
 
 // Signals : Activation Buffer
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data;
@@ -121,6 +135,51 @@ logic [globalBufferExtInterfaceWidth-1:0] abuf_rd_data;
 // Signals: Feature Loader and Padder
 logic [globalBufferIntInterfaceWidth-1:0] activation_buffer_rd_data_padded; 
 logic [featureLoaderNumElements-1:0][qrAccInputBits-1:0] feature_loader_data_out;
+
+`ifdef ACTMEM_DEBUG
+// One $monitor stream for the WSAcc/ACTMEM handshake.  Filter the log by
+// timestamp/state; this is cheaper than many separate displays.
+always @(posedge clk) begin
+    if (u_qracc_controller.state_q == 7)
+        $monitor("[MON] t=%0t st=%0d opix=(%0d,%0d) fy=%0d rs=%0d nrs=%0d flv=%0d wdv=%0d wsdi=%0d wsov=%0d wr=%0d waddr=%0d ifmap=%0d ofmap=%0d res=%0d preserve=%0d",
+                 $time, u_qracc_controller.state_q,
+                 u_qracc_controller.opix_pos_x,
+                 u_qracc_controller.opix_pos_y,
+                 u_qracc_controller.fy_ctr,
+                 u_qracc_controller.read_set,
+                 u_qracc_controller.num_read_sets,
+                 u_qracc_controller.feature_loader_valid_out_qq,
+                 u_qracc_controller.window_data_valid_q,
+                 qracc_ctrl.wsacc_data_i_valid,
+                 wsacc_data_o_valid,
+                 qracc_ctrl.activation_buffer_int_wr_en,
+                 qracc_ctrl.activation_buffer_int_wr_addr,
+                 u_qracc_controller.ifmap_start_addr,
+                 u_qracc_controller.ofmap_start_addr,
+                 u_qracc_controller.result_start_addr,
+                 cfg.preserve_ifmap);
+    else
+        $monitoroff;
+end
+// Per-node WSAcc/ACTMEM transaction counts, printed when digital ends.
+integer dbg_ws_i = 0, dbg_ws_o = 0, dbg_wr = 0;
+logic dbg_dig_q;
+always @(posedge clk) begin
+    if (u_qracc_controller.state_q == 7) begin
+        if (qracc_ctrl.wsacc_data_i_valid) dbg_ws_i <= dbg_ws_i + 1;
+        if (wsacc_data_o_valid) dbg_ws_o <= dbg_ws_o + 1;
+        if (qracc_ctrl.activation_buffer_int_wr_en) dbg_wr <= dbg_wr + 1;
+    end
+    if (dbg_dig_q && u_qracc_controller.state_q != 7)
+        $display("[DBG wsacc-node] t=%0t in=%0d out=%0d wr=%0d ofmap=%0d preserve=%0d",
+                 $time, dbg_ws_i, dbg_ws_o, dbg_wr,
+                 u_qracc_controller.ofmap_start_addr, cfg.preserve_ifmap);
+    if (u_qracc_controller.state_q != 7) begin
+        dbg_ws_i <= 0; dbg_ws_o <= 0; dbg_wr <= 0;
+    end
+    dbg_dig_q <= (u_qracc_controller.state_q == 7);
+end
+`endif
 
 // Signals: Output Scaler
 logic [qrAccOutputElements-1:0][qrAccOutputBits-1:0] output_scaler_output;
@@ -158,7 +217,8 @@ qracc_controller #(
     .numScalers                 (qrAccOutputElements),
     .numRows                    (qrAccInputElements),
     .internalInterfaceWidth     (globalBufferIntInterfaceWidth),
-    .numBanks                   (numBanks)
+    .numBanks                   (numBanks),
+    .numPlanes                  (numPlanes)
 ) u_qracc_controller (
     .clk                        (clk),
     .nrst                       (nrst),
@@ -167,14 +227,14 @@ qracc_controller #(
     .bus_resp_o                 (controller_bus_resp),
 
     .ctrl_o                     (qracc_ctrl),
-    .to_sram_rq_wr              (to_sram_rq_wr),
-    .to_sram_rq_valid           (to_sram_rq_valid),
-    .to_sram_wr_data            (to_sram_wr_data),
-    .to_sram_addr               (to_sram_addr),
+    .to_sram_rq_wr              (wr_ctrl_rq_wr),
+    .to_sram_rq_valid           (wr_ctrl_rq_valid),
+    .to_sram_wr_data            (legacy_wr_data),
+    .to_sram_addr               (wr_ctrl_addr),
     .from_sram_rq_ready         (from_sram_rq_ready),
     .from_sram_rd_valid         (from_sram_rd_valid),
     .from_sram_rd_data          (from_sram_rd_data),
-    .bank_select                (bank_select),
+    .bank_select                (legacy_bank_select),
 
     .qracc_output_valid         (qracc_output_valid),
     .qracc_ready                (qracc_ready),
@@ -222,12 +282,103 @@ seq_acc #(
     // SRAM
     .to_sram_rq_wr              (to_sram_rq_wr),
     .to_sram_rq_valid           (to_sram_rq_valid),
-    .to_sram_wr_data            (to_sram_wr_data),
+    .wr_bus_sel_i               ((cfg.weight_bits_cfg > 1) ? 2'd0 : cfg.wr_bus_sel),
+    .to_sram_wr_data            (to_sram_wr_data_ctl),
     .to_sram_addr               (to_sram_addr),
     .from_sram_rq_ready         (from_sram_rq_ready),
     .from_sram_rd_valid         (from_sram_rd_valid),
     .from_sram_rd_data          (from_sram_rd_data)
 );
+
+// Multibit write window: DATA_WRITE_ADDR (0x100) .. 0x100 + 256 rows x 64 words - 1
+// addr[2:0] = plane, addr[5:3] = bank, addr[13:6] = SRAM row (matrix row)
+wire mb_mode = (cfg.weight_bits_cfg > 1);
+wire mb_weight_load = wr_ctrl_rq_wr && mb_mode
+    && (bus_req_i.addr >= 32'h00000100)
+    && (bus_req_i.addr < 32'h00000100 + 32'd16384);
+
+// Row staging: assemble numPlanes*numCols-bit rows from hostBusBits-wide LOADs
+always_ff @(posedge clk or negedge nrst) begin : rowStageRegs
+    if (!nrst) begin
+        row_stage_q <= '0;
+    end else begin
+        if (mb_weight_load) begin
+            int word_idx;
+            word_idx = bus_req_i.addr[2:0];
+            row_stage_q[word_idx*hostBusBits +: hostBusBits] <= bus_req_i.data_in;
+        end
+    end
+end
+
+// Row complete: last word of staged row
+wire row_complete_pulse = mb_weight_load
+    && bus_req_i.addr[2:0] == (numPlanes*numCols/hostBusBits - 1);
+
+// Hold the target bank for the wr_controller write window (4 cycles per row)
+logic [2:0] mb_wr_hold_q;
+logic [$clog2(numBanks)-1:0] mb_bank_q;
+always_ff @(posedge clk or negedge nrst) begin : mbWrHold
+    if (!nrst) begin
+        mb_wr_hold_q <= 0;
+    end else if (row_complete_pulse) begin
+        mb_wr_hold_q <= 3'd4;
+        mb_bank_q <= bus_req_i.addr[5:3];
+    end else if (mb_wr_hold_q != 0) begin
+        mb_wr_hold_q <= mb_wr_hold_q - 1'b1;
+    end
+end
+assign bank_select = (mb_wr_hold_q != 0) ? (numBanks'(1) << mb_bank_q) : legacy_bank_select;
+
+// Complete row value including the current LOAD word (valid when row_complete_pulse)
+logic [numPlanes*numCols-1:0] complete_row;
+always_comb begin : completeRowComb
+    complete_row = row_stage_q;
+    if (row_complete_pulse)
+        complete_row[bus_req_i.addr[2:0]*hostBusBits +: hostBusBits] = bus_req_i.data_in;
+end
+
+// SRAM write mux: staging logic overrides controller during multibit row writes
+always_comb begin : sramWriteMux
+    to_sram_rq_wr = wr_ctrl_rq_wr;
+    to_sram_rq_valid = wr_ctrl_rq_valid;
+    to_sram_addr = wr_ctrl_addr;
+    to_sram_wr_data_ctl = '0;
+    to_sram_wr_data_ctl[31:0] = legacy_wr_data;
+
+    if (mb_weight_load) begin
+        to_sram_rq_wr = 1'b0;
+        to_sram_rq_valid = 1'b0;
+    end
+
+    if (mb_mode && row_complete_pulse) begin
+        int row;
+        row = (bus_req_i.addr - 32'h00000100) >> 6;
+        to_sram_rq_wr = 1'b1;
+        to_sram_rq_valid = 1'b1;
+        to_sram_addr = row;
+        to_sram_wr_data_ctl = '0;
+        to_sram_wr_data_ctl[numPlanes*numCols-1:0] = complete_row;
+    end
+end
+
+`ifdef DEBUG
+integer dbg_mb_writes = 0;
+integer dbg_mb_rows = 0;
+always_ff @(posedge clk) begin
+    if (bus_req_i.valid && bus_req_i.wen && bus_req_i.addr == 32'h00000017)
+        $display("[DBG top] reg7 write seen at top data=%h cfg.weight_bits=%0d", bus_req_i.data_in, cfg.weight_bits_cfg);
+    if (mb_weight_load) begin
+        dbg_mb_writes <= dbg_mb_writes + 1;
+        if (dbg_mb_writes < 6)
+            $display("[DBG mb] addr=%h data=%h p=%0d k=%0d r=%0d", bus_req_i.addr, bus_req_i.data_in, bus_req_i.addr[2:0], bus_req_i.addr[5:3], (bus_req_i.addr - 32'h00000100) >> 6);
+    end
+    if (row_complete_pulse) begin
+        dbg_mb_rows <= dbg_mb_rows + 1;
+        if (bus_req_i.addr >= 32'h00003100 || bus_req_i.addr == 32'h000040FF)
+            $display("[DBG mb] row complete addr=%h row=%0d bank=%0d ready=%0d wr_rq=%0d data_lo=%h rows=%0d writes=%0d", bus_req_i.addr, (bus_req_i.addr - 32'h00000100) >> 6, bus_req_i.addr[5:3], from_sram_rq_ready, wr_ctrl_rq_wr, complete_row[31:0], dbg_mb_rows + 1, dbg_mb_writes + 1);
+    end
+end
+`endif
 
 always_comb begin : wsAccDataOrientation
     // Orient the data for the WSAcc PE cluster
@@ -451,5 +602,63 @@ always_comb begin : busOutputManage
         bus_resp_o.data_out = abuf_rd_data; // Read from activation buffer
     end
 end
+
+`ifdef DEBUG
+int dbg_top_cnt = 0;
+always_ff @(posedge clk) if (qracc_output_valid && dbg_top_cnt < 2) begin
+    dbg_top_cnt <= dbg_top_cnt + 1;
+    $display("[DBG qr_acc_top] n=%0d oscaler_input[0]=%0d output_scaler_output[0]=%0d", dbg_top_cnt, oscaler_input[0], output_scaler_output[0]);
+end
+`endif
+
+`ifdef ACTMEM_DEBUG
+// Explicit ACTMEM handoff probe: node config, first internal writes, first
+// feature-loader reads (post-padder) and their addresses.  Enable with
+// +define+ACTMEM_DEBUG.
+int dbg_act_wr = 0;
+int dbg_act_rd = 0;
+int dbg_fl = 0;
+logic [15:0] dbg_prev_in = 16'hffff;
+logic [15:0] dbg_prev_out = 16'hffff;
+logic [3:0] dbg_prev_fx = 4'hf;
+logic [3:0] dbg_prev_fy = 4'hf;
+always_ff @(posedge clk) begin
+    if (cfg.num_input_channels != dbg_prev_in
+            || cfg.num_output_channels != dbg_prev_out
+            || cfg.filter_size_x != dbg_prev_fx
+            || cfg.filter_size_y != dbg_prev_fy) begin
+        $display("[DBG actmem node] in=%0d out=%0d fx=%0d fy=%0d ifmap_start=%0d ofmap_start=%0d",
+                 cfg.num_input_channels, cfg.num_output_channels,
+                 cfg.filter_size_x, cfg.filter_size_y,
+                 u_qracc_controller.ifmap_start_addr,
+                 u_qracc_controller.ofmap_start_addr);
+        dbg_prev_in <= cfg.num_input_channels;
+        dbg_prev_out <= cfg.num_output_channels;
+        dbg_prev_fx <= cfg.filter_size_x;
+        dbg_prev_fy <= cfg.filter_size_y;
+        dbg_act_wr <= 0;
+        dbg_act_rd <= 0;
+        dbg_fl <= 0;
+    end
+    if (int_write_queue_valid_out && dbg_act_wr < 4) begin
+        $display("[DBG actwr] n=%0d addr=%0d data=%h",
+                 dbg_act_wr, activation_buffer_int_wr_addr,
+                 activation_buffer_int_wr_data);
+        dbg_act_wr <= dbg_act_wr + 1;
+    end
+    if (qracc_ctrl.activation_buffer_int_rd_en && dbg_act_rd < 4) begin
+        $display("[DBG actrd] n=%0d addr=%0d fl_addr=%0d data=%h",
+                 dbg_act_rd, qracc_ctrl.activation_buffer_int_rd_addr,
+                 qracc_ctrl.feature_loader_addr, activation_buffer_rd_data);
+        dbg_act_rd <= dbg_act_rd + 1;
+    end
+    if (qracc_ctrl.feature_loader_wr_en && dbg_fl < 4) begin
+        $display("[DBG flwr] n=%0d addr=%0d data=%h",
+                 dbg_fl, qracc_ctrl.feature_loader_addr,
+                 activation_buffer_rd_data_padded);
+        dbg_fl <= dbg_fl + 1;
+    end
+end
+`endif
 
 endmodule

@@ -14,6 +14,7 @@ module qracc_controller #(
     parameter dataBusWidth = 32,
 
     parameter numBanks = 8,
+    parameter numPlanes = 8,
     parameter numColsPerBank = 32,
     localparam internalInterfaceElements = internalInterfaceWidth / 8
 ) (
@@ -86,6 +87,9 @@ assign n_elements_per_word = dataBusWidth / { {28{1'b0}} ,cfg.n_input_bits_cfg};
 // Ping pong tracking signals
 logic [31:0] ofmap_start_addr;
 logic [31:0] ifmap_start_addr;
+// Output base of the most recently completed node.  A preserving node keeps
+// its parent in ifmap_start_addr, so readout must use this saved base.
+logic [31:0] result_start_addr;
 logic [31:0] act_wr_ptr;
 logic [31:0] act_rd_ptr;
 
@@ -114,6 +118,7 @@ logic read_acts_out_valid;
 // Write tracking signals
 logic [31:0] scaler_ptr;
 logic [31:0] weight_ptr;
+wire [31:0] weight_load_total = (cfg.weight_bits_cfg > 1) ? 32'(numRows*numBanks*numPlanes) : 32'(numRows*numBanks);
 
 // Padding
 logic [31:0] padding_address_offset;
@@ -141,8 +146,37 @@ state_t state_q;
 state_t state_d;
 state_t state_trigger;
 assign csr_main_internal_state = state_q;
+`ifdef DEBUG
+always_ff @(posedge clk) if (state_q == S_LOADWEIGHTS && state_d != S_LOADWEIGHTS)
+    $display("[DBG ctrl] weight load exit weight_ptr=%0d total=%0d mb=%0d", weight_ptr, weight_load_total, cfg.weight_bits_cfg);
+`endif
+
+`ifdef ACTMEM_DEBUG
+integer dbg_compute_cyc = 0;
+always_ff @(posedge clk or negedge nrst) begin
+    if (!nrst) dbg_compute_cyc <= 0;
+    else if (state_q == S_COMPUTE_DIGITAL) begin
+        if (dbg_compute_cyc < 12 || dbg_compute_cyc % 50000 == 0)
+            $display("[DBG digital] cyc=%0d opix=(%0d,%0d) fy=%0d rs=%0d nrs=%0d dims=(%0d,%0d) fyN=%0d flv=%0d wq=%0d last=%0d rd_en=%0d addr=%0d stride=%0d",
+                     dbg_compute_cyc, opix_pos_x, opix_pos_y, fy_ctr, read_set,
+                     num_read_sets, cfg.output_fmap_dimx, cfg.output_fmap_dimy,
+                     cfg.filter_size_y, feature_loader_valid_out_qq,
+                     int_write_queue_valid, last_window,
+                     ctrl_o.activation_buffer_int_rd_en,
+                     ctrl_o.activation_buffer_int_rd_addr,
+                     cfg.ifmap_channel_stride);
+        dbg_compute_cyc <= dbg_compute_cyc + 1;
+    end else dbg_compute_cyc <= 0;
+end
+`endif
 
 always_ff @( posedge clk or negedge nrst ) begin : stateFlipFlop
+`ifdef ACTMEM_DEBUG
+    if (nrst && state_d != state_q)
+        $display("[DBG state] %0d -> %0d trig=%0d flv=%0d wq=%0d last=%0d",
+                 state_q, state_d, state_trigger, feature_loader_valid_out_qq,
+                 int_write_queue_valid, last_window);
+`endif
     if (!nrst) begin
         state_q <= S_IDLE;
     end else begin
@@ -162,6 +196,9 @@ always_ff @( posedge clk or negedge nrst ) begin
 end
 
 always_comb begin : ctrlDecode
+    int rel_addr;
+    logic [31:0] ifmap_base_eff;
+    logic [31:0] ofmap_base_eff;
     ctrl_o = 0; // must be that ctrl_o is a NOP
     to_sram_rq_wr = 0;
     to_sram_rq_valid = 0;
@@ -171,7 +208,10 @@ always_comb begin : ctrlDecode
     bus_resp_o.rd_data_valid = 0;
     bank_select_code = 0;
     bank_select = 0;
-    csr_main_busy = ~( state_q == S_IDLE );
+    // Keep the CSR busy until the output write queue is fully drained.  A node
+    // can return to IDLE while the PISO queue still holds its last rows; the
+    // next node must not start reading those rows yet.
+    csr_main_busy = (state_q != S_IDLE) || int_write_queue_valid;
     case(state_q)
         S_IDLE: begin
             bus_resp_o.ready = 1; // CSR is always ready to take data
@@ -212,14 +252,42 @@ always_comb begin : ctrlDecode
 
             bus_resp_o.ready = 1; // Ready to be read (all extern WRENs are deasserted)
                 
-            ctrl_o.activation_buffer_int_rd_addr = 
-                    cfg.num_input_channels * 
-                    cfg.input_fmap_dimx * 
-                    ( (opix_pos_y*cfg.stride_y - {28'b0,cfg.padding}) + {28'b0, fy_ctr})
-                +   cfg.num_input_channels * 
-                    (opix_pos_x*cfg.stride_x - {28'b0,cfg.padding}) 
-                +   read_set*internalInterfaceElements
-                ; // h*W*C + w*C + c
+            // Explicit region bases override the sequential ACTMEM bases.
+            // 32'hFFFFFFFF means "not supplied; use the sequential base".
+            ifmap_base_eff = (cfg.ifmap_base == 32'hFFFFFFFF)
+                             ? ifmap_start_addr : cfg.ifmap_base;
+            ofmap_base_eff = (cfg.ofmap_base == 32'hFFFFFFFF)
+                             ? ofmap_start_addr : cfg.ofmap_base;
+            // The compute-read address is relative to the activation slot that
+            // holds this node's ifmap.  Without the base, a chained node reads
+            // address 0 (the previous external load) instead of the previous
+            // node's output in ACTMEM.
+            // The pixel stride is the parent tensor's channel count, which is
+            // cfg.num_input_channels for a normal node and the parent's
+            // channel count for an internal channel-slice consumer.
+            rel_addr =
+                    int'(cfg.ifmap_channel_stride) * int'(cfg.input_fmap_dimx) *
+                    ( int'(opix_pos_y)*int'(cfg.stride_y) - int'(cfg.padding)
+                      + int'(fy_ctr) )
+                +   int'(cfg.ifmap_channel_stride) *
+                    ( int'(opix_pos_x)*int'(cfg.stride_x) - int'(cfg.padding) )
+                +   int'(cfg.ifmap_channel_offset)
+                // Read-set chunks are 32 elements in the compact layout; in
+                // a strided parent they span
+                // (32 / num_input_channels) parent pixels.
+                +   int'(read_set) * internalInterfaceElements
+                    * int'(cfg.ifmap_channel_stride)
+                    / int'(cfg.num_input_channels);
+            if (rel_addr < 0) begin
+                // A negative offset is a top/left padding sample.  Keep the
+                // wrapped address so the activation buffer returns zero,
+                // exactly as it did when ifmap_start_addr was zero.
+                ctrl_o.activation_buffer_int_rd_addr = rel_addr;
+            end else begin
+                ctrl_o.activation_buffer_int_rd_addr =
+                    ifmap_base_eff + rel_addr;
+            end
+            // rel_addr = h*W*C + w*C + c relative to the ifmap slot.
             
             ctrl_o.feature_loader_addr = feature_loader_addr_qq;
             // Do not write to feature loader seq_acc isn't ready yet
@@ -231,7 +299,9 @@ always_comb begin : ctrlDecode
 
             // OFMAP WRITEBACK
             ctrl_o.activation_buffer_int_wr_en = qracc_output_valid || wsacc_output_valid;
-            ctrl_o.activation_buffer_int_wr_addr = ofmap_start_addr + ofmap_offset_ptr;
+            ctrl_o.activation_buffer_int_wr_addr =
+                ofmap_base_eff + ofmap_offset_ptr
+                + cfg.ofmap_channel_offset;
 
             ctrl_o.padding_start = padding_start_q;
             ctrl_o.padding_end = padding_end_q;
@@ -240,7 +310,7 @@ always_comb begin : ctrlDecode
             bus_resp_o.ready = 1;
             ctrl_o.activation_buffer_ext_rd_en = 1;
             // Due to the ifmap->ofmap swapping, the ofmap is now in the ifmap_start_addr
-            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + ifmap_start_addr;
+            ctrl_o.activation_buffer_ext_rd_addr = act_rd_ptr + result_start_addr;
             bus_resp_o.rd_data_valid = read_acts_out_valid;
         end
         default: begin
@@ -267,7 +337,7 @@ always_comb begin : stateDecode
             state_d = state_trigger;
         end
         S_LOADWEIGHTS: begin
-            if (weight_ptr < numRows*numBanks) begin
+            if (weight_ptr < weight_load_total) begin
                 state_d = S_LOADWEIGHTS;
             end else begin
                 state_d = S_IDLE;
@@ -401,6 +471,12 @@ always_ff @( posedge clk or negedge nrst ) begin : paddingLogic
                     padding_start_q <= 0;
                     padding_end_q <= 0;
                 end
+            end else begin
+                // A 1x1 / unpadded node must not inherit the previous node's
+                // padding window (otherwise the padder zeroes valid ACTMEM
+                // data when chaining from a padded conv).
+                padding_start_q <= 0;
+                padding_end_q <= 0;
             end
         end
     end
@@ -448,7 +524,10 @@ always_ff @( posedge clk or negedge nrst ) begin : computeCycleCounter
         if (state_q == S_COMPUTE_ANALOG || state_q == S_COMPUTE_DIGITAL) begin
 
             if (qracc_output_valid || wsacc_output_valid) begin
-                ofmap_offset_ptr <=  ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
+                ofmap_offset_ptr <= ofmap_offset_ptr
+                    + {16'b0, (cfg.ofmap_channel_stride == 0)
+                               ? cfg.num_output_channels
+                               : cfg.ofmap_channel_stride};
             end
 
             if (last_window) begin
@@ -535,6 +614,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
     if (!nrst) begin
         ofmap_start_addr <= 0;
         ifmap_start_addr <= 0;
+        result_start_addr <= 0;
         act_wr_ptr <= 0;
         act_rd_ptr <= 0;
         read_acts_out_valid <= 0;
@@ -542,6 +622,7 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
         if (csr_main_clear) begin
             ofmap_start_addr <= 0;
             ifmap_start_addr <= 0;
+            result_start_addr <= 0;
             act_wr_ptr <= 0;
             act_rd_ptr <= 0;
         end else
@@ -578,19 +659,30 @@ always_ff @( posedge clk or negedge nrst ) begin : actBufferLogic
 
         if (state_q == S_COMPUTE_ANALOG) begin
             if (state_d != S_COMPUTE_ANALOG) begin
-                if (!cfg.preserve_ifmap) begin
+                if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
-                end
+                result_start_addr <=
+                    ((cfg.ofmap_base == 32'hFFFFFFFF)
+                     ? ofmap_start_addr : cfg.ofmap_base)
+                    + cfg.ofmap_channel_offset;
+                // Always reserve a new output slot.  A preserving node keeps
+                // its input base live while writing its output elsewhere;
+                // otherwise a slice consumer would overwrite its parent.
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
+                                    + { 16'b0 , cfg.num_output_channels};
             end
         end
 
         if (state_q == S_COMPUTE_DIGITAL) begin
             if (state_d != S_COMPUTE_DIGITAL) begin
-                if (!cfg.preserve_ifmap) begin
+                if (!cfg.preserve_ifmap)
                     ifmap_start_addr <= ofmap_start_addr;
-                    ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr + { 16'b0 , cfg.num_output_channels};
-                end            
+                result_start_addr <=
+                    ((cfg.ofmap_base == 32'hFFFFFFFF)
+                     ? ofmap_start_addr : cfg.ofmap_base)
+                    + cfg.ofmap_channel_offset;
+                ofmap_start_addr <= ofmap_start_addr + ofmap_offset_ptr
+                                    + { 16'b0 , cfg.num_output_channels};
             end
         end
     end
