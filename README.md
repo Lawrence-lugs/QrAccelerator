@@ -136,17 +136,30 @@ Markers: `proprietary`, `ams`, `heavy`, `needs_verilator`. Use `--proprietary`,
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) builds the devcontainer image from
-`.devcontainer/Dockerfile`, then runs:
+CI ([`ci.yml`](.github/workflows/ci.yml)) builds the devcontainer once and
+runs independent required regression steps, with failures retained rather than
+stopping the remaining test groups.
 
-1. `pytest tests/test_marp.py -v --tb=short`
-2. `pytest tests/test_rtl.py::test_seq_acc --simulator verilator -k "binary and 2-32-128-8" -v --tb=short`
-3. `pytest tests/test_rtl.py::test_tb_qracc --simulator verilator -v --tb=short`
-4. `pytest tests/test_rtl.py::test_tb_column --simulator verilator -v --tb=short`
+| Group | Routine CI coverage |
+|---|---|
+| Python model and compiler | Existing MARP tests; resident-region DAG, allocation, liveness, split/fallback and command generation; weight planes; simulation workspace isolation |
+| Multibit reference | B=2/4/8 ONNX references, integer pre-scale golden, ADC quantizer and range chooser, Python post-scale (binary, depthwise, MatMul, multibit) and bank full-scale configuration |
+| RTL units | Legacy seq_acc, single-plane wrapper and column smoke tests; full multibit ADC/bias/accumulator suite; shift-add tree, 1/2/4-row write beats and ONNX-derived 32-PE depthwise test |
+| Compiler-to-RTL integration | Pre-stack B=8; post-scale B=2/4; B=8 resident-region slices of 7 nodes (compact readout), 8 nodes (internal Concat/projection), and 16 nodes (external residual Add boundary) |
 
-A `notebook-hygiene` job verifies all non-archived `.ipynb` outputs are stripped
-via `nbstripout --verify`. The devcontainer image is rebuilt by
-`build-devcontainer.yml` on changes to `.devcontainer/Dockerfile` or `env.yml`.
+The 16-node slice uses ONNX-computed activations at external boundaries; it
+checks region execution and scheduling, not closed-loop full-model accuracy.
+Full-graph compilation, all-node/model simulations, remaining precision/slice
+sweeps and proprietary simulations remain opt-in local or manual runs. For
+example, use `pytest --heavy` for the existing heavy-marked tests, or invoke
+the full pre-stack/post-scale test files explicitly for the extended precision
+and slice sweep. No external model artifacts are required by routine CI.
+
+Test steps report slowest cases via pytest durations where appropriate; failed
+simulation logs are uploaded as artifacts. A `notebook-hygiene` job verifies
+all non-archived tracked notebooks via `nbstripout --verify`.
+The devcontainer image is rebuilt by `build-devcontainer.yml` on changes to
+`.devcontainer/Dockerfile` or `env.yml`.
 
 ## Notebooks and archive
 

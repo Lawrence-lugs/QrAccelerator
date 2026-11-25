@@ -72,6 +72,54 @@ jobs:
             conda run --no-capture-output -n ic_dec python -m pytest \
               tests/test_internal_concat_compiler.py tests/test_weight_planes.py tests/test_sim_workspace.py -v --tb=short
 
+      - name: Run multibit Python reference and compiler ADC tests
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            qraccelerator-qracc \
+            conda run --no-capture-output -n ic_dec python -m pytest \
+              tests/test_marp_multibit_ref.py tests/test_marp_multibit_prescale.py \
+              tests/test_marp_multibit_adc_ablation.py::test_quantiser_lsb_and_span \
+              tests/test_marp_multibit_adc_ablation.py::test_shift_chooser_picks_best_range \
+              tests/test_marp_multibit_postscale.py::test_python_postscale_binary_model_matches_onnx \
+              tests/test_marp_multibit_postscale.py::test_python_postscale_depthwise_binary_matches_onnx \
+              tests/test_marp_multibit_postscale.py::test_python_postscale_matmul_binary_matches_onnx \
+              tests/test_marp_multibit_postscale.py::test_python_postscale_model_matches_onnx \
+              tests/test_marp_multibit_postscale.py::test_adc_config_uses_bank_full_scale \
+              -v --tb=short --durations=10
+
+      - name: Run RTL shift-add, SRAM write and depthwise unit tests
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            qraccelerator-qracc \
+            conda run --no-capture-output -n ic_dec python -m pytest \
+              tests/test_shift_add_tree.py tests/test_wr_path.py \
+              tests/test_wsacc_dw32.py::test_wsacc_dw32_onnx \
+              --simulator verilator -v --tb=short --durations=10
+
+      - name: Run compiler-to-RTL multibit prescale and postscale checks
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            qraccelerator-qracc \
+            conda run --no-capture-output -n ic_dec python -m pytest \
+              'tests/test_marp_multibit_prestack.py::test_marp_multibit_prestack[verilator-8]' \
+              'tests/test_marp_multibit_postscale.py::test_marp_multibit_postscale[verilator-2]' \
+              'tests/test_marp_multibit_postscale.py::test_marp_multibit_postscale[verilator-4]' \
+              --simulator verilator -v --tb=short --durations=10
+
+      - name: Run resident-region RTL checks (compact split, Concat, external boundary)
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            qraccelerator-qracc \
+            conda run --no-capture-output -n ic_dec python -m pytest \
+              'tests/test_marp_multibit_postscale.py::test_marp_e2e_multibit_slice[verilator-7]' \
+              'tests/test_marp_multibit_postscale.py::test_marp_e2e_multibit_slice[verilator-8]' \
+              'tests/test_marp_multibit_postscale.py::test_marp_e2e_multibit_slice[verilator-16]' \
+              --simulator verilator -v --tb=short --durations=10
+
       - name: Upload failed simulation logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
