@@ -42,3 +42,7 @@ rtl/qracc_params.svh
 snr_results.csv
 sims/snr_results.csv
 artifacts/
+
+# Physical synthesis source files.
+!physical/synth/
+!physical/synth/**

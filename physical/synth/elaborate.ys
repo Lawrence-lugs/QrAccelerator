@@ -1,0 +1,16 @@
+# Common elaboration for the digital QR accelerator top.
+#
+# qr_acc_top keeps the analog bus on its top-level ports; the behavioural
+# ts_qracc models are testbench-only and are not in the file list.
+
+# ACTMEM is a macro slot that will be replaced by an OpenRAM instance. Blackbox
+# it before hierarchy so the derived parameterised module inherits the
+# attribute. Keep its ports, remove its behavioural array.
+blackbox ram_2w2r
+
+hierarchy -check -top qr_acc_top
+
+# wsacc_pe_cluster has an unconditional $display in its reset branch. It
+# becomes a $print cell during proc; strip it before technology mapping.
+proc
+delete t:$print

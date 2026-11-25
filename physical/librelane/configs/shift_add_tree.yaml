@@ -1,0 +1,27 @@
+DESIGN_NAME: shift_add_tree
+
+VERILOG_FILES:
+  - ../build/librelane/preprocessed/shift_add_tree.v
+
+SYNTH_PARAMETERS:
+  - numPlanes=8
+  - numOutputs=256
+  - partialBits=4
+
+CLOCK_PERIOD: 20.0
+CLOCK_UNCERTAINTY_CONSTRAINT: 1.0
+IO_DELAY_CONSTRAINT: 20
+
+PNR_SDC_FILE: sdc/shift_add_tree.sdc
+SIGNOFF_SDC_FILE: sdc/shift_add_tree.sdc
+
+FP_SIZING: relative
+FP_CORE_UTIL: 70
+FP_ASPECT_RATIO: 1.0
+
+PDN_MULTILAYER: false
+
+SYNTH_DRIVING_CELL: sg13g2_buf_1/A
+SYNTH_CLK_DRIVING_CELL: sg13g2_buf_16/A
+SYNTH_BUFFER_CELL: sg13g2_buf_1/A/X
+SYNTH_STRATEGY: "AREA 3"

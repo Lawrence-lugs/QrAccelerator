@@ -1,0 +1,65 @@
+DESIGN_NAME: feature_loader
+
+VERILOG_FILES:
+  - ../build/librelane/preprocessed/feature_loader_core.v
+  - ../build/librelane/preprocessed/feature_loader.v
+
+SYNTH_PARAMETERS:
+  - inputWidth=256
+  - addrWidth=32
+  - elementWidth=9
+  - numElements=288
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 100.0
+CLOCK_UNCERTAINTY_CONSTRAINT: 5.0
+IO_DELAY_CONSTRAINT: 20
+
+PNR_SDC_FILE: sdc/feature_loader.sdc
+SIGNOFF_SDC_FILE: sdc/feature_loader.sdc
+
+FP_SIZING: relative
+FP_CORE_UTIL: 40
+FP_ASPECT_RATIO: 0.7
+PL_TARGET_DENSITY_PCT: 40
+
+# Data enters on the left and the 288 x 9 output bus leaves on the right.
+# The default 2x pin width leaves too few slots on the 1.8 mm east edge;
+# single-width pins fit the 2592 outputs.
+IO_PIN_ORDER_CFG: pin_order/feature_loader.cfg
+IO_PIN_V_THICKNESS_MULT: 1
+IO_PIN_H_THICKNESS_MULT: 1
+
+PL_RESIZER_SETUP_MAX_BUFFER_PCT: 5
+PL_RESIZER_HOLD_MAX_BUFFER_PCT: 5
+
+# Post-GPL repair is needed here: without it the post-route slow corner shows
+# -43.9 ns setup WNS on the 100 ns period.  The earlier CTS crash came from
+# resuming a contaminated post-CTS state, not from this repair step.
+RUN_POST_GPL_DESIGN_REPAIR: true
+# The 2,592 data_o ports are already the routing bottleneck.  Repair fanout
+# and input paths, but do not insert a buffer on every output port.
+DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: false
+
+# The 2,592 east-edge output nets produced 1,271 antenna violations; the
+# global antenna repair then inserted 214,977 diodes and hit an OpenROAD heap
+# underflow.  Skip diode insertion for this physical-feasibility macro and
+# revisit antenna fixing during top integration.
+DIODE_CELL: null
+
+# At 40% utilization the 15% derate still left 6,015 overflowed tiles, mostly
+# on Metal3 and Metal5.  A 5% derate recovers the capacity without changing the
+# floorplan; detailed routing starts with the same 40% whitespace.
+GRT_ADJUSTMENT: 0.05
+
+# 32 threads peaked above 14 GiB on the 344k-instance repaired design and the
+# container was lost during the 3rd DRT iteration.  16 threads keeps more
+# headroom; run this block alone.
+DRT_THREADS: 16
+
+PDN_MULTILAYER: false
+
+SYNTH_DRIVING_CELL: sg13g2_buf_1/A
+SYNTH_CLK_DRIVING_CELL: sg13g2_buf_16/A
+SYNTH_BUFFER_CELL: sg13g2_buf_1/A/X
+SYNTH_STRATEGY: "AREA 3"

@@ -1,0 +1,16 @@
+{
+  "name": "qracc-physical",
+  "dockerComposeFile": "compose.yaml",
+  "service": "qracc-physical",
+  "runServices": ["qracc-physical"],
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "eirikpre.systemverilog",
+        "chipsalliance.verible-vscode"
+      ]
+    }
+  }
+}

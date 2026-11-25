@@ -1,0 +1,8 @@
+# Technology-independent synthesis of the digital top.
+# Run begin + coarse (proc/opt/fsm/share/alumacc/memory -nomap) and stop before
+# the "fine" stage, whose techmap/abc step expands wide arithmetic into millions
+# of gates. The "fine" mapping belongs to the PDK stage.
+synth -top qr_acc_top -run begin:fine
+tee -o physical/reports/generic_check.rpt check
+tee -o physical/reports/generic_stat.rpt stat
+write_verilog -noattr physical/build/generic/qr_acc_top.v

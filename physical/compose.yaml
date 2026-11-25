@@ -1,0 +1,14 @@
+name: qracc-physical
+
+services:
+  qracc-physical:
+    image: ghcr.io/lawrence-lugs/lugs-soc/lugs-soc-tools:latest
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    environment:
+      - PDK_ROOT=/foss/pdks
+      - PDK=ihp-sg13g2
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true

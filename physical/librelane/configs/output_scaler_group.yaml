@@ -1,0 +1,30 @@
+DESIGN_NAME: output_scaler_group
+
+VERILOG_FILES:
+  - ../build/librelane/preprocessed/output_scaler_group.v
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 40.0
+CLOCK_UNCERTAINTY_CONSTRAINT: 2.0
+IO_DELAY_CONSTRAINT: 20
+
+PNR_SDC_FILE: sdc/output_scaler_group.sdc
+SIGNOFF_SDC_FILE: sdc/output_scaler_group.sdc
+
+FP_SIZING: relative
+FP_CORE_UTIL: 65
+FP_ASPECT_RATIO: 2.0
+PL_TARGET_DENSITY_PCT: 65
+
+# Lane data enters at the top and scaled data leaves at the bottom.
+IO_PIN_ORDER_CFG: pin_order/output_scaler_group.cfg
+
+PL_RESIZER_SETUP_MAX_BUFFER_PCT: 5
+PL_RESIZER_HOLD_MAX_BUFFER_PCT: 5
+
+PDN_MULTILAYER: false
+
+SYNTH_DRIVING_CELL: sg13g2_buf_1/A
+SYNTH_CLK_DRIVING_CELL: sg13g2_buf_16/A
+SYNTH_BUFFER_CELL: sg13g2_buf_1/A/X
+SYNTH_STRATEGY: "AREA 3"

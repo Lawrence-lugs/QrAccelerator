@@ -1,0 +1,16 @@
+# Full-top IHP mapping, NOT wired into the Makefile.
+#
+# The top-level coarse netlist is ~109k cells with hundreds of wide
+# multipliers and adders. ``techmap`` expands them into millions of gates and
+# exceeds the 16 GB Docker VM used during development, so this target is kept
+# for reference only. Use ``make ihp`` (block-level) instead.
+#
+# __LIBERTY__ is substituted by synth/synth.sh.
+synth -top qr_acc_top -run begin:fine
+techmap
+dfflibmap -liberty __LIBERTY__
+abc -fast -liberty __LIBERTY__
+opt_clean
+tee -o physical/reports/ihp_top_check.rpt check
+tee -o physical/reports/ihp_top_area.rpt stat -liberty __LIBERTY__
+write_verilog -noattr -noexpr physical/build/ihp/qr_acc_top.v

@@ -1,0 +1,74 @@
+DESIGN_NAME: qr_acc_top_phys
+
+VERILOG_FILES:
+  - ../build/librelane/preprocessed/qr_acc_top_phys.v
+  - src/macro_blackboxes.v
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 100.0
+CLOCK_UNCERTAINTY_CONSTRAINT: 5.0
+IO_DELAY_CONSTRAINT: 20
+
+PNR_SDC_FILE: sdc/qr_acc_top_phys.sdc
+SIGNOFF_SDC_FILE: sdc/qr_acc_top_phys.sdc
+
+FP_SIZING: relative
+FP_CORE_UTIL: 70
+FP_ASPECT_RATIO: 1.0
+
+PDN_MULTILAYER: true
+PDN_VERTICAL_LAYER: Metal4
+PDN_HORIZONTAL_LAYER: Metal5
+PDN_MACRO_CONNECTIONS:
+  - ".* VPWR VGND VDD*! VSS!"
+  - ".* VPWR VGND VDD VSS"
+PL_RESIZER_SETUP_MAX_BUFFER_PCT: 5
+PL_RESIZER_HOLD_MAX_BUFFER_PCT: 5
+
+SYNTH_DRIVING_CELL: sg13g2_buf_1/A
+SYNTH_CLK_DRIVING_CELL: sg13g2_buf_16/A
+SYNTH_BUFFER_CELL: sg13g2_buf_1/A/X
+SYNTH_STRATEGY: "AREA 3"
+
+# The top has fewer standard cells than the feature loader but the same
+# 15.25 GiB Docker VM ceiling; keep detail routing at eight threads.
+DRT_THREADS: 8
+GRT_ADJUSTMENT: 0.15
+
+MACROS:
+  output_scaler_group:
+    gds:
+      - ../build/librelane/macros/output_scaler_group/gds/output_scaler_group.gds
+    lef:
+      - ../build/librelane/macros/output_scaler_group/lef/output_scaler_group.lef
+    lib:
+      "*fast*":
+        - ../build/librelane/macros/output_scaler_group/lib/nom_fast_1p32V_m40C/output_scaler_group.lib
+      "*slow*":
+        - ../build/librelane/macros/output_scaler_group/lib/nom_slow_1p08V_125C/output_scaler_group.lib
+      "*typ*":
+        - ../build/librelane/macros/output_scaler_group/lib/nom_typ_1p20V_25C/output_scaler_group.lib
+  feature_loader:
+    gds:
+      - ../build/librelane/macros/feature_loader/gds/feature_loader.gds
+    lef:
+      - ../build/librelane/macros/feature_loader/lef/feature_loader.lef
+    lib:
+      "*fast*":
+        - ../build/librelane/macros/feature_loader/lib/nom_fast_1p32V_m40C/feature_loader.lib
+      "*slow*":
+        - ../build/librelane/macros/feature_loader/lib/nom_slow_1p08V_125C/feature_loader.lib
+      "*typ*":
+        - ../build/librelane/macros/feature_loader/lib/nom_typ_1p20V_25C/feature_loader.lib
+  ram_2w2r:
+    gds:
+      - ../build/librelane/macros/ram_2w2r/gds/ram_2w2r.gds
+    lef:
+      - ../build/librelane/macros/ram_2w2r/lef/ram_2w2r.lef
+    lib:
+      "*fast*":
+        - ../build/librelane/macros/ram_2w2r/lib/nom_fast_1p32V_m40C/ram_2w2r.lib
+      "*slow*":
+        - ../build/librelane/macros/ram_2w2r/lib/nom_slow_1p08V_125C/ram_2w2r.lib
+      "*typ*":
+        - ../build/librelane/macros/ram_2w2r/lib/nom_typ_1p20V_25C/ram_2w2r.lib
