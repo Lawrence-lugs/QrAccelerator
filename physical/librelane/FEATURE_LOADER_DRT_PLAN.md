@@ -173,27 +173,18 @@ Cost is wall-clock on this machine.
 
 ## 6. Recommended experiment sequence
 
-**E1 — geometry only (do this now)**
+**E1 — square floorplan and initial routing congestion**
 
-```yaml
-FP_CORE_UTIL: 35            # 40 -> 35
-FP_ASPECT_RATIO: 1.0        # 0.7 -> 1.0  (2542 x 2717 um at 35 %)
-PL_TARGET_DENSITY_PCT: 35
-GRT_ADJUSTMENT: 0.10        # 0.05 -> 0.10
-GRT_LAYER_ADJUSTMENTS: "0.00 0.15 0.30 0.00 0.00 0.00 0.00"
-RUN_POST_GPL_DESIGN_REPAIR: false
-DIODE_CELL: null
-DRT_THREADS: 16
-```
+`make probe-feature` tests 35% core utilization, 1.0 height/width, and
+35% placement density with post-GPL repair disabled. It keeps the baseline
+global and per-layer routing adjustments. The actual die size depends on
+mapped area and site rounding.
 
-Pre-flight, **before** detailed routing (≈40 min, not 6 h):
-
-1. stop after `Odb.CustomIOPlacement`, read the `data_o` pin ys and confirm the
-   pitch is 0.84 µm and one Metal3 track is free between pins;
-2. run to `OpenROAD.GlobalRouting`, confirm Metal3 ≤ 65 % and overflow 0.
-
-Only then let DRT run, with `DRT_OPT_ITERS` capped so a bad start costs one hour
-rather than eight.
+The probe checks all 2,592 east-edge Metal3 output pins for a minimum 0.84 µm
+pitch. `make probe-feature PROBE_TO=grt` advances only after that check and
+reports Metal3 usage and overflow. The thresholds are ≤65% usage and zero
+overflow. Separate run tags preserve both checkpoints. Detailed routing is
+outside these probes.
 
 **E2 — if Metal3 is still hot:** drop util to 30 % and aspect to 1.3
 (2573 × 3345 µm, `tracks_per_pin = 3`, pitch 1.26 µm, two free tracks).
@@ -202,23 +193,16 @@ rather than eight.
 
 **E4 — if 2592 pins on one edge remain the limit:** S7.
 
-## 7. Pre-flight check (30 min, catches the problem before DRT)
+## 7. Pin escape budget
 
-After `Odb.CustomIOPlacement`, the DEF must show a `data_o` pin pitch of
-0.84 µm (2 tracks) or 1.26 µm (3 tracks). If the pitch is 0.42 µm, **do not run
-DRT** — the run cannot converge.
+A 0.42 µm minimum pitch leaves adjacent pin centers on consecutive Metal3
+tracks. The prior unrepaired run eventually routed clean, so this pitch is a
+congestion warning and a probe failure criterion, not proof of unroutability.
 
-```powershell
-$def = "<run>/26-odb-customioplacement/feature_loader.def"
-$ys = (Select-String -Path $def -Pattern 'data_o\[\d+\].*\n.*PLACED' -AllMatches)
-# easier: extract the PLACED y of every data_o pin and look at the min delta
-```
+The approximate minimum east-edge lengths, before edge exclusions and
+rounding, are:
 
-Track budget to check by hand:
-
-```
-tracks            = floor(H_um / 0.42)
-tracks_per_pin    = floor(tracks / 2592)
-required H        = 2 * 2592 * 0.42 = 2177 um   (1 free track)
-                  = 3 * 2592 * 0.42 = 3266 um   (2 free tracks)
-```
+| Center spacing | East-edge length for 2,592 pins |
+|---|---:|
+| 0.84 µm (2 tracks) | 2,177 µm |
+| 1.26 µm (3 tracks) | 3,266 µm |

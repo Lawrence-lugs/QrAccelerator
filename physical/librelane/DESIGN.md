@@ -288,7 +288,7 @@ a virtual clock and feedthrough input/output delays.
 
    The repaired netlist does not converge: detailed routing starts at 486,257
    violations and plateaus near 167,000 with ~94,000 Metal2 shorts. The cause
-   is geometric. All 2,592 `data_o` pins sit on Metal3 on the east edge, on a
+   appears related to pin geometry. All 2,592 `data_o` pins sit on Metal3 on the east edge, on a
    0.42 um pitch, in a contiguous 1088 um band: `tracks_per_pin` is 1, so no
    free Metal3 track exists between any two adjacent pins and the outer 42% of
    the edge is unused. A die height of at least 2177 um gives one free track
@@ -314,7 +314,20 @@ a virtual clock and feedthrough input/output delays.
 
 ## Current status
 
-The scaler-group views are staged (`physical/reports/librelane/output_scaler_group.md`).
-Its Magic DRC and XOR are clean; KLayout DRC and 25 MHz slow-corner setup are
-open. The feature-loader macro is being re-hardened at 10 MHz; the memory macro
-is stopped at global routing. The top flow starts when all three view sets exist.
+- **Feature loader.** The three-minute probe stopped during ABC mapping.
+  A placement-only replay used the feature loader's actual synthesized port
+  list, the IHP track grid, and LibreLane's custom placer. With the previous
+  3049.215 × 2156.625 µm outline, all 2,592 Metal3 east-edge output pins
+  had a minimum pitch of 0.42 µm. On a 2717 × 2717 µm test outline, the
+  minimum reached 0.84 µm. Actual global routing and 10 MHz timing remain open.
+- **ACTMEM.** The initial probe reached floorplanning, where the original
+  power hook matched standard cells as well as SRAMs. A second probe reused
+  the pre-PnR checkpoint and completed PDN generation in 41 seconds with
+  the SRAM-only hook and the orientation corrected to match the IHP LEF.
+  OpenDB confirmed 64 non-overlapping SRAMs with `VDD!` and `VDDARRAY!`
+  on `VPWR` and `VSS!` on `VGND`. OpenROAD reported `PDN-0195` via
+  removals. Power-grid checks and routing remain open.
+- **Scaler group.** The earlier run's Magic DRC and XOR were clean.
+  KLayout DRC and 25 MHz slow-corner setup remain open. See
+  `physical/reports/librelane/output_scaler_group.md`.
+- **Top.** Integration requires all three macro view sets.

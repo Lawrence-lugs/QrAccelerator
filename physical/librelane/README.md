@@ -36,22 +36,37 @@ summaries go to `physical/reports/librelane/`.
 From the repository root, inside the physical container:
 
 ```bash
-# first validated block
-make -C /workspace/physical/librelane harden-feature
+# Stop after feature-loader I/O placement and measure the east-edge pin pitch
+make -C /workspace/physical/librelane probe-feature
 
 # 8-lane scaler groups (32 macros)
 make -C /workspace/physical/librelane harden-scaler-group
 
-# 256 KiB ACTMEM macro
-make -C /workspace/physical/librelane harden-ram
+# Check the 256 KiB ACTMEM's SRAM placement and PDN
+make -C /workspace/physical/librelane probe-ram
 
 # digital-only top, after the three macro view sets exist
 make -C /workspace/physical/librelane top
 ```
 
 `top` runs `check-macros` first and stops with the missing path if any macro
-view is absent. The flow is sequential; do not run two harden targets at once
-unless the host has memory to spare.
+view is absent. The harden, probe, and top targets share a nonblocking lock
+and default to a 10-minute wall-clock limit per invocation, including
+preprocessing. A timeout terminates the flow and retains its step logs in
+`runs/`. Set `FLOW_TIMEOUT=5m` for a shorter iteration. LibreLane uses four
+jobs by default (`FLOW_JOBS`).
+
+`probe-feature` tests a square core at 35% utilization with post-GPL design
+repair disabled. It keeps the baseline routing derates so the geometry can
+be evaluated before any layer tuning. It uses a fresh run tag and checks
+the minimum pitch across all 2,592 Metal3 east-edge output pins directly in
+the DEF. The pass threshold is 0.84 µm. Set `PROBE_TO=grt` to continue from
+that check's explicit checkpoint through global routing within the same
+wall-clock limit. To use an existing pin checkpoint, add
+`PIN_RUN=<pin-probe-tag>` to the global-routing invocation. That stage requires Metal3 usage at most 65% and zero
+global overflow. The probe ends by global routing and publishes no macro
+views. `probe-ram` stops after PDN generation, keeping its outputs in the run
+directory.
 
 ### Logging
 
@@ -60,7 +75,7 @@ at the first 8 KiB for hours. Run under `stdbuf` and tee the flow output when
 live progress matters:
 
 ```bash
-stdbuf -oL -eL librelane ... 2>&1 | tee runs/<tag>.log
+stdbuf -oL -eL librelane --full ... 2>&1 | tee runs/<tag>.log
 ```
 
 The detailed-route iteration counts then arrive line by line. Do not interpret a

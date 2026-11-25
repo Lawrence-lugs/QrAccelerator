@@ -27,7 +27,7 @@ PDN_MULTILAYER: true
 PDN_VERTICAL_LAYER: Metal4
 PDN_HORIZONTAL_LAYER: Metal5
 PDN_MACRO_CONNECTIONS:
-  - ".* VPWR VGND VDD*! VSS!"
+  - 'u_impl[.]g_bank.*[.]g_rb.*[.]g_macro1024[.]u_macro VPWR VGND VDD(ARRAY)?! VSS!'
 RUN_POST_GPL_DESIGN_REPAIR: false
 PL_TARGET_DENSITY_PCT: 60
 PL_RESIZER_SETUP_MAX_BUFFER_PCT: 5
@@ -44,208 +44,210 @@ SYNTH_STRATEGY: "AREA 3"
 MACROS:
   RM_IHPSG13_2P_1024x32_c2_bm_bist:
     gds:
-      - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/gds/RM_IHPSG13_2P_1024x32_c2_bm_bist.gds
+      - pdk_dir::libs.ref/sg13g2_sram/gds/RM_IHPSG13_2P_1024x32_c2_bm_bist.gds
     lef:
-      - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/lef/RM_IHPSG13_2P_1024x32_c2_bm_bist.lef
+      - pdk_dir::libs.ref/sg13g2_sram/lef/RM_IHPSG13_2P_1024x32_c2_bm_bist.lef
     lib:
       "*fast*":
-        - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_fast_1p32V_m55C.lib
+        - pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_fast_1p32V_m55C.lib
       "*slow*":
-        - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_slow_1p08V_125C.lib
+        - pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_slow_1p08V_125C.lib
       "*typ*":
-        - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_typ_1p20V_25C.lib
+        - pdk_dir::libs.ref/sg13g2_sram/lib/RM_IHPSG13_2P_1024x32_c2_bm_bist_typ_1p20V_25C.lib
     spice:
-      - /foss/pdks/ihp-sg13g2/libs.ref/sg13g2_sram/cdl/RM_IHPSG13_2P_1024x32_c2_bm_bist.cdl
+      - pdk_dir::libs.ref/sg13g2_sram/cdl/RM_IHPSG13_2P_1024x32_c2_bm_bist.cdl
+    # IHP LEF is 685.49 × 385.37 µm in N. Leave 20 µm column gaps
+    # and 50 µm row gaps for routing between the SRAMs.
     instances:
       u_impl.g_bank[0].g_rb[0].g_macro1024.u_macro:
         location: [100.00, 100.00]
-        orientation: E
+        orientation: N
       u_impl.g_bank[0].g_rb[1].g_macro1024.u_macro:
-        location: [100.00, 485.37]
-        orientation: E
+        location: [100.00, 535.37]
+        orientation: N
       u_impl.g_bank[0].g_rb[2].g_macro1024.u_macro:
-        location: [100.00, 870.74]
-        orientation: E
+        location: [100.00, 970.74]
+        orientation: N
       u_impl.g_bank[0].g_rb[3].g_macro1024.u_macro:
-        location: [100.00, 1256.11]
-        orientation: E
+        location: [100.00, 1406.11]
+        orientation: N
       u_impl.g_bank[0].g_rb[4].g_macro1024.u_macro:
-        location: [100.00, 1641.48]
-        orientation: E
+        location: [100.00, 1841.48]
+        orientation: N
       u_impl.g_bank[0].g_rb[5].g_macro1024.u_macro:
-        location: [100.00, 2026.85]
-        orientation: E
+        location: [100.00, 2276.85]
+        orientation: N
       u_impl.g_bank[0].g_rb[6].g_macro1024.u_macro:
-        location: [100.00, 2412.22]
-        orientation: E
+        location: [100.00, 2712.22]
+        orientation: N
       u_impl.g_bank[0].g_rb[7].g_macro1024.u_macro:
-        location: [100.00, 2797.59]
-        orientation: E
+        location: [100.00, 3147.59]
+        orientation: N
       u_impl.g_bank[1].g_rb[0].g_macro1024.u_macro:
-        location: [785.49, 100.00]
-        orientation: E
+        location: [805.49, 100.00]
+        orientation: N
       u_impl.g_bank[1].g_rb[1].g_macro1024.u_macro:
-        location: [785.49, 485.37]
-        orientation: E
+        location: [805.49, 535.37]
+        orientation: N
       u_impl.g_bank[1].g_rb[2].g_macro1024.u_macro:
-        location: [785.49, 870.74]
-        orientation: E
+        location: [805.49, 970.74]
+        orientation: N
       u_impl.g_bank[1].g_rb[3].g_macro1024.u_macro:
-        location: [785.49, 1256.11]
-        orientation: E
+        location: [805.49, 1406.11]
+        orientation: N
       u_impl.g_bank[1].g_rb[4].g_macro1024.u_macro:
-        location: [785.49, 1641.48]
-        orientation: E
+        location: [805.49, 1841.48]
+        orientation: N
       u_impl.g_bank[1].g_rb[5].g_macro1024.u_macro:
-        location: [785.49, 2026.85]
-        orientation: E
+        location: [805.49, 2276.85]
+        orientation: N
       u_impl.g_bank[1].g_rb[6].g_macro1024.u_macro:
-        location: [785.49, 2412.22]
-        orientation: E
+        location: [805.49, 2712.22]
+        orientation: N
       u_impl.g_bank[1].g_rb[7].g_macro1024.u_macro:
-        location: [785.49, 2797.59]
-        orientation: E
+        location: [805.49, 3147.59]
+        orientation: N
       u_impl.g_bank[2].g_rb[0].g_macro1024.u_macro:
-        location: [1470.98, 100.00]
-        orientation: E
+        location: [1510.98, 100.00]
+        orientation: N
       u_impl.g_bank[2].g_rb[1].g_macro1024.u_macro:
-        location: [1470.98, 485.37]
-        orientation: E
+        location: [1510.98, 535.37]
+        orientation: N
       u_impl.g_bank[2].g_rb[2].g_macro1024.u_macro:
-        location: [1470.98, 870.74]
-        orientation: E
+        location: [1510.98, 970.74]
+        orientation: N
       u_impl.g_bank[2].g_rb[3].g_macro1024.u_macro:
-        location: [1470.98, 1256.11]
-        orientation: E
+        location: [1510.98, 1406.11]
+        orientation: N
       u_impl.g_bank[2].g_rb[4].g_macro1024.u_macro:
-        location: [1470.98, 1641.48]
-        orientation: E
+        location: [1510.98, 1841.48]
+        orientation: N
       u_impl.g_bank[2].g_rb[5].g_macro1024.u_macro:
-        location: [1470.98, 2026.85]
-        orientation: E
+        location: [1510.98, 2276.85]
+        orientation: N
       u_impl.g_bank[2].g_rb[6].g_macro1024.u_macro:
-        location: [1470.98, 2412.22]
-        orientation: E
+        location: [1510.98, 2712.22]
+        orientation: N
       u_impl.g_bank[2].g_rb[7].g_macro1024.u_macro:
-        location: [1470.98, 2797.59]
-        orientation: E
+        location: [1510.98, 3147.59]
+        orientation: N
       u_impl.g_bank[3].g_rb[0].g_macro1024.u_macro:
-        location: [2156.47, 100.00]
-        orientation: E
+        location: [2216.47, 100.00]
+        orientation: N
       u_impl.g_bank[3].g_rb[1].g_macro1024.u_macro:
-        location: [2156.47, 485.37]
-        orientation: E
+        location: [2216.47, 535.37]
+        orientation: N
       u_impl.g_bank[3].g_rb[2].g_macro1024.u_macro:
-        location: [2156.47, 870.74]
-        orientation: E
+        location: [2216.47, 970.74]
+        orientation: N
       u_impl.g_bank[3].g_rb[3].g_macro1024.u_macro:
-        location: [2156.47, 1256.11]
-        orientation: E
+        location: [2216.47, 1406.11]
+        orientation: N
       u_impl.g_bank[3].g_rb[4].g_macro1024.u_macro:
-        location: [2156.47, 1641.48]
-        orientation: E
+        location: [2216.47, 1841.48]
+        orientation: N
       u_impl.g_bank[3].g_rb[5].g_macro1024.u_macro:
-        location: [2156.47, 2026.85]
-        orientation: E
+        location: [2216.47, 2276.85]
+        orientation: N
       u_impl.g_bank[3].g_rb[6].g_macro1024.u_macro:
-        location: [2156.47, 2412.22]
-        orientation: E
+        location: [2216.47, 2712.22]
+        orientation: N
       u_impl.g_bank[3].g_rb[7].g_macro1024.u_macro:
-        location: [2156.47, 2797.59]
-        orientation: E
+        location: [2216.47, 3147.59]
+        orientation: N
       u_impl.g_bank[4].g_rb[0].g_macro1024.u_macro:
-        location: [2841.96, 100.00]
-        orientation: E
+        location: [2921.96, 100.00]
+        orientation: N
       u_impl.g_bank[4].g_rb[1].g_macro1024.u_macro:
-        location: [2841.96, 485.37]
-        orientation: E
+        location: [2921.96, 535.37]
+        orientation: N
       u_impl.g_bank[4].g_rb[2].g_macro1024.u_macro:
-        location: [2841.96, 870.74]
-        orientation: E
+        location: [2921.96, 970.74]
+        orientation: N
       u_impl.g_bank[4].g_rb[3].g_macro1024.u_macro:
-        location: [2841.96, 1256.11]
-        orientation: E
+        location: [2921.96, 1406.11]
+        orientation: N
       u_impl.g_bank[4].g_rb[4].g_macro1024.u_macro:
-        location: [2841.96, 1641.48]
-        orientation: E
+        location: [2921.96, 1841.48]
+        orientation: N
       u_impl.g_bank[4].g_rb[5].g_macro1024.u_macro:
-        location: [2841.96, 2026.85]
-        orientation: E
+        location: [2921.96, 2276.85]
+        orientation: N
       u_impl.g_bank[4].g_rb[6].g_macro1024.u_macro:
-        location: [2841.96, 2412.22]
-        orientation: E
+        location: [2921.96, 2712.22]
+        orientation: N
       u_impl.g_bank[4].g_rb[7].g_macro1024.u_macro:
-        location: [2841.96, 2797.59]
-        orientation: E
+        location: [2921.96, 3147.59]
+        orientation: N
       u_impl.g_bank[5].g_rb[0].g_macro1024.u_macro:
-        location: [3527.45, 100.00]
-        orientation: E
+        location: [3627.45, 100.00]
+        orientation: N
       u_impl.g_bank[5].g_rb[1].g_macro1024.u_macro:
-        location: [3527.45, 485.37]
-        orientation: E
+        location: [3627.45, 535.37]
+        orientation: N
       u_impl.g_bank[5].g_rb[2].g_macro1024.u_macro:
-        location: [3527.45, 870.74]
-        orientation: E
+        location: [3627.45, 970.74]
+        orientation: N
       u_impl.g_bank[5].g_rb[3].g_macro1024.u_macro:
-        location: [3527.45, 1256.11]
-        orientation: E
+        location: [3627.45, 1406.11]
+        orientation: N
       u_impl.g_bank[5].g_rb[4].g_macro1024.u_macro:
-        location: [3527.45, 1641.48]
-        orientation: E
+        location: [3627.45, 1841.48]
+        orientation: N
       u_impl.g_bank[5].g_rb[5].g_macro1024.u_macro:
-        location: [3527.45, 2026.85]
-        orientation: E
+        location: [3627.45, 2276.85]
+        orientation: N
       u_impl.g_bank[5].g_rb[6].g_macro1024.u_macro:
-        location: [3527.45, 2412.22]
-        orientation: E
+        location: [3627.45, 2712.22]
+        orientation: N
       u_impl.g_bank[5].g_rb[7].g_macro1024.u_macro:
-        location: [3527.45, 2797.59]
-        orientation: E
+        location: [3627.45, 3147.59]
+        orientation: N
       u_impl.g_bank[6].g_rb[0].g_macro1024.u_macro:
-        location: [4212.94, 100.00]
-        orientation: E
+        location: [4332.94, 100.00]
+        orientation: N
       u_impl.g_bank[6].g_rb[1].g_macro1024.u_macro:
-        location: [4212.94, 485.37]
-        orientation: E
+        location: [4332.94, 535.37]
+        orientation: N
       u_impl.g_bank[6].g_rb[2].g_macro1024.u_macro:
-        location: [4212.94, 870.74]
-        orientation: E
+        location: [4332.94, 970.74]
+        orientation: N
       u_impl.g_bank[6].g_rb[3].g_macro1024.u_macro:
-        location: [4212.94, 1256.11]
-        orientation: E
+        location: [4332.94, 1406.11]
+        orientation: N
       u_impl.g_bank[6].g_rb[4].g_macro1024.u_macro:
-        location: [4212.94, 1641.48]
-        orientation: E
+        location: [4332.94, 1841.48]
+        orientation: N
       u_impl.g_bank[6].g_rb[5].g_macro1024.u_macro:
-        location: [4212.94, 2026.85]
-        orientation: E
+        location: [4332.94, 2276.85]
+        orientation: N
       u_impl.g_bank[6].g_rb[6].g_macro1024.u_macro:
-        location: [4212.94, 2412.22]
-        orientation: E
+        location: [4332.94, 2712.22]
+        orientation: N
       u_impl.g_bank[6].g_rb[7].g_macro1024.u_macro:
-        location: [4212.94, 2797.59]
-        orientation: E
+        location: [4332.94, 3147.59]
+        orientation: N
       u_impl.g_bank[7].g_rb[0].g_macro1024.u_macro:
-        location: [4898.43, 100.00]
-        orientation: E
+        location: [5038.43, 100.00]
+        orientation: N
       u_impl.g_bank[7].g_rb[1].g_macro1024.u_macro:
-        location: [4898.43, 485.37]
-        orientation: E
+        location: [5038.43, 535.37]
+        orientation: N
       u_impl.g_bank[7].g_rb[2].g_macro1024.u_macro:
-        location: [4898.43, 870.74]
-        orientation: E
+        location: [5038.43, 970.74]
+        orientation: N
       u_impl.g_bank[7].g_rb[3].g_macro1024.u_macro:
-        location: [4898.43, 1256.11]
-        orientation: E
+        location: [5038.43, 1406.11]
+        orientation: N
       u_impl.g_bank[7].g_rb[4].g_macro1024.u_macro:
-        location: [4898.43, 1641.48]
-        orientation: E
+        location: [5038.43, 1841.48]
+        orientation: N
       u_impl.g_bank[7].g_rb[5].g_macro1024.u_macro:
-        location: [4898.43, 2026.85]
-        orientation: E
+        location: [5038.43, 2276.85]
+        orientation: N
       u_impl.g_bank[7].g_rb[6].g_macro1024.u_macro:
-        location: [4898.43, 2412.22]
-        orientation: E
+        location: [5038.43, 2712.22]
+        orientation: N
       u_impl.g_bank[7].g_rb[7].g_macro1024.u_macro:
-        location: [4898.43, 2797.59]
-        orientation: E
+        location: [5038.43, 3147.59]
+        orientation: N
