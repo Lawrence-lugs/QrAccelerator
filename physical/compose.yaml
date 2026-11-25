@@ -2,7 +2,7 @@ name: qracc-physical
 
 services:
   qracc-physical:
-    image: ghcr.io/lawrence-lugs/lugs-soc/lugs-soc-tools:latest
+    image: ${QRACC_PHYSICAL_IMAGE:-ghcr.io/lawrence-lugs/lugs-soc/lugs-soc-tools:latest}
     volumes:
       - ..:/workspace
     working_dir: /workspace
