@@ -1,0 +1,76 @@
+name: Hierarchical physical design
+
+on:
+  push:
+    branches: [main, codex/physical-design-bounded-blocks]
+    paths:
+      - 'physical/**'
+      - 'rtl/**'
+      - '.github/workflows/physical.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harden:
+    name: Harden ${{ matrix.macro }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - macro: feature_loader
+            target: harden-feature
+          - macro: output_scaler_group
+            target: harden-scaler-group
+          - macro: ram_2w2r
+            target: harden-ram
+    defaults:
+      run:
+        shell: bash
+    env:
+      MACRO: ${{ matrix.macro }}
+      TARGET: ${{ matrix.target }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make room for the physical toolchain image
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Harden macro
+        run: |
+          mkdir -p physical-ci
+          docker compose -f physical/compose.yaml run --rm -T qracc-physical \
+            -lc "make -C /workspace/physical/librelane ${TARGET} FLOW_TIMEOUT=10m" \
+            2>&1 | tee "physical-ci/${MACRO}.log"
+
+      - name: Archive exported macro views
+        run: |
+          views="physical/build/librelane/macros"
+          for file in "lef/${MACRO}.lef" "gds/${MACRO}.gds" "nl/${MACRO}.nl.v"; do
+            test -s "$views/$MACRO/$file" || { echo "Missing macro view $file"; exit 1; }
+          done
+          test -n "$(find "$views/$MACRO/lib" -type f -name '*.lib' -size +0c -print -quit)"
+          tar -C "$views" -cf "physical-ci/${MACRO}.tar" "$MACRO"
+
+      - name: Upload complete hardened macro folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardened-${{ matrix.macro }}
+          path: physical-ci/${{ matrix.macro }}.tar
+          if-no-files-found: error
+
+      - name: Upload hardening logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.macro }}
+          path: |
+            physical-ci/${{ matrix.macro }}.log
+            physical/librelane/runs/${{ matrix.macro }}/**/*.log
+          if-no-files-found: warn
