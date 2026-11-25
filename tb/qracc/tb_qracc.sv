@@ -5,15 +5,14 @@
 
 import qracc_pkg::*;
 
-`define NUM_ADC_REF_RANGE_SHIFTS 1
-
 module tb_qracc #(
     parameter SRAM_ROWS = 128,
     parameter SRAM_COLS = 32,
     parameter xBits = 2, // Ternary bits + 1
     parameter xBatches = 10,
     parameter numAdcBits = 4,
-    parameter int numPlanes = 8,
+    parameter int adcFullScale = SRAM_ROWS,
+    parameter int adcShift = 1,
     parameter numCfgBits = 8,
     parameter macMode = 0
 ) (
@@ -33,8 +32,8 @@ localparam compCount = (2**numAdcBits)-1; // An ADC only has 2^numAdcBits-1 comp
 // SIGNALS
 /////////////
 
-to_analog_t to_analog [numPlanes-1:0];
-from_analog_t from_analog [numPlanes-1:0];
+to_analog_t to_analog;
+from_analog_t from_analog;
 
 logic [numCfgBits-1:0] n_input_bits_cfg;
 logic [numCfgBits-1:0] n_adc_bits_cfg;
@@ -85,54 +84,34 @@ qracc_config_t qracc_cfg;
 // MODULE INSTANTIATION
 //////////////////////
 
-// Instantiate both modules and connect their interfaces
-genvar pw;
-generate
-    for (pw = 0; pw < numPlanes; pw++) begin : g_wrap
-        qr_acc_wrapper #(
-            .numRows(numRows),
-            .numCols(numCols),
-            .numAdcBits(numAdcBits)
-        ) u_qr_acc_wrapper (
-            .clk(clk),
-            .nrst(nrst),
-            // CONFIG
-            .cfg(qracc_cfg),
-            
-            .to_analog_o(to_analog[pw]),
-            .from_analog_i(from_analog[pw]),
+// This bench exercises one physical weight plane. Multibit integration is
+// covered by tb_seq_acc, which instantiates independent analog SRAM models.
+logic [numCols-1:0][numAdcBits-1:0] adc_out;
 
-            // DIGITAL INTERFACE: MAC
-            .adc_out_o(plane_adc_out[pw]),
-            .mac_en_i(mac_en),
-            .data_p_i(data_p_i),
-            .data_n_i(data_n_i),
-            // DIGITAL INTERFACE: SRAM
-            .to_sram_rq_wr(to_sram.rq_wr_i),
-            .to_sram_rq_valid(to_sram.rq_valid_i),
-            .to_sram_wr_data(to_sram.wr_data_i),
-            .to_sram_addr(to_sram.addr_i),
-            .from_sram_rq_ready(from_sram_rq_ready_plane[pw]),
-            .from_sram_rd_valid(from_sram_rd_valid_plane[pw]),
-            .from_sram_rd_data(from_sram_rd_data_plane[pw])
-        );
-    end
-endgenerate
-
-logic [numCols-1:0][numAdcBits-1:0] plane_adc_out [numPlanes-1:0];
-logic [numPlanes-1:0] from_sram_rq_ready_plane;
-logic [numPlanes-1:0] from_sram_rd_valid_plane;
-logic [numPlanes-1:0][numCols-1:0] from_sram_rd_data_plane;
-
-assign from_sram_rq_ready = |from_sram_rq_ready_plane;
-assign from_sram_rd_valid = |from_sram_rd_valid_plane;
-
-always_comb begin
-    from_sram_rd_data = '0;
-    for (int p = 0; p < numPlanes; p++) begin
-        from_sram_rd_data |= from_sram_rd_data_plane[p];
-    end
-end
+qr_acc_wrapper #(
+    .numRows(numRows),
+    .numCols(numCols),
+    .outputElements(numCols),
+    .numAdcBits(numAdcBits)
+) u_qr_acc_wrapper (
+    .clk(clk),
+    .nrst(nrst),
+    .cfg(qracc_cfg),
+    .to_analog_o(to_analog),
+    .from_analog_i(from_analog),
+    .adc_out_o(adc_out),
+    .mac_en_i(mac_en),
+    .data_p_i(data_p_i),
+    .data_n_i(data_n_i),
+    .wr_bus_sel_i(2'd0), // one SRAM row per request
+    .to_sram_rq_wr(rq_wr),
+    .to_sram_rq_valid(rq_valid),
+    .to_sram_wr_data({{3*numCols{1'b0}}, wr_data}),
+    .to_sram_addr(addr),
+    .from_sram_rq_ready(from_sram.rq_ready_o),
+    .from_sram_rd_valid(from_sram.rd_valid_o),
+    .from_sram_rd_data(from_sram.rd_data_o)
+);
 
 logic [numRows-1:0] PSM_VDR_SEL;
 logic [numRows-1:0] PSM_VDR_SELB;
@@ -166,58 +145,44 @@ logic CLK;
 
 // We need to do this because
 // it's illegal to connect VAMS electrical to structs
-assign PSM_VDR_SEL = to_analog[0].PSM_VDR_SEL;
-assign PSM_VDR_SELB = to_analog[0].PSM_VDR_SELB;
-assign PSM_VSS_SEL = to_analog[0].PSM_VSS_SEL;
-assign PSM_VSS_SELB = to_analog[0].PSM_VSS_SELB;
-assign PSM_VRST_SEL = to_analog[0].PSM_VRST_SEL;
-assign PSM_VRST_SELB = to_analog[0].PSM_VRST_SELB;
-assign NSM_VDR_SEL = to_analog[0].NSM_VDR_SEL;
-assign NSM_VDR_SELB = to_analog[0].NSM_VDR_SELB;
-assign NSM_VSS_SEL = to_analog[0].NSM_VSS_SEL;
-assign NSM_VSS_SELB = to_analog[0].NSM_VSS_SELB;
-assign NSM_VRST_SEL = to_analog[0].NSM_VRST_SEL;
-assign NSM_VRST_SELB = to_analog[0].NSM_VRST_SELB;
+assign PSM_VDR_SEL = to_analog.PSM_VDR_SEL;
+assign PSM_VDR_SELB = to_analog.PSM_VDR_SELB;
+assign PSM_VSS_SEL = to_analog.PSM_VSS_SEL;
+assign PSM_VSS_SELB = to_analog.PSM_VSS_SELB;
+assign PSM_VRST_SEL = to_analog.PSM_VRST_SEL;
+assign PSM_VRST_SELB = to_analog.PSM_VRST_SELB;
+assign NSM_VDR_SEL = to_analog.NSM_VDR_SEL;
+assign NSM_VDR_SELB = to_analog.NSM_VDR_SELB;
+assign NSM_VSS_SEL = to_analog.NSM_VSS_SEL;
+assign NSM_VSS_SELB = to_analog.NSM_VSS_SELB;
+assign NSM_VRST_SEL = to_analog.NSM_VRST_SEL;
+assign NSM_VRST_SELB = to_analog.NSM_VRST_SELB;
 
-assign from_analog[0].SA_OUT = SA_OUT;
-assign WL = to_analog[0].WL;
-assign PCH = to_analog[0].PCH;
-assign WR_DATA = to_analog[0].WR_DATA;
-assign WRITE = to_analog[0].WRITE;
-assign CSEL = to_analog[0].CSEL;
-assign SAEN = to_analog[0].SAEN;
-// VERILATOR FIX: transparent latch to hold valid ADC output during clk HIGH phase
-`ifdef VERILATOR
-logic [compCount*numCols-1:0] ADC_OUT_held;
-always_latch begin
-    if (!clk) ADC_OUT_held = ADC_OUT;
-end
-genvar p;
-generate
-    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
-        assign from_analog[p].ADC_OUT = ADC_OUT_held;
-    end
-endgenerate
-`else
-genvar p;
-generate
-    for (p = 0; p < numPlanes; p++) begin : g_from_analog_adc
-        assign from_analog[p].ADC_OUT = ADC_OUT;
-    end
-endgenerate
-`endif
-assign NF = to_analog[0].NF;
-assign NFB = to_analog[0].NFB;
-assign M2A = to_analog[0].M2A;
-assign M2AB = to_analog[0].M2AB;
-assign R2A = to_analog[0].R2A;
-assign R2AB = to_analog[0].R2AB;
-assign CLK = to_analog[0].CLK;
+assign from_analog.SA_OUT = SA_OUT;
+assign WL = to_analog.WL;
+assign PCH = to_analog.PCH;
+assign WR_DATA = to_analog.WR_DATA;
+assign WRITE = to_analog.WRITE;
+assign CSEL = to_analog.CSEL;
+assign SAEN = to_analog.SAEN;
+// The current model keeps MAC selects stable through the sampling edge.
+// No compensating latch is needed; compare the registered wrapper output.
+logic signed [numCols-1:0][qrAccAdcCodeBits-1:0] ADC_CODE;
+assign from_analog.ADC_OUT = ADC_OUT;
+assign from_analog.ADC_CODE = ADC_CODE;
+assign NF = to_analog.NF;
+assign NFB = to_analog.NFB;
+assign M2A = to_analog.M2A;
+assign M2AB = to_analog.M2AB;
+assign R2A = to_analog.R2A;
+assign R2AB = to_analog.R2AB;
+assign CLK = to_analog.CLK;
 
 ts_qracc #(
     .numRows(SRAM_ROWS),
     .numCols(SRAM_COLS),
-    .numAdcBits(numAdcBits)
+    .numAdcBits(numAdcBits),
+    .adcFullScale(adcFullScale)
 ) u_ts_qracc (
     .adc_ref_range_shifts(qracc_cfg.adc_ref_range_shifts),
     .binary_cfg(qracc_cfg.binary_cfg),
@@ -241,7 +206,7 @@ ts_qracc #(
     .CSEL(CSEL),
     .SAEN(SAEN),
     .ADC_OUT(ADC_OUT),
-    .ADC_CODE(),
+    .ADC_CODE(ADC_CODE),
     .NF(NF),
     .NFB(NFB),
     .M2A(M2A),
@@ -255,6 +220,7 @@ ts_qracc #(
 // This avoids a packed-array width mismatch that VCS handles per-element but Verilator does not.
 logic [numRows-1:0][xBits-1:0] bipolar_p_full;
 logic [numRows-1:0][xBits-1:0] bipolar_n_full;
+int active_trit;
 
 twos_to_bipolar #(
     .inBits(xBits),
@@ -269,8 +235,8 @@ twos_to_bipolar #(
 
 always_comb begin
     for (int i = 0; i < numRows; i++) begin
-        data_p_i[i] = bipolar_p_full[i][0];
-        data_n_i[i] = bipolar_n_full[i][0];
+        data_p_i[i] = bipolar_p_full[i][active_trit];
+        data_n_i[i] = bipolar_n_full[i][active_trit];
     end
 end
 
@@ -278,36 +244,31 @@ task sram_write(
     input logic [$clog2(numRows)-1:0] t_addr,
     input logic [numCols-1:0] t_data
 );
-    // set address
+    @(negedge clk);
+    while (!rq_ready) @(negedge clk);
     addr = t_addr;
     wr_data = t_data;
-    // set write request
     rq_wr = 1;
     rq_valid = 1;
-    $write("SRAM WRITE @ %d, DATA: %d... ", t_addr, wr_data);
-    while (!rq_ready) #(CLK_PERIOD);
-    #(CLK_PERIOD);
-    $display("GD");
-    // set valid
+    @(posedge clk);
+    @(negedge clk);
     rq_valid = 0;
+    while (!rq_ready) @(negedge clk);
 endtask
 
 task sram_read(
     input logic [$clog2(numRows)-1:0] t_addr
 );
-    // set address
+    @(negedge clk);
+    while (!rq_ready) @(negedge clk);
     addr = t_addr;
-    // set write request
     rq_wr = 0;
     rq_valid = 1;
-    $write("SRAM READ @ %d,", t_addr);
-    while (!rq_ready) #(CLK_PERIOD);
-    #(CLK_PERIOD);
-    // set valid
+    @(posedge clk);
+    @(negedge clk);
     rq_valid = 0;
-    $write("...");
-    while (!rd_valid) #(CLK_PERIOD);
-    $display("DATA: %d", rd_data);
+    while (!rd_valid) @(negedge clk);
+    $display("SRAM READ @ %d, DATA: %d", t_addr, rd_data);
 endtask
 
 //////////////////////
@@ -343,14 +304,14 @@ end
 task print_adc_out;
     $write("[");
     for (int k = 0; k < numCols; k++) begin
-        $write("%d,", $signed(plane_adc_out[0][k]));
+        $write("%d,", $signed(adc_out[k]));
     end
     $display("]");
 endtask
 
 task save_adc_out;
     for (int k = 0; k < numCols; k++) begin
-        $fwrite(f_adc_out, "%d ", $signed(plane_adc_out[0][k]));
+        $fwrite(f_adc_out, "%d ", $signed(adc_out[k]));
     end
     $fwrite(f_adc_out, "\n");
 endtask
@@ -362,8 +323,9 @@ initial begin
 
     test_phase = P_INIT;
 
+    qracc_cfg = '0;
     qracc_cfg.binary_cfg = macMode;
-    qracc_cfg.adc_ref_range_shifts = `NUM_ADC_REF_RANGE_SHIFTS;
+    qracc_cfg.adc_ref_range_shifts = adcShift[3:0];
     if (qracc_cfg.binary_cfg == 1) $display("MAC MODE: BINARY");
     else $display("MAC MODE: BIPOLAR");
 
@@ -420,6 +382,10 @@ initial begin
     flag = 0;
     nrst = 0;
     wr_data = 0;
+    rq_wr = 0;
+    rq_valid = 0;
+    addr = 0;
+    active_trit = 0;
     mac_en = 0;
     x_data = 0; // To prevent X propagation
     
@@ -435,8 +401,9 @@ initial begin
     $display("Reading weights...");
     $display("Writing into SRAM...");
     for (int i = 0; i < numRows; i=i+1) begin
-        if ($fscanf(f_w, "%d", scan_data))
-            sram_write( 
+        if ($fscanf(f_w, "%d", scan_data) != 1)
+            $fatal(1, "short w.txt");
+        sram_write( 
                 .t_addr(i),
                 .t_data(scan_data)
             );
@@ -467,19 +434,20 @@ initial begin
     test_phase = P_PERFORM_MACS;
     $display("Performing MACs...");
     for (int h = 0; h < xBatches; h++) begin
+        @(negedge clk);
         for (int i = 0; i < numRows; i++) begin
             int tmp;
-            $fscanf(f_x, "%d", tmp);
+            if ($fscanf(f_x, "%d", tmp) != 1)
+                $fatal(1, "short x.txt");
             x_data[i] = tmp[xBits-1:0];
         end
-        `ifdef VERILATOR
-        // Wait for negedge so the ADC latch captures the new value
-        @(negedge clk);
-        #1;
-        `endif
         for (int i = 0; i < xBits-1; i++) begin
+            active_trit = i;
+            @(posedge clk);
+            #1; // after the ADC register's nonblocking update
             print_adc_out();
             save_adc_out();
+            if (i < xBits-2) @(negedge clk);
         end
     end
     `endif
@@ -496,8 +464,7 @@ end
 // FREEZE WATCHDOG
 initial begin
     #(CLK_PERIOD*50000); // after 1ms
-    $display("WATCHDOG TIMED OUT");
-    $finish();
+    $fatal(1, "WATCHDOG TIMED OUT");
 end
 
 endmodule
