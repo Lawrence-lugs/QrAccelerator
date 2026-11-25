@@ -436,12 +436,13 @@ def test_tb_qracc(
     xBatches = 10,
     xTrits = 1,
     outBits = 4,
-    snr_limit = 8,
+    adc_shift = 1,
     run = True, # Set to False to skip RTL simulation
     x_repeat = False,
 ):
     """Test the qr_acc_wrapper block (digital RTL only, no AMS)."""
     mac_mode = 1 if weight_mode == 'binary' else 0
+    adc_full_scale = wDimY
   
     package_list = ['../rtl/qracc_pkg.svh']
     rtl_file_list = [ 
@@ -464,6 +465,8 @@ def test_tb_qracc(
         f'xBits={xTrits+1}',
         f'xBatches={xBatches}',
         f'numAdcBits={outBits}',
+        f'adcFullScale={adc_full_scale}',
+        f'adcShift={adc_shift}',
         f'macMode={mac_mode}'
     ]
 
@@ -472,7 +475,7 @@ def test_tb_qracc(
     print(f'weight_mode:{weight_mode,mac_mode}')
     seed = int(seed) # why do we have to typecast??? weird pytest metaconf thing
     
-    w,x,wx_outBits = generate_qracc_inputs(
+    w,x,_ = generate_qracc_inputs(
         wDimX = wDimX,
         wDimY = wDimY,
         xBatches = xBatches,
@@ -481,9 +484,23 @@ def test_tb_qracc(
         seed = seed,
         weight_mode = weight_mode,
         col_symmetric = col_symmetric,
-        rangeBits = 5,
+        clip_output = False,
         x_repeat = x_repeat
     )
+
+    # The wrapper returns one registered ADC code per activation trit, not
+    # the reconstructed multi-trit MAC. Match the current fixed-full-scale
+    # ADC transfer function, including the binary ladder's lower clamp.
+    # w.txt packs column 0 at the MSB, so reverse the expected column order.
+    mag = np.abs(x)
+    sign = np.sign(x)
+    trits = np.stack([sign * ((mag >> bit) & 1)
+                      for bit in range(xTrits)], axis=1)
+    partials = trits @ w.T
+    expected = q.adc_quantize(
+        partials, adc_bits=outBits, shift=adc_shift,
+        fs_counts=adc_full_scale, mode=weight_mode,
+    ).reshape(xBatches * xTrits, wDimX)[:, ::-1]
 
     # We need to convert the bipolar weights back to binary to write them correctly into hardware
     if weight_mode == 'bipolar':
@@ -494,15 +511,15 @@ def test_tb_qracc(
 
     np.savetxt(f'{stimulus_output_path}/w.txt',wint,fmt='%d')
     np.savetxt(f'{stimulus_output_path}/x.txt',x,fmt='%d')
-    np.savetxt(f'{stimulus_output_path}/wx_4b.txt',wx_outBits.T[::-1].T,fmt='%d')
+    np.savetxt(f'{stimulus_output_path}/wx_4b.txt',expected,fmt='%d')
 
     df = pd.DataFrame
     print('x')
     print(df(x))
     print('w')
     print(df(w.T))
-    print('wx >> shift')
-    print(df(wx_outBits.T[::-1].T))
+    print('Expected ADC codes')
+    print(df(expected))
 
     tb_file = f'../tb/{tb_path}/{tb_name}.sv'
     log_file = f'{tb_name}_{simulator}.log'
@@ -512,12 +529,13 @@ def test_tb_qracc(
 
     # Post-simulation
 
-    actual = np.loadtxt(f'{stimulus_output_path}/adc_out_rtl_{weight_mode}.txt',dtype=int)
-    expected = wx_outBits.T[::-1].T    
-    rmse, snr = rmse_snr(expected,actual)
-    save_scatter_fig(expected,actual,f'QR Accelerator SNR:{snr:.2f}dB',filename=f'qr_acc_{weight_mode}',enabled=figures)
-
-    assert snr > snr_limit, f'SNR: {snr}'
+    actual = np.loadtxt(f'{stimulus_output_path}/adc_out_rtl_{weight_mode}.txt',
+                        dtype=int, ndmin=2)
+    assert actual.shape == expected.shape
+    np.testing.assert_array_equal(actual, expected,
+                                  err_msg=f'{weight_mode} wrapper ADC codes')
+    save_scatter_fig(expected, actual, 'QR Accelerator ADC code comparison',
+                     filename=f'qr_acc_{weight_mode}', enabled=figures)
 
     return
 

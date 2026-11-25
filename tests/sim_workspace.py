@@ -92,13 +92,27 @@ def sim_log_path(name: str) -> str:
     return path
 
 
+def _ignore_rtl_copy_entries(directory: str, names: list[str]) -> set[str]:
+    ignored = set(shutil.ignore_patterns('qracc_params.svh', '__pycache__')(directory, names))
+    # This macro is supplied locally for proprietary SRAM simulations. A clean
+    # public checkout may contain a dangling link; MODEL_MEM tests do not use it.
+    # Keep an available model, and let a simulation that explicitly requires
+    # an unavailable model fail at compile time rather than copying fake RTL.
+    macro = 'sram_32bank_8b.sv'
+    if os.path.normpath(directory) == os.path.join(REPO_ROOT, 'rtl', 'activation_buffer'):
+        path = os.path.join(directory, macro)
+        if macro in names and os.path.islink(path) and not os.path.exists(path):
+            ignored.add(macro)
+    return ignored
+
+
 def _copy_rtl_workspace() -> None:
     dst = os.path.join(sim_run_dir(), 'rtl')
     src = os.path.join(REPO_ROOT, 'rtl')
     if not os.path.isdir(dst):
         shutil.copytree(
             src, dst,
-            ignore=shutil.ignore_patterns('qracc_params.svh', '__pycache__'),
+            ignore=_ignore_rtl_copy_entries,
         )
     # Seed a default parameter file so a test that does not call
     # write_parameter_definition_file still compiles with the same defaults
