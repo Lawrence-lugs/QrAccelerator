@@ -57,6 +57,13 @@ jobs:
             conda run --no-capture-output -n ic_dec python -m pytest tests/test_rtl.py::test_tb_column --simulator verilator \
               -v --tb=short
 
+      - name: Run multibit RTL verification
+        if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            qraccelerator-qracc \
+            conda run --no-capture-output -n ic_dec python -m pytest tests/test_rtl_multibit_verify.py --simulator verilator -v --tb=short
+
       - name: Run in-tree MARP compiler and weight-plane tests
         if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
         run: |
