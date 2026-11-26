@@ -13,6 +13,8 @@ STA_CORNER ?= /usr/local/lib/python3.12/dist-packages/librelane/scripts/openroad
 LIBRELANE_BIN ?= /usr/local/bin/librelane
 FLOW_TIMEOUT ?= 10m
 FLOW_JOBS ?= 4
+HARDEN_TO ?=
+HARDEN_LIMIT := $(if $(HARDEN_TO),--to $(HARDEN_TO))
 PROBE_TO ?= pins
 PIN_RUN ?=
 FLOW_LOCK := .flow.lock
@@ -77,8 +79,8 @@ preprocess-scaler-group:
 
 _harden-scaler-group: preprocess-scaler-group fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag output_scaler_group --overwrite \
-		--save-views-to $(abspath $(MACROS)/output_scaler_group) \
+	$(LIBRELANE) --run-tag output_scaler_group --overwrite $(HARDEN_LIMIT) \
+		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/output_scaler_group)) \
 		configs/output_scaler_group.yaml
 
 preprocess-feature:
@@ -94,8 +96,8 @@ preprocess-feature:
 
 _harden-feature: preprocess-feature fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag feature_loader --overwrite \
-		--save-views-to $(abspath $(MACROS)/feature_loader) \
+	$(LIBRELANE) --run-tag feature_loader --overwrite $(HARDEN_LIMIT) \
+		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/feature_loader)) \
 		configs/feature_loader.yaml
 
 preprocess-tree:
@@ -123,8 +125,8 @@ _probe-ram: preprocess-ram fix-librelane
 
 _harden-ram: preprocess-ram fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag ram_2w2r --overwrite \
-		--save-views-to $(abspath $(MACROS)/ram_2w2r) \
+	$(LIBRELANE) --run-tag ram_2w2r --overwrite $(HARDEN_LIMIT) \
+		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/ram_2w2r)) \
 		configs/ram_2w2r.yaml
 
 preprocess-top:
