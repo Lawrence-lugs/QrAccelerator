@@ -19,12 +19,42 @@ on:
         default: '10'
         options: ['10', '20', '30']
 
+env:
+  FULL_HARDENING: ${{ inputs.full_hardening || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full physical]')) }}
+  HARDENING_MINUTES: ${{ inputs.hardening_minutes || '30' }}
+
 permissions:
   contents: read
   packages: read
 
 jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      reference: ${{ steps.resolve.outputs.reference }}
+      digest: ${{ steps.resolve.outputs.digest }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve toolchain image
+        id: resolve
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/physical-tools:latest"
+          if ! digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image"); then
+            image=ghcr.io/lawrence-lugs/lugs-soc/lugs-soc-tools:latest
+            digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image")
+          fi
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "reference=${image%:*}@$digest" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
   harden:
+    needs: image
     name: Harden ${{ matrix.macro }}
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -33,49 +63,56 @@ jobs:
       matrix:
         include:
           - macro: feature_loader
+            sources: rtl/feature_loader/feature_loader.sv
+            wrapper: feature_loader_phys
             target: harden-feature
             checkpoint: Odb.CustomIOPlacement
           - macro: output_scaler_group
+            sources: rtl/output_scaler/output_scaler.sv
+            wrapper: output_scaler_group
             target: harden-scaler-group
             checkpoint: OpenROAD.GlobalRouting
           - macro: ram_2w2r
+            sources: physical/actmem/**
+            wrapper: ram_2w2r
             target: harden-ram
             checkpoint: OpenROAD.GeneratePDN
     defaults:
       run:
         shell: bash
     env:
+      QRACC_PHYSICAL_IMAGE: ${{ needs.image.outputs.reference }}
       MACRO: ${{ matrix.macro }}
       TARGET: ${{ matrix.target }}
       CHECKPOINT: ${{ matrix.checkpoint }}
-      FULL_HARDENING: ${{ inputs.full_hardening || false }}
-      HARDENING_MINUTES: ${{ inputs.hardening_minutes || '10' }}
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore macro artifact
+        id: reuse
+        uses: actions/cache@v4
+        with:
+          path: physical-ci/${{ matrix.macro }}.tar
+          key: >-
+            physical-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.image.outputs.digest }}-${{ env.FULL_HARDENING == 'true' && 'full' || matrix.checkpoint }}-${{ matrix.macro }}-${{ hashFiles(matrix.sources, 'rtl/*.svh', format('physical/librelane/src/{0}.sv', matrix.wrapper), 'physical/librelane/Makefile', 'physical/compose.yaml', format('physical/librelane/configs/{0}.yaml', matrix.macro), format('physical/librelane/sdc/{0}.sdc', matrix.macro), format('physical/librelane/pin_order/{0}.cfg', matrix.macro)) }}
+
       - name: Make room for the physical toolchain image
+        if: steps.reuse.outputs.cache-hit != 'true'
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
           df -h "$GITHUB_WORKSPACE"
 
       - name: Log in to GHCR
+        if: steps.reuse.outputs.cache-hit != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Select mirrored physical image
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}/physical-tools:latest"
-          if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
-            echo "QRACC_PHYSICAL_IMAGE=$image" >> "$GITHUB_ENV"
-          else
-            echo "::notice::Physical image mirror unavailable. Using the upstream image from Compose."
-          fi
-
       - name: Harden macro
+        if: steps.reuse.outputs.cache-hit != 'true'
         run: |
           mkdir -p physical-ci
           harden_to="$CHECKPOINT"
@@ -89,7 +126,7 @@ jobs:
             2>&1 | tee "physical-ci/${MACRO}.log"
 
       - name: Archive exported macro views
-        if: inputs.full_hardening
+        if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true'
         run: |
           views="physical/build/librelane/macros"
           for file in "lef/${MACRO}.lef" "gds/${MACRO}.gds" "nl/${MACRO}.nl.v"; do
@@ -99,27 +136,99 @@ jobs:
           tar -C "$views" -cf "physical-ci/${MACRO}.tar" "$MACRO"
 
       - name: Upload complete hardened macro folder
-        if: inputs.full_hardening
+        if: env.FULL_HARDENING == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: hardened-${{ matrix.macro }}
           path: physical-ci/${{ matrix.macro }}.tar
           if-no-files-found: error
 
+      - name: Archive checkpoint views
+        if: ${{ env.FULL_HARDENING != 'true' && steps.reuse.outputs.cache-hit != 'true' }}
+        run: tar -C "physical/librelane/runs/$MACRO/final" -cf "physical-ci/$MACRO.tar" .
+
       - name: Upload checkpoint views
-        if: ${{ !inputs.full_hardening }}
+        if: ${{ env.FULL_HARDENING != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: checkpoint-${{ matrix.macro }}
-          path: physical/librelane/runs/${{ matrix.macro }}/final/
+          path: physical-ci/${{ matrix.macro }}.tar
           if-no-files-found: error
 
       - name: Upload hardening logs
-        if: always()
+        if: always() && steps.reuse.outputs.cache-hit != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ matrix.macro }}
           path: |
             physical-ci/${{ matrix.macro }}.log
             physical/librelane/runs/${{ matrix.macro }}/**/*.log
+          if-no-files-found: warn
+
+  top:
+    name: Assemble and harden top
+    if: inputs.full_hardening || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full physical]'))
+    needs: [image, harden]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      QRACC_PHYSICAL_IMAGE: ${{ needs.image.outputs.reference }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hardened-*
+          path: physical-ci/macros
+          merge-multiple: true
+
+      - name: Restore and check hardened views
+        run: |
+          views=physical/build/librelane/macros
+          mkdir -p "$views"
+          for macro in feature_loader output_scaler_group ram_2w2r; do
+            tar -xf "physical-ci/macros/$macro.tar" -C "$views"
+            for view in "lef/$macro.lef" "gds/$macro.gds" "nl/$macro.nl.v"; do
+              test -s "$views/$macro/$view"
+            done
+            for corner in nom_fast_1p32V_m40C nom_slow_1p08V_125C nom_typ_1p20V_25C; do
+              test -s "$views/$macro/lib/$corner/$macro.lib"
+            done
+          done
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pack macros and harden top
+        run: |
+          docker compose -f physical/compose.yaml run --rm -T qracc-physical -lc '
+            cd /workspace/physical/librelane &&
+            python3 scripts/pack_top_macros.py --macro-root ../build/librelane/macros --config configs/qr_acc_top_phys.yaml &&
+            make top FLOW_TIMEOUT='"${HARDENING_MINUTES}m"             2>&1 | tee physical-ci/top.log
+
+      - name: Archive hardened top
+        run: |
+          views=physical/build/librelane/macros
+          test -s "$views/qr_acc_top_phys/gds/qr_acc_top_phys.gds"
+          tar -C "$views" -cf physical-ci/qr_acc_top_phys.tar qr_acc_top_phys
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hardened-qr_acc_top_phys
+          path: physical-ci/qr_acc_top_phys.tar
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-qr_acc_top_phys
+          path: |
+            physical-ci/top.log
+            physical/librelane/runs/qr_acc_top_phys/**/*.log
           if-no-files-found: warn
