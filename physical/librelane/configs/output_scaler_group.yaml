@@ -12,9 +12,10 @@ PNR_SDC_FILE: sdc/output_scaler_group.sdc
 SIGNOFF_SDC_FILE: sdc/output_scaler_group.sdc
 
 FP_SIZING: relative
-FP_CORE_UTIL: 65
-FP_ASPECT_RATIO: 2.0
-PL_TARGET_DENSITY_PCT: 65
+# Use a wider core and leave room for antenna repair near the pin banks.
+FP_CORE_UTIL: 32
+FP_ASPECT_RATIO: 1.2
+PL_TARGET_DENSITY_PCT: 38
 
 # Lane data enters at the top and scaled data leaves at the bottom.
 IO_PIN_ORDER_CFG: pin_order/output_scaler_group.cfg

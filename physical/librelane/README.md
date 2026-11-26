@@ -200,12 +200,11 @@ because the 28 write lanes still need 8,064 address decoders.
   inserted 17,368 hold buffers into the feature loader and hit `RSZ-0060`
 - `sg13g2_buf_1` data driver, `sg13g2_buf_16` clock driver,
   `sg13g2_buf_1/A/X` insertion buffer
-- `feature_loader` uses a **wide** core (`height/width = 0.7`, about 1.4:1) at
-  **40%** util, with data/address pins on the left and the 288 x 9 output bus
-  on the right. A 2:1 shape did not leave enough east-edge tracks for 2,592
-  outputs. The scaler groups use a **2:1 tall** core (`height/width = 2.0`) at
-  65%, with `wx_i` on top and `y_o` on the bottom. The top uses a square die
-  packed at 65% target density. The 5.8 mm memory macro is absolute-sized.
+- `feature_loader` uses 22% core utilization, 28% placement density and a
+  1.15 height/width ratio to extend the east edge for the 2,592 output pins.
+  Scaler groups use 32% core utilization, 38% placement density and a 1.2
+  height/width ratio to widen the north and south pin banks. The top uses a
+  square die packed at 65% target density. The memory macro is absolute-sized.
 - `GRT_ADJUSTMENT: 0.05` for the feature loader. The 15% derate still left
   6,015 overflowed tiles at 40% utilization, mostly on Metal3 and Metal5
 - post-GPL design repair is enabled for the feature loader. Without it, the

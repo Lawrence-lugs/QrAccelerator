@@ -19,13 +19,14 @@ PNR_SDC_FILE: sdc/feature_loader.sdc
 SIGNOFF_SDC_FILE: sdc/feature_loader.sdc
 
 FP_SIZING: relative
-FP_CORE_UTIL: 40
-FP_ASPECT_RATIO: 0.7
-PL_TARGET_DENSITY_PCT: 40
+# Size for pin escape first. The long east edge serves 2,592 outputs,
+# and the extra whitespace leaves room for post-placement repair buffers.
+FP_CORE_UTIL: 22
+FP_ASPECT_RATIO: 1.15
+PL_TARGET_DENSITY_PCT: 28
 
 # Data enters on the left and the 288 x 9 output bus leaves on the right.
-# The default 2x pin width leaves too few slots on the 1.8 mm east edge;
-# single-width pins fit the 2592 outputs.
+# Single-width pins leave more space between the output connections.
 IO_PIN_ORDER_CFG: pin_order/feature_loader.cfg
 IO_PIN_V_THICKNESS_MULT: 1
 IO_PIN_H_THICKNESS_MULT: 1
@@ -47,9 +48,7 @@ DESIGN_REPAIR_BUFFER_OUTPUT_PORTS: false
 # revisit antenna fixing during top integration.
 DIODE_CELL: null
 
-# At 40% utilization the 15% derate still left 6,015 overflowed tiles, mostly
-# on Metal3 and Metal5.  A 5% derate recovers the capacity without changing the
-# floorplan; detailed routing starts with the same 40% whitespace.
+# Keep the previously tested routing adjustment while changing the floorplan.
 GRT_ADJUSTMENT: 0.05
 
 # 32 threads peaked above 14 GiB on the 344k-instance repaired design and the
