@@ -16,12 +16,12 @@ on:
       hardening_minutes:
         description: Limit for each macro routing phase and top hardening
         type: choice
-        default: '30'
-        options: ['10', '20', '30']
+        default: '120'
+        options: ['10', '20', '30', '60', '120']
 
 env:
   FULL_HARDENING: ${{ github.event_name == 'push' || inputs.full_hardening }}
-  HARDENING_MINUTES: ${{ inputs.hardening_minutes || '30' }}
+  HARDENING_MINUTES: ${{ inputs.hardening_minutes || '120' }}
 
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
     needs: image
     name: Harden ${{ matrix.macro }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 80
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -225,7 +225,7 @@ jobs:
     if: github.event_name == 'push' || inputs.full_hardening
     needs: [image, harden]
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 150
     env:
       QRACC_PHYSICAL_IMAGE: ${{ needs.image.outputs.reference }}
     defaults:
