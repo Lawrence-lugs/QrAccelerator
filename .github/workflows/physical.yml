@@ -133,6 +133,9 @@ jobs:
           mkdir -p physical-ci
           stop="$CHECKPOINT"
           flow_timeout=10m
+          if [[ "$MACRO" == feature_loader ]]; then
+            flow_timeout=30m
+          fi
           if [[ "$FULL_HARDENING" == true ]]; then
             stop="$PREPARE"
             flow_timeout=30m
