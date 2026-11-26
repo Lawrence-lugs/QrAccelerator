@@ -14,7 +14,7 @@ on:
         type: boolean
         default: true
       hardening_minutes:
-        description: Per-macro limit for full hardening
+        description: Limit for each macro routing phase and top hardening
         type: choice
         default: '10'
         options: ['10', '20', '30']
@@ -57,22 +57,28 @@ jobs:
     needs: image
     name: Harden ${{ matrix.macro }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
         include:
           - macro: feature_loader
+            prepare: OpenROAD.STAMidPNR-3
+            resume: OpenROAD.DetailedRouting
             sources: rtl/feature_loader/feature_loader.sv
             wrapper: feature_loader_phys
             target: harden-feature
             checkpoint: Odb.CustomIOPlacement
           - macro: output_scaler_group
+            prepare: OpenROAD.STAMidPNR-3
+            resume: OpenROAD.DetailedRouting
             sources: rtl/output_scaler/output_scaler.sv
             wrapper: output_scaler_group
             target: harden-scaler-group
             checkpoint: OpenROAD.GlobalRouting
           - macro: ram_2w2r
+            prepare: OpenROAD.STAMidPNR-2
+            resume: OpenROAD.GlobalRouting
             sources: physical/actmem/**
             wrapper: ram_2w2r
             target: harden-ram
@@ -85,13 +91,15 @@ jobs:
       MACRO: ${{ matrix.macro }}
       TARGET: ${{ matrix.target }}
       CHECKPOINT: ${{ matrix.checkpoint }}
+      PREPARE: ${{ matrix.prepare }}
+      RESUME: ${{ matrix.resume }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Restore macro artifact
         id: reuse
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: physical-ci/${{ matrix.macro }}.tar
           key: >-
@@ -111,19 +119,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Harden macro
-        if: steps.reuse.outputs.cache-hit != 'true'
+      - name: Restore pre-route state
+        id: route-state
+        if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: physical-ci/${{ matrix.macro }}-state.tar.gz
+          key: ${{ steps.reuse.outputs.cache-primary-key }}-state-${{ matrix.prepare }}
+
+      - name: Prepare macro
+        if: steps.reuse.outputs.cache-hit != 'true' && steps.route-state.outputs.cache-hit != 'true'
         run: |
           mkdir -p physical-ci
-          harden_to="$CHECKPOINT"
+          stop="$CHECKPOINT"
           flow_timeout=10m
           if [[ "$FULL_HARDENING" == true ]]; then
-            harden_to=
-            flow_timeout="${HARDENING_MINUTES}m"
+            stop="$PREPARE"
+            flow_timeout=30m
           fi
           docker compose -f physical/compose.yaml run --rm -T qracc-physical \
-            -lc "make -C /workspace/physical/librelane ${TARGET} FLOW_TIMEOUT=$flow_timeout HARDEN_TO=$harden_to" \
+            -lc "make -C /workspace/physical/librelane $TARGET FLOW_TIMEOUT=$flow_timeout HARDEN_TO=$stop" \
             2>&1 | tee "physical-ci/${MACRO}.log"
+
+      - name: Archive pre-route state
+        if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true' && steps.route-state.outputs.cache-hit != 'true'
+        run: |
+          stage="${PREPARE,,}"
+          states=(physical/librelane/runs/"$MACRO"/*-"${stage//./-}"/state_out.json)
+          [[ "${#states[@]}" -eq 1 && -f "${states[0]}" ]]
+          python3 physical/librelane/scripts/archive_state.py "${states[0]}" "physical-ci/$MACRO-state.tar.gz"
+
+      - name: Save pre-route state before routing
+        if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true' && steps.route-state.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: physical-ci/${{ matrix.macro }}-state.tar.gz
+          key: ${{ steps.route-state.outputs.cache-primary-key }}
+
+      - name: Resume macro hardening
+        if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true'
+        run: |
+          if [[ "${{ steps.route-state.outputs.cache-hit }}" == true ]]; then
+            tar -xzf "physical-ci/$MACRO-state.tar.gz"
+          fi
+          stage="${PREPARE,,}"
+          states=(physical/librelane/runs/"$MACRO"/*-"${stage//./-}"/state_out.json)
+          [[ "${#states[@]}" -eq 1 && -f "${states[0]}" ]]
+          docker compose -f physical/compose.yaml run --rm -T qracc-physical \
+            -lc "make -C /workspace/physical/librelane $TARGET FLOW_TIMEOUT=${HARDENING_MINUTES}m HARDEN_FROM=$RESUME HARDEN_STATE=/workspace/${states[0]}" \
+            2>&1 | tee -a "physical-ci/${MACRO}.log"
 
       - name: Archive exported macro views
         if: env.FULL_HARDENING == 'true' && steps.reuse.outputs.cache-hit != 'true'
@@ -155,6 +199,13 @@ jobs:
           path: physical-ci/${{ matrix.macro }}.tar
           if-no-files-found: error
 
+      - name: Cache the exported views
+        if: steps.reuse.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: physical-ci/${{ matrix.macro }}.tar
+          key: ${{ steps.reuse.outputs.cache-primary-key }}
+
       - name: Upload hardening logs
         if: always() && steps.reuse.outputs.cache-hit != 'true'
         uses: actions/upload-artifact@v4
@@ -163,6 +214,7 @@ jobs:
           path: |
             physical-ci/${{ matrix.macro }}.log
             physical/librelane/runs/${{ matrix.macro }}/**/*.log
+            physical/librelane/runs/${{ matrix.macro }}_resume/**/*.log
           if-no-files-found: warn
 
   top:

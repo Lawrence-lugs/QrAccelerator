@@ -14,6 +14,9 @@ LIBRELANE_BIN ?= /usr/local/bin/librelane
 FLOW_TIMEOUT ?= 10m
 FLOW_JOBS ?= 4
 HARDEN_TO ?=
+HARDEN_FROM ?=
+HARDEN_STATE ?=
+HARDEN_START := $(if $(HARDEN_FROM),--from $(HARDEN_FROM) --with-initial-state $(HARDEN_STATE))
 HARDEN_LIMIT := $(if $(HARDEN_TO),--to $(HARDEN_TO))
 PROBE_TO ?= pins
 PIN_RUN ?=
@@ -79,7 +82,7 @@ preprocess-scaler-group:
 
 _harden-scaler-group: preprocess-scaler-group fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag output_scaler_group --overwrite $(HARDEN_LIMIT) \
+	$(LIBRELANE) --run-tag output_scaler_group$(if $(HARDEN_FROM),_resume) --overwrite $(HARDEN_START) $(HARDEN_LIMIT) \
 		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/output_scaler_group)) \
 		configs/output_scaler_group.yaml
 
@@ -96,7 +99,7 @@ preprocess-feature:
 
 _harden-feature: preprocess-feature fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag feature_loader --overwrite $(HARDEN_LIMIT) \
+	$(LIBRELANE) --run-tag feature_loader$(if $(HARDEN_FROM),_resume) --overwrite $(HARDEN_START) $(HARDEN_LIMIT) \
 		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/feature_loader)) \
 		configs/feature_loader.yaml
 
@@ -125,7 +128,7 @@ _probe-ram: preprocess-ram fix-librelane
 
 _harden-ram: preprocess-ram fix-librelane
 	mkdir -p $(MACROS)
-	$(LIBRELANE) --run-tag ram_2w2r --overwrite $(HARDEN_LIMIT) \
+	$(LIBRELANE) --run-tag ram_2w2r$(if $(HARDEN_FROM),_resume) --overwrite $(HARDEN_START) $(HARDEN_LIMIT) \
 		$(if $(HARDEN_TO),,--save-views-to $(abspath $(MACROS)/ram_2w2r)) \
 		configs/ram_2w2r.yaml
 
